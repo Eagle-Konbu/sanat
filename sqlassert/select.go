@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	"github.com/pingcap/tidb/pkg/parser/ast"
+
+	"github.com/Eagle-Konbu/sql-assert/sqlassert/internal/helpers"
 )
 
 // Selector describes a SELECT list expression to match.
@@ -28,7 +30,7 @@ func RequireSelectHasAlias(t *testing.T, sel *ast.SelectStmt, alias string) {
 		}
 		// If no explicit alias, check if it's a column reference
 		if field.AsName.L == "" {
-			if colName := extractColumnName(field.Expr); colName != "" {
+			if colName := helpers.ExtractColumnName(field.Expr); colName != "" {
 				if strings.EqualFold(colName, alias) {
 					return
 				}
@@ -65,7 +67,7 @@ func matchesSelector(field *ast.SelectField, s Selector) bool {
 		fieldAlias := field.AsName.L
 		if fieldAlias == "" {
 			// No explicit alias, try to extract from expression
-			if colName := extractColumnName(field.Expr); colName != "" {
+			if colName := helpers.ExtractColumnName(field.Expr); colName != "" {
 				fieldAlias = strings.ToLower(colName)
 			}
 		}
@@ -76,7 +78,7 @@ func matchesSelector(field *ast.SelectField, s Selector) bool {
 
 	// Check column if specified
 	if s.Column != "" {
-		colName := extractColumnName(field.Expr)
+		colName := helpers.ExtractColumnName(field.Expr)
 		if !strings.EqualFold(colName, s.Column) {
 			return false
 		}
@@ -84,56 +86,11 @@ func matchesSelector(field *ast.SelectField, s Selector) bool {
 
 	// Check function if specified
 	if s.Func != "" {
-		funcName := extractFunctionName(field.Expr)
+		funcName := helpers.ExtractFunctionName(field.Expr)
 		if !strings.EqualFold(funcName, s.Func) {
 			return false
 		}
 	}
 
 	return true
-}
-
-// extractColumnName extracts the column name from an expression if it's a ColumnNameExpr.
-func extractColumnName(expr ast.ExprNode) string {
-	if expr == nil {
-		return ""
-	}
-
-	switch e := expr.(type) {
-	case *ast.ColumnNameExpr:
-		return e.Name.Name.L
-	}
-	return ""
-}
-
-// extractFunctionName extracts the function name from an expression if it's a FuncCallExpr or AggregateFuncExpr.
-func extractFunctionName(expr ast.ExprNode) string {
-	if expr == nil {
-		return ""
-	}
-
-	switch e := expr.(type) {
-	case *ast.FuncCallExpr:
-		return e.FnName.L
-	case *ast.AggregateFuncExpr:
-		return e.F
-	case *ast.WindowFuncExpr:
-		return e.Name
-	}
-	return ""
-}
-
-// extractTableAlias extracts the table alias from a ColumnNameExpr.
-func extractTableAlias(expr ast.ExprNode) string {
-	if expr == nil {
-		return ""
-	}
-
-	switch e := expr.(type) {
-	case *ast.ColumnNameExpr:
-		if e.Name.Table.L != "" {
-			return e.Name.Table.L
-		}
-	}
-	return ""
 }

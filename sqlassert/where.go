@@ -1,10 +1,11 @@
 package sqlassert
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/pingcap/tidb/pkg/parser/ast"
+
+	"github.com/Eagle-Konbu/sql-assert/sqlassert/internal/helpers"
 )
 
 // RequireHasWhere asserts that the statement has a WHERE clause and returns it.
@@ -39,7 +40,7 @@ func RequireWhereContainsColumn(t *testing.T, node any, tableAliasOpt string, co
 
 	where := RequireHasWhere(t, node)
 
-	found := findColumnInExpr(where, tableAliasOpt, column)
+	found := helpers.FindColumnInExpr(where, tableAliasOpt, column)
 	if !found {
 		if tableAliasOpt != "" {
 			t.Fatalf("WHERE clause does not reference column %s.%s", tableAliasOpt, column)
@@ -64,85 +65,5 @@ func RequireHasLimit(t *testing.T, sel *ast.SelectStmt) {
 
 	if sel.Limit == nil {
 		t.Fatalf("SELECT has no LIMIT clause")
-	}
-}
-
-// findColumnInExpr recursively searches for a column reference in an expression tree.
-func findColumnInExpr(expr ast.ExprNode, tableAlias string, column string) bool {
-	if expr == nil {
-		return false
-	}
-
-	switch e := expr.(type) {
-	case *ast.ColumnNameExpr:
-		colName := e.Name.Name.L
-		if !strings.EqualFold(colName, column) {
-			return false
-		}
-		// If table alias is specified, check it
-		if tableAlias != "" {
-			actualAlias := e.Name.Table.L
-			return strings.EqualFold(actualAlias, tableAlias)
-		}
-		return true
-
-	case *ast.BinaryOperationExpr:
-		return findColumnInExpr(e.L, tableAlias, column) || findColumnInExpr(e.R, tableAlias, column)
-
-	case *ast.UnaryOperationExpr:
-		return findColumnInExpr(e.V, tableAlias, column)
-
-	case *ast.PatternInExpr:
-		if findColumnInExpr(e.Expr, tableAlias, column) {
-			return true
-		}
-		for _, arg := range e.List {
-			if findColumnInExpr(arg, tableAlias, column) {
-				return true
-			}
-		}
-		return false
-
-	case *ast.BetweenExpr:
-		return findColumnInExpr(e.Expr, tableAlias, column) ||
-			findColumnInExpr(e.Left, tableAlias, column) ||
-			findColumnInExpr(e.Right, tableAlias, column)
-
-	case *ast.IsNullExpr:
-		return findColumnInExpr(e.Expr, tableAlias, column)
-
-	case *ast.IsTruthExpr:
-		return findColumnInExpr(e.Expr, tableAlias, column)
-
-	case *ast.PatternLikeOrIlikeExpr:
-		return findColumnInExpr(e.Expr, tableAlias, column) || findColumnInExpr(e.Pattern, tableAlias, column)
-
-	case *ast.FuncCallExpr:
-		for _, arg := range e.Args {
-			if findColumnInExpr(arg, tableAlias, column) {
-				return true
-			}
-		}
-		return false
-
-	case *ast.AggregateFuncExpr:
-		for _, arg := range e.Args {
-			if findColumnInExpr(arg, tableAlias, column) {
-				return true
-			}
-		}
-		return false
-
-	case *ast.ParenthesesExpr:
-		return findColumnInExpr(e.Expr, tableAlias, column)
-
-	case *ast.SubqueryExpr:
-		// For subqueries, we could recursively search but for now we skip
-		// This is a reasonable limitation for WHERE column detection
-		return false
-
-	default:
-		// For unknown expression types, return false
-		return false
 	}
 }

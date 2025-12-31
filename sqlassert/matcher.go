@@ -6,7 +6,8 @@ import (
 	"testing"
 
 	"github.com/pingcap/tidb/pkg/parser/ast"
-	"github.com/pingcap/tidb/pkg/parser/opcode"
+
+	"github.com/Eagle-Konbu/sql-assert/sqlassert/internal/validator"
 )
 
 // Matcher is an interface for matching AST expression nodes.
@@ -160,7 +161,7 @@ func (m *binaryMatcher) Match(expr ast.ExprNode) bool {
 	}
 
 	// Match operator
-	if !matchesOperator(binExpr.Op, m.op) {
+	if !validator.MatchesOperator(binExpr.Op, m.op) {
 		return false
 	}
 
@@ -170,39 +171,6 @@ func (m *binaryMatcher) Match(expr ast.ExprNode) bool {
 
 func (m *binaryMatcher) Describe() string {
 	return fmt.Sprintf("binary op %s (%s %s %s)", m.op, m.left.Describe(), m.op, m.right.Describe())
-}
-
-// matchesOperator checks if an opcode matches the given operator string.
-func matchesOperator(op opcode.Op, opStr string) bool {
-	opStr = strings.ToUpper(opStr)
-	switch opStr {
-	case "=", "EQ":
-		return op == opcode.EQ
-	case "!=", "<>", "NE":
-		return op == opcode.NE
-	case "<", "LT":
-		return op == opcode.LT
-	case "<=", "LE":
-		return op == opcode.LE
-	case ">", "GT":
-		return op == opcode.GT
-	case ">=", "GE":
-		return op == opcode.GE
-	case "AND", "LOGICAND":
-		return op == opcode.LogicAnd
-	case "OR", "LOGICOR":
-		return op == opcode.LogicOr
-	case "+", "PLUS":
-		return op == opcode.Plus
-	case "-", "MINUS":
-		return op == opcode.Minus
-	case "*", "MUL":
-		return op == opcode.Mul
-	case "/", "DIV":
-		return op == opcode.Div
-	default:
-		return false
-	}
 }
 
 // subqueryMatcher matches a subquery.
