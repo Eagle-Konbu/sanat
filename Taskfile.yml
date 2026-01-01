@@ -1,0 +1,67 @@
+version: '3'
+
+vars:
+  MODULE: github.com/Eagle-Konbu/sql-assert
+
+tasks:
+  test:
+    desc: Run all tests
+    cmds:
+      - go test -v ./...
+
+  test:coverage:
+    desc: Run tests with coverage
+    cmds:
+      - go test -v -coverprofile=coverage.out ./...
+      - go tool cover -html=coverage.out -o coverage.html
+
+  lint:
+    desc: Run linter (golangci-lint)
+    cmds:
+      - golangci-lint run ./...
+
+  lint:fix:
+    desc: Run linter with auto-fix
+    cmds:
+      - golangci-lint run --fix ./...
+
+  build:
+    desc: Build the project (verify compilation)
+    cmds:
+      - go build -v ./...
+
+  fmt:
+    desc: Format code with gofmt and goreg
+    cmds:
+      - gofmt -w -s .
+
+  vet:
+    desc: Run go vet
+    cmds:
+      - go vet ./...
+
+  tidy:
+    desc: Tidy go modules
+    cmds:
+      - go mod tidy
+
+  check:
+    desc: Run all checks (fmt, vet, lint, test)
+    cmds:
+      - task: fmt
+      - task: vet
+      - task: lint
+      - task: test
+
+  ci:
+    desc: Run CI checks
+    cmds:
+      - task: vet
+      - task: lint
+      - task: test
+
+  clean:
+    desc: Clean build artifacts and cache
+    cmds:
+      - go clean -cache -testcache -modcache
+      - rm -f coverage.out coverage.html

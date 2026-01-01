@@ -44,6 +44,31 @@ When multiple skills apply, prioritize in this order:
 2. **Code Comments**: Apply after making code self-explanatory
 3. **Commit Messages**: Final step before committing
 
+## Task Commands
+
+This project uses [Task](https://taskfile.dev/) for build automation. **Prefer `task` commands over direct `go` commands when available.**
+
+### Available Tasks
+- `task test` - Run all tests
+- `task test:coverage` - Run tests with coverage report
+- `task lint` - Run linter (golangci-lint)
+- `task lint:fix` - Run linter with auto-fix
+- `task build` - Build the project
+- `task fmt` - Format code
+- `task vet` - Run go vet
+- `task tidy` - Tidy go modules
+- `task check` - Run all checks (fmt, vet, lint, test)
+- `task ci` - Run CI checks
+- `task clean` - Clean build artifacts
+
+### Command Preferences
+When implementing or suggesting commands:
+1. **Prefer** `task` commands when they exist (e.g., `task test` over `go test`)
+2. Use `task lint` instead of `golangci-lint run`
+3. Use `task build` instead of `go build`
+4. Use `task check` before committing to ensure code quality
+5. **Fallback**: If `task` is unavailable or a specific task doesn't exist, use direct commands (e.g., `go test`, `go build`)
+
 ## References
 
 All skills are defined in: `.ai/skills/`
