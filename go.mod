@@ -1,6 +1,8 @@
 module github.com/Eagle-Konbu/sql-assert
 
-go 1.25.5
+go 1.24
+
+toolchain go1.24.7
 
 require github.com/pingcap/tidb/pkg/parser v0.0.0-20251231161221-014ed7becad8
 
