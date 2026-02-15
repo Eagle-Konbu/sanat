@@ -1,0 +1,20 @@
+coverage:
+  status:
+    project:
+      default:
+        target: auto
+        threshold: 0%
+        paths:
+          - "internal/"
+    patch:
+      default:
+        target: auto
+        threshold: 0%
+        paths:
+          - "internal/"
+
+ignore:
+  - "main.go"
+  - "cmd/"
+  - "testdata/"
+  - "**/*_test.go"
