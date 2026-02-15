@@ -1,7 +1,7 @@
 version: '3'
 
 vars:
-  MODULE: github.com/Eagle-Konbu/sql-assert
+  MODULE: github.com/Eagle-Konbu/sanat
 
 tasks:
   test:
@@ -28,7 +28,7 @@ tasks:
   build:
     desc: Build the project
     cmds:
-      - go build -v -o sql-assert ./cmd
+      - go build -v -o sanat ./cmd
 
   fmt:
     desc: Format code with gofmt and goreg

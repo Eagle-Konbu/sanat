@@ -9,7 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/Eagle-Konbu/sql-assert/internal/gofile"
+	"github.com/Eagle-Konbu/sanat/internal/gofile"
 )
 
 var (
@@ -20,7 +20,7 @@ var (
 
 func main() {
 	root := &cobra.Command{
-		Use:          "sql-assert [flags] [pattern ...]",
+		Use:          "sanat [flags] [pattern ...]",
 		Short:        "Format SQL strings in Go source files",
 		Long:         "Automatically formats embedded SQL string literals in Go source code.",
 		RunE:         run,
