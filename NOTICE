@@ -1,0 +1,20 @@
+sanat
+Copyright 2026 Eagle-Konbu
+
+This software includes the following third-party components:
+
+--------------------------------------------------------------------------------
+Vitess
+https://vitess.io/
+License: Apache License 2.0
+Copyright: The Vitess Authors
+--------------------------------------------------------------------------------
+
+Cobra
+https://github.com/spf13/cobra
+License: Apache License 2.0
+Copyright: Steve Francia <spf@spf13.com>
+--------------------------------------------------------------------------------
+
+The full text of the Apache License 2.0 is available at:
+https://www.apache.org/licenses/LICENSE-2.0

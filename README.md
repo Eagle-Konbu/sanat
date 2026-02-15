@@ -55,14 +55,6 @@ brew install Eagle-Konbu/tap/sanat
 go install github.com/Eagle-Konbu/sanat@latest
 ```
 
-Or build from source:
-
-```bash
-git clone https://github.com/Eagle-Konbu/sanat.git
-cd sanat
-go build -o sanat ./cmd
-```
-
 ## Usage
 
 ### Format files and print to stdout
