@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/Eagle-Konbu/sanat/internal/config"
 	"github.com/Eagle-Konbu/sanat/internal/gofile"
 )
 
@@ -41,6 +42,29 @@ func Execute() error {
 	return rootCmd.Execute()
 }
 
+func applyConfig(cmd *cobra.Command) error {
+	dir, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	cfg, err := config.Load(dir)
+	if err != nil {
+		return fmt.Errorf("loading config: %w", err)
+	}
+
+	// Config file values apply only when the flag was not explicitly set.
+	if !cmd.Flags().Changed("write") && cfg.Write != nil {
+		writeFlag = *cfg.Write
+	}
+	if !cmd.Flags().Changed("indent") && cfg.Indent != nil {
+		indentFlag = *cfg.Indent
+	}
+	if !cmd.Flags().Changed("newline") && cfg.Newline != nil {
+		newlineFlag = *cfg.Newline
+	}
+	return nil
+}
+
 func opts() gofile.Options {
 	return gofile.Options{
 		Indent:  indentFlag,
@@ -48,7 +72,11 @@ func opts() gofile.Options {
 	}
 }
 
-func run(_ *cobra.Command, args []string) error {
+func run(cmd *cobra.Command, args []string) error {
+	if err := applyConfig(cmd); err != nil {
+		return err
+	}
+
 	if len(args) == 0 {
 		return processStdin()
 	}
