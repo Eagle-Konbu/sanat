@@ -5,7 +5,8 @@ project_name: sanat
 
 before:
   hooks:
-    - go mod tidy
+    - task tidy
+    - task generate-completions
 
 builds:
   - main: ./main.go
@@ -31,6 +32,8 @@ archives:
     format_overrides:
       - goos: windows
         formats: [ "zip" ]
+    files:
+      - completions/*
 
 checksum:
   name_template: "checksums.txt"
@@ -50,16 +53,23 @@ changelog:
       - Merge branch
 
 homebrew_casks:
-  - name: catalyst
+  - name: sanat
+    binaries:
+      - sanat
+    completions:
+      bash: completions/sanat.bash
+      zsh: completions/_sanat
+      fish: completions/sanat.fish
     repository:
       owner: Eagle-Konbu
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     homepage: "https://github.com/Eagle-Konbu/sanat"
     description: "Yet another CLI tool that automatically formats embedded SQL literals in Go source files"
+    license: MIT
     hooks:
       post:
         install: |
           if OS.mac?
-            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/catalyst"]
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/sanat"]
           end

@@ -65,3 +65,13 @@ tasks:
     cmds:
       - go clean -cache -testcache -modcache
       - rm -f coverage.out coverage.html
+
+  generate-completions:
+    desc: Generate shell completion scripts
+    cmds:
+      - mkdir -p completions
+      - go build -tags dev -o sanat-dev .
+      - ./sanat-dev completion bash > completions/sanat.bash
+      - ./sanat-dev completion zsh > completions/_sanat
+      - ./sanat-dev completion fish > completions/sanat.fish
+      - rm -f sanat-dev
