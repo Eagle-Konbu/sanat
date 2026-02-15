@@ -220,6 +220,107 @@ func TestFormatSQL_Subquery(t *testing.T) {
 	}
 }
 
+func TestFormatSQL_Union(t *testing.T) {
+	got, ok := sqlfmt.FormatSQL("select id from users union all select id from admins", 2)
+	if !ok {
+		t.Fatal("expected ok")
+	}
+
+	want := join(
+		"SELECT",
+		"  id",
+		"FROM",
+		"  users",
+		"UNION ALL",
+		"SELECT",
+		"  id",
+		"FROM",
+		"  admins",
+	)
+	got = strings.TrimRight(got, "\n")
+	want = strings.TrimRight(want, "\n")
+
+	if got != want {
+		t.Errorf("got:\n%s\n\nwant:\n%s", got, want)
+	}
+}
+
+func TestFormatSQL_InsertOnDuplicateKey(t *testing.T) {
+	got, ok := sqlfmt.FormatSQL("insert into users (name, email) values (?, ?) on duplicate key update name = values(name), email = values(email)", 2)
+	if !ok {
+		t.Fatal("expected ok")
+	}
+
+	want := join(
+		"INSERT INTO",
+		"  users",
+		"(",
+		"  name,",
+		"  email",
+		")",
+		"VALUES",
+		"  (?, ?)",
+		"ON DUPLICATE KEY UPDATE",
+		"  name = values(name),",
+		"  email = values(email)",
+	)
+	got = strings.TrimRight(got, "\n")
+	want = strings.TrimRight(want, "\n")
+
+	if got != want {
+		t.Errorf("got:\n%s\n\nwant:\n%s", got, want)
+	}
+}
+
+func TestFormatSQL_DerivedTable(t *testing.T) {
+	got, ok := sqlfmt.FormatSQL("select t.id from (select id from users) t", 2)
+	if !ok {
+		t.Fatal("expected ok")
+	}
+
+	want := join(
+		"SELECT",
+		"  t.id",
+		"FROM",
+		"  (",
+		"  SELECT",
+		"    id",
+		"  FROM",
+		"    users",
+		"  ) t",
+	)
+	got = strings.TrimRight(got, "\n")
+	want = strings.TrimRight(want, "\n")
+
+	if got != want {
+		t.Errorf("got:\n%s\n\nwant:\n%s", got, want)
+	}
+}
+
+func TestFormatSQL_LimitOffset(t *testing.T) {
+	got, ok := sqlfmt.FormatSQL("select id from users limit 10 offset 20", 2)
+	if !ok {
+		t.Fatal("expected ok")
+	}
+
+	want := join(
+		"SELECT",
+		"  id",
+		"FROM",
+		"  users",
+		"LIMIT",
+		"  10",
+		"OFFSET",
+		"  20",
+	)
+	got = strings.TrimRight(got, "\n")
+	want = strings.TrimRight(want, "\n")
+
+	if got != want {
+		t.Errorf("got:\n%s\n\nwant:\n%s", got, want)
+	}
+}
+
 func join(lines ...string) string {
 	return strings.Join(lines, "\n")
 }
