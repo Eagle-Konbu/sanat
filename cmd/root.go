@@ -19,11 +19,12 @@ var (
 )
 
 var rootCmd = &cobra.Command{
-	Use:          "sanat [flags] [pattern ...]",
-	Short:        "Format SQL strings in Go source files",
-	Long:         "Automatically formats embedded SQL string literals in Go source code.",
-	RunE:         run,
-	SilenceUsage: true,
+	Use:               "sanat [flags] [pattern ...]",
+	Short:             "Format SQL strings in Go source files",
+	Long:              "Automatically formats embedded SQL string literals in Go source code.",
+	RunE:              run,
+	SilenceUsage:      true,
+	CompletionOptions: cobra.CompletionOptions{DisableDefaultCmd: true},
 }
 
 func SetVersion(v string) {
