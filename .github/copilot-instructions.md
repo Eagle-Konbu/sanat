@@ -1,7 +1,5 @@
 # GitHub Copilot Instructions
 
-This project uses skills-based AI development guidelines.
+**All guidelines are defined in [.ai/instructions.md](../.ai/instructions.md).**
 
-**All guidelines are defined in [.ai/adapters/copilot/instructions.md](../.ai/adapters/copilot/instructions.md).**
-
-Please follow all skills and procedures defined there.
+Please follow all guidelines and procedures defined there.
