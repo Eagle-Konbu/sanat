@@ -42,6 +42,14 @@ WHERE
 
 ## Installation
 
+### Homebrew
+
+```bash
+brew install Eagle-Konbu/tap/sanat
+```
+
+### Go
+
 ```bash
 go install github.com/Eagle-Konbu/sanat@latest
 ```
