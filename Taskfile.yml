@@ -31,9 +31,30 @@ tasks:
       - go build -v -o sanat .
 
   fmt:
-    desc: Format code with gofmt and goreg
+    desc: Format code with gofmt
     cmds:
       - gofmt -w -s .
+
+  goreg:
+    desc: Check import organization with goreg
+    cmds:
+      - |
+        FAIL=0
+        for f in $(find . -name "*.go" ! -path "./vendor/*"); do
+          if ! goreg "$f" | diff -q "$f" - >/dev/null 2>&1; then
+            echo "Import organization issue: $f"
+            FAIL=1
+          fi
+        done
+        [ $FAIL -eq 0 ] || exit 1
+
+  goreg:fix:
+    desc: Fix import organization with goreg
+    cmds:
+      - |
+        for f in $(find . -name "*.go" ! -path "./vendor/*"); do
+          goreg -w "$f"
+        done
 
   vet:
     desc: Run go vet
