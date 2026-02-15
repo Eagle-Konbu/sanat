@@ -45,18 +45,24 @@ func Execute() error {
 }
 
 func applyConfig(cmd *cobra.Command) error {
-	var cfg config.Config
-	var err error
+	var (
+		cfg config.Config
+		err error
+	)
+
 	if configFlag != "" {
 		cfg, err = config.LoadFile(configFlag)
 	} else {
 		var dir string
+
 		dir, err = os.Getwd()
 		if err != nil {
 			return err
 		}
+
 		cfg, err = config.Load(dir)
 	}
+
 	if err != nil {
 		return fmt.Errorf("loading config: %w", err)
 	}
@@ -65,12 +71,15 @@ func applyConfig(cmd *cobra.Command) error {
 	if !cmd.Flags().Changed("write") && cfg.Write != nil {
 		writeFlag = *cfg.Write
 	}
+
 	if !cmd.Flags().Changed("indent") && cfg.Indent != nil {
 		indentFlag = *cfg.Indent
 	}
+
 	if !cmd.Flags().Changed("newline") && cfg.Newline != nil {
 		newlineFlag = *cfg.Newline
 	}
+
 	return nil
 }
 
@@ -100,6 +109,7 @@ func run(cmd *cobra.Command, args []string) error {
 			fmt.Fprintf(os.Stderr, "%s: %v\n", path, err)
 		}
 	}
+
 	return nil
 }
 
@@ -108,15 +118,19 @@ func processStdin() error {
 	if err != nil {
 		return err
 	}
+
 	file, fset, literals, err := gofile.FindSQLLiterals(src, "stdin.go")
 	if err != nil {
 		return err
 	}
+
 	out, err := gofile.RewriteFile(fset, file, literals, opts())
 	if err != nil {
 		return err
 	}
+
 	_, err = os.Stdout.Write(out)
+
 	return err
 }
 
@@ -125,10 +139,12 @@ func processFile(path string) error {
 	if err != nil {
 		return err
 	}
+
 	file, fset, literals, err := gofile.FindSQLLiterals(src, path)
 	if err != nil {
 		return err
 	}
+
 	out, err := gofile.RewriteFile(fset, file, literals, opts())
 	if err != nil {
 		return err
@@ -137,7 +153,9 @@ func processFile(path string) error {
 	if writeFlag {
 		return os.WriteFile(path, out, 0644)
 	}
+
 	_, err = os.Stdout.Write(out)
+
 	return err
 }
 
@@ -149,22 +167,26 @@ var excludeDirs = map[string]bool{
 
 func resolvePatterns(patterns []string) ([]string, error) {
 	var files []string
+
 	for _, pattern := range patterns {
 		resolved, err := resolvePattern(pattern)
 		if err != nil {
 			return nil, fmt.Errorf("resolving %q: %w", pattern, err)
 		}
+
 		files = append(files, resolved...)
 	}
+
 	return files, nil
 }
 
 func resolvePattern(pattern string) ([]string, error) {
-	if strings.HasSuffix(pattern, "/...") {
-		dir := strings.TrimSuffix(pattern, "/...")
+	if before, ok := strings.CutSuffix(pattern, "/..."); ok {
+		dir := before
 		if dir == "." || dir == "" {
 			dir = "."
 		}
+
 		return walkDir(dir)
 	}
 
@@ -177,28 +199,36 @@ func resolvePattern(pattern string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	var goFiles []string
+
 	for _, m := range matches {
 		if strings.HasSuffix(m, ".go") {
 			goFiles = append(goFiles, m)
 		}
 	}
+
 	return goFiles, nil
 }
 
 func walkDir(root string) ([]string, error) {
 	var files []string
+
 	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
+
 		if d.IsDir() && excludeDirs[d.Name()] {
 			return filepath.SkipDir
 		}
+
 		if !d.IsDir() && strings.HasSuffix(path, ".go") {
 			files = append(files, path)
 		}
+
 		return nil
 	})
+
 	return files, err
 }

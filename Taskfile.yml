@@ -30,11 +30,6 @@ tasks:
     cmds:
       - go build -v -o sanat .
 
-  fmt:
-    desc: Format code with gofmt
-    cmds:
-      - gofmt -w -s .
-
   goreg:
     desc: Check import organization with goreg
     cmds:

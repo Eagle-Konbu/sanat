@@ -93,6 +93,7 @@ func TestRewriteFile_BacktickIdentifiersStripped(t *testing.T) {
 	if strings.Contains(result, "``") {
 		t.Errorf("should not contain MySQL backtick-quoted identifiers in raw string, got:\n%s", result)
 	}
+
 	if !strings.Contains(result, "status") {
 		t.Errorf("should contain status column name, got:\n%s", result)
 	}

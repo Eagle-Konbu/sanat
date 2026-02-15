@@ -1,6 +1,7 @@
 package gofile
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"testing"
@@ -19,6 +20,7 @@ func TestGoldenFiles(t *testing.T) {
 		if entry.IsDir() || filepath.Ext(entry.Name()) != ".go" {
 			continue
 		}
+
 		t.Run(entry.Name(), func(t *testing.T) {
 			inputPath := filepath.Join(inputDir, entry.Name())
 			expectedPath := filepath.Join(expectedDir, entry.Name())
@@ -27,6 +29,7 @@ func TestGoldenFiles(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+
 			expected, err := os.ReadFile(expectedPath)
 			if err != nil {
 				t.Fatal(err)
@@ -36,12 +39,13 @@ func TestGoldenFiles(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+
 			got, err := RewriteFile(fset, file, literals, Options{Indent: 2, Newline: true})
 			if err != nil {
 				t.Fatal(err)
 			}
 
-			if string(got) != string(expected) {
+			if !bytes.Equal(got, expected) {
 				t.Errorf("output mismatch for %s\ngot:\n%s\nwant:\n%s", entry.Name(), got, expected)
 			}
 		})

@@ -101,8 +101,11 @@ func TestFormatSQL_Select(t *testing.T) {
 			if ok != tt.ok {
 				t.Errorf("FormatSQL ok = %v, want %v", ok, tt.ok)
 			}
+
 			got = strings.TrimRight(got, "\n")
+
 			want := strings.TrimRight(tt.want, "\n")
+
 			if got != want {
 				t.Errorf("FormatSQL:\ngot:\n%s\n\nwant:\n%s", got, want)
 			}
@@ -115,6 +118,7 @@ func TestFormatSQL_Insert(t *testing.T) {
 	if !ok {
 		t.Fatal("expected ok")
 	}
+
 	want := join(
 		"INSERT INTO",
 		"  users",
@@ -126,7 +130,9 @@ func TestFormatSQL_Insert(t *testing.T) {
 		"  (?, ?)",
 	)
 	got = strings.TrimRight(got, "\n")
+
 	want = strings.TrimRight(want, "\n")
+
 	if got != want {
 		t.Errorf("got:\n%s\n\nwant:\n%s", got, want)
 	}
@@ -137,6 +143,7 @@ func TestFormatSQL_Update(t *testing.T) {
 	if !ok {
 		t.Fatal("expected ok")
 	}
+
 	want := join(
 		"UPDATE",
 		"  users",
@@ -147,7 +154,9 @@ func TestFormatSQL_Update(t *testing.T) {
 		"  id = ?",
 	)
 	got = strings.TrimRight(got, "\n")
+
 	want = strings.TrimRight(want, "\n")
+
 	if got != want {
 		t.Errorf("got:\n%s\n\nwant:\n%s", got, want)
 	}
@@ -158,6 +167,7 @@ func TestFormatSQL_Delete(t *testing.T) {
 	if !ok {
 		t.Fatal("expected ok")
 	}
+
 	want := join(
 		"DELETE FROM",
 		"  users",
@@ -165,7 +175,9 @@ func TestFormatSQL_Delete(t *testing.T) {
 		"  id = ?",
 	)
 	got = strings.TrimRight(got, "\n")
+
 	want = strings.TrimRight(want, "\n")
+
 	if got != want {
 		t.Errorf("got:\n%s\n\nwant:\n%s", got, want)
 	}
@@ -173,10 +185,12 @@ func TestFormatSQL_Delete(t *testing.T) {
 
 func TestFormatSQL_Subquery(t *testing.T) {
 	in := "select u.id, u.name from users u where exists (select 1 from orders o where o.user_id = u.id and o.created_at >= ?) and u.status = ?"
+
 	got, ok := FormatSQL(in, 2)
 	if !ok {
 		t.Fatal("expected ok")
 	}
+
 	want := join(
 		"SELECT",
 		"  u.id,",
@@ -196,7 +210,9 @@ func TestFormatSQL_Subquery(t *testing.T) {
 		"  AND u.status = ?",
 	)
 	got = strings.TrimRight(got, "\n")
+
 	want = strings.TrimRight(want, "\n")
+
 	if got != want {
 		t.Errorf("got:\n%s\n\nwant:\n%s", got, want)
 	}

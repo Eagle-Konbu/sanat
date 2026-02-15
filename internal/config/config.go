@@ -10,9 +10,9 @@ import (
 )
 
 type Config struct {
-	Write   *bool `yaml:"write" toml:"write"`
-	Indent  *int  `yaml:"indent" toml:"indent"`
-	Newline *bool `yaml:"newline" toml:"newline"`
+	Write   *bool `toml:"write"   yaml:"write"`
+	Indent  *int  `toml:"indent"  yaml:"indent"`
+	Newline *bool `toml:"newline" yaml:"newline"`
 }
 
 var configFiles = []string{
@@ -27,6 +27,7 @@ func LoadFile(path string) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+
 	return decode(filepath.Base(path), data)
 }
 
@@ -35,20 +36,25 @@ func LoadFile(path string) (Config, error) {
 func Load(dir string) (Config, error) {
 	for _, name := range configFiles {
 		path := filepath.Join(dir, name)
+
 		data, err := os.ReadFile(path)
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
 				continue
 			}
+
 			return Config{}, err
 		}
+
 		return decode(name, data)
 	}
+
 	return Config{}, nil
 }
 
 func decode(name string, data []byte) (Config, error) {
 	var cfg Config
+
 	switch filepath.Ext(name) {
 	case ".toml":
 		if err := toml.Unmarshal(data, &cfg); err != nil {
@@ -59,5 +65,6 @@ func decode(name string, data []byte) (Config, error) {
 			return Config{}, err
 		}
 	}
+
 	return cfg, nil
 }

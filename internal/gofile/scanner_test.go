@@ -15,6 +15,7 @@ func example(db *sql.DB) {
 	db.Query(` + "`select * from orders`" + `)
 }
 `)
+
 	_, _, literals, err := FindSQLLiterals(src, "test.go")
 	if err != nil {
 		t.Fatal(err)
