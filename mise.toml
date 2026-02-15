@@ -1,3 +1,5 @@
 [tools]
 go = "1.25"
 "github:magicdrive/goreg" = "latest"
+golangci-lint = "2"
+task = "3"
