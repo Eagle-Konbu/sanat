@@ -135,12 +135,14 @@ func processStdin() error {
 }
 
 func processFile(path string) error {
-	src, err := os.ReadFile(path)
+	cleanPath := filepath.Clean(path)
+
+	src, err := os.ReadFile(cleanPath)
 	if err != nil {
 		return err
 	}
 
-	file, fset, literals, err := gofile.FindSQLLiterals(src, path)
+	file, fset, literals, err := gofile.FindSQLLiterals(src, cleanPath)
 	if err != nil {
 		return err
 	}
@@ -151,7 +153,7 @@ func processFile(path string) error {
 	}
 
 	if writeFlag {
-		return os.WriteFile(path, out, 0644)
+		return os.WriteFile(cleanPath, out, 0o600)
 	}
 
 	_, err = os.Stdout.Write(out)

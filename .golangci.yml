@@ -14,6 +14,8 @@ linters:
     - gochecknoglobals
     - depguard
     - paralleltest
+    - mnd
+    - exhaustruct
 
   settings:
     exhaustive:
@@ -21,7 +23,6 @@ linters:
     gocritic:
       enabled-tags:
         - diagnostic
-        - style
         - performance
     revive:
       rules:
@@ -57,6 +58,9 @@ linters:
           - unparam
           - prealloc
           - gocyclo
+          - funlen
+          - lll
+          - gosec
 
 formatters:
   enable:

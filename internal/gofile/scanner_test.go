@@ -7,7 +7,7 @@ import (
 )
 
 func TestFindSQLLiterals_OnlyRawStrings(t *testing.T) {
-	// nolint: unqueryvet // intentionally includes concatenated query for testing
+	//nolint: unqueryvet // intentionally includes concatenated query for testing
 	src := []byte(`package main
 
 import "database/sql"

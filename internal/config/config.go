@@ -23,19 +23,21 @@ var configFiles = []string{
 
 // LoadFile reads and decodes the config file at the given path.
 func LoadFile(path string) (Config, error) {
-	data, err := os.ReadFile(path)
+	cleanPath := filepath.Clean(path)
+
+	data, err := os.ReadFile(cleanPath)
 	if err != nil {
 		return Config{}, err
 	}
 
-	return decode(filepath.Base(path), data)
+	return decode(filepath.Base(cleanPath), data)
 }
 
 // Load searches for a config file in the given directory and decodes it.
 // Returns a zero Config and nil error if no config file is found.
 func Load(dir string) (Config, error) {
 	for _, name := range configFiles {
-		path := filepath.Join(dir, name)
+		path := filepath.Clean(filepath.Join(dir, name))
 
 		data, err := os.ReadFile(path)
 		if err != nil {
