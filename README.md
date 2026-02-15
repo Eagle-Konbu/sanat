@@ -1,6 +1,6 @@
 # sql-assert
 
-[![Test](https://github.com/Eagle-Konbu/sql-assert/actions/workflows/test.yml/badge.svg)](https://github.com/Eagle-Konbu/sql-assert/actions/workflows/test.yml)
+[![CI](https://github.com/Eagle-Konbu/sql-assert/actions/workflows/test.yml/badge.svg)](https://github.com/Eagle-Konbu/sql-assert/actions/workflows/ci.yml)
 [![Go Reference](https://pkg.go.dev/badge/github.com/Eagle-Konbu/sql-assert.svg)](https://pkg.go.dev/github.com/Eagle-Konbu/sql-assert)
 
 A Go test helper library for validating SQL queries via AST inspection, without database execution.
