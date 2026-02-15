@@ -8,6 +8,12 @@ linters:
   
   disable:
     - noinlineerr
+    - varnamelen
+    - wrapcheck
+    - gochecknoinits
+    - gochecknoglobals
+    - depguard
+    - paralleltest
 
   settings:
     exhaustive:
@@ -26,7 +32,6 @@ linters:
         - name: error-return
         - name: error-strings
         - name: error-naming
-        - name: exported
         - name: if-return
         - name: increment-decrement
         - name: var-naming

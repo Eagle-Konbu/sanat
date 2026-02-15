@@ -1,9 +1,11 @@
-package config
+package config_test
 
 import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/Eagle-Konbu/sanat/internal/config"
 )
 
 func TestLoad_YAML(t *testing.T) {
@@ -15,7 +17,7 @@ func TestLoad_YAML(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cfg, err := Load(dir)
+	cfg, err := config.Load(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -42,7 +44,7 @@ func TestLoad_TOML(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cfg, err := Load(dir)
+	cfg, err := config.Load(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +61,7 @@ func TestLoad_TOML(t *testing.T) {
 func TestLoad_NoFile(t *testing.T) {
 	dir := t.TempDir()
 
-	cfg, err := Load(dir)
+	cfg, err := config.Load(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +84,7 @@ func TestLoad_YAMLPriority(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cfg, err := Load(dir)
+	cfg, err := config.Load(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +100,7 @@ func TestLoad_InvalidYAML(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err := Load(dir)
+	_, err := config.Load(dir)
 	if err == nil {
 		t.Error("expected error for invalid YAML")
 	}
@@ -112,7 +114,7 @@ func TestLoadFile_YAML(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cfg, err := LoadFile(path)
+	cfg, err := config.LoadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +136,7 @@ func TestLoadFile_TOML(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cfg, err := LoadFile(path)
+	cfg, err := config.LoadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,7 +151,7 @@ func TestLoadFile_TOML(t *testing.T) {
 }
 
 func TestLoadFile_NotFound(t *testing.T) {
-	_, err := LoadFile("/nonexistent/path/config.yml")
+	_, err := config.LoadFile("/nonexistent/path/config.yml")
 	if err == nil {
 		t.Error("expected error for nonexistent file")
 	}
@@ -167,7 +169,7 @@ func TestLoad_PermissionError(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err := Load(dir)
+	_, err := config.Load(dir)
 	if err == nil {
 		t.Error("expected error for unreadable file")
 	}
@@ -179,7 +181,7 @@ func TestLoad_InvalidTOML(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err := Load(dir)
+	_, err := config.Load(dir)
 	if err == nil {
 		t.Error("expected error for invalid TOML")
 	}

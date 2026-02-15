@@ -1,10 +1,12 @@
-package gofile
+package gofile_test
 
 import (
 	"bytes"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/Eagle-Konbu/sanat/internal/gofile"
 )
 
 func TestGoldenFiles(t *testing.T) {
@@ -35,12 +37,12 @@ func TestGoldenFiles(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			file, fset, literals, err := FindSQLLiterals(src, entry.Name())
+			file, fset, literals, err := gofile.FindSQLLiterals(src, entry.Name())
 			if err != nil {
 				t.Fatal(err)
 			}
 
-			got, err := RewriteFile(fset, file, literals, Options{Indent: 2, Newline: true})
+			got, err := gofile.RewriteFile(fset, file, literals, gofile.Options{Indent: 2, Newline: true})
 			if err != nil {
 				t.Fatal(err)
 			}

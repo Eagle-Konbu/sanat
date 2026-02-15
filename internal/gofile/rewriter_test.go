@@ -1,19 +1,21 @@
-package gofile
+package gofile_test
 
 import (
 	"strings"
 	"testing"
+
+	"github.com/Eagle-Konbu/sanat/internal/gofile"
 )
 
 func TestRewriteFile_WithNewline(t *testing.T) {
 	src := []byte("package main\n\nimport \"database/sql\"\n\nfunc example(db *sql.DB) {\n\tdb.Exec(`select id from users where id = ?`, 1)\n\tmsg := \"hello world\"\n\t_ = msg\n}\n")
 
-	file, fset, literals, err := FindSQLLiterals(src, "test.go")
+	file, fset, literals, err := gofile.FindSQLLiterals(src, "test.go")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	out, err := RewriteFile(fset, file, literals, Options{Indent: 2, Newline: true})
+	out, err := gofile.RewriteFile(fset, file, literals, gofile.Options{Indent: 2, Newline: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,12 +41,12 @@ func TestRewriteFile_WithNewline(t *testing.T) {
 func TestRewriteFile_WithoutNewline(t *testing.T) {
 	src := []byte("package main\n\nvar q = `select id from users`\n")
 
-	file, fset, literals, err := FindSQLLiterals(src, "test.go")
+	file, fset, literals, err := gofile.FindSQLLiterals(src, "test.go")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	out, err := RewriteFile(fset, file, literals, Options{Indent: 2, Newline: false})
+	out, err := gofile.RewriteFile(fset, file, literals, gofile.Options{Indent: 2, Newline: false})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,12 +60,12 @@ func TestRewriteFile_WithoutNewline(t *testing.T) {
 func TestRewriteFile_DoubleQuotedSQLNotChanged(t *testing.T) {
 	src := []byte("package main\n\nvar q = \"select id from users\"\n")
 
-	file, fset, literals, err := FindSQLLiterals(src, "test.go")
+	file, fset, literals, err := gofile.FindSQLLiterals(src, "test.go")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	out, err := RewriteFile(fset, file, literals, Options{Indent: 2, Newline: true})
+	out, err := gofile.RewriteFile(fset, file, literals, gofile.Options{Indent: 2, Newline: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,12 +80,12 @@ func TestRewriteFile_BacktickIdentifiersStripped(t *testing.T) {
 	// "status" is a MySQL keyword that vitess backtick-quotes
 	src := []byte("package main\n\nvar q = `select status from users`\n")
 
-	file, fset, literals, err := FindSQLLiterals(src, "test.go")
+	file, fset, literals, err := gofile.FindSQLLiterals(src, "test.go")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	out, err := RewriteFile(fset, file, literals, Options{Indent: 2, Newline: true})
+	out, err := gofile.RewriteFile(fset, file, literals, gofile.Options{Indent: 2, Newline: true})
 	if err != nil {
 		t.Fatal(err)
 	}

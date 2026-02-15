@@ -1,8 +1,10 @@
-package sqlfmt
+package sqlfmt_test
 
 import (
 	"strings"
 	"testing"
+
+	"github.com/Eagle-Konbu/sanat/internal/sqlfmt"
 )
 
 func TestFormatSQL_Select(t *testing.T) {
@@ -97,7 +99,7 @@ func TestFormatSQL_Select(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, ok := FormatSQL(tt.in, 2)
+			got, ok := sqlfmt.FormatSQL(tt.in, 2)
 			if ok != tt.ok {
 				t.Errorf("FormatSQL ok = %v, want %v", ok, tt.ok)
 			}
@@ -114,7 +116,7 @@ func TestFormatSQL_Select(t *testing.T) {
 }
 
 func TestFormatSQL_Insert(t *testing.T) {
-	got, ok := FormatSQL("insert into users (name, email) values (?, ?)", 2)
+	got, ok := sqlfmt.FormatSQL("insert into users (name, email) values (?, ?)", 2)
 	if !ok {
 		t.Fatal("expected ok")
 	}
@@ -139,7 +141,7 @@ func TestFormatSQL_Insert(t *testing.T) {
 }
 
 func TestFormatSQL_Update(t *testing.T) {
-	got, ok := FormatSQL("update users set name = ?, email = ? where id = ?", 2)
+	got, ok := sqlfmt.FormatSQL("update users set name = ?, email = ? where id = ?", 2)
 	if !ok {
 		t.Fatal("expected ok")
 	}
@@ -163,7 +165,7 @@ func TestFormatSQL_Update(t *testing.T) {
 }
 
 func TestFormatSQL_Delete(t *testing.T) {
-	got, ok := FormatSQL("delete from users where id = ?", 2)
+	got, ok := sqlfmt.FormatSQL("delete from users where id = ?", 2)
 	if !ok {
 		t.Fatal("expected ok")
 	}
@@ -186,7 +188,7 @@ func TestFormatSQL_Delete(t *testing.T) {
 func TestFormatSQL_Subquery(t *testing.T) {
 	in := "select u.id, u.name from users u where exists (select 1 from orders o where o.user_id = u.id and o.created_at >= ?) and u.status = ?"
 
-	got, ok := FormatSQL(in, 2)
+	got, ok := sqlfmt.FormatSQL(in, 2)
 	if !ok {
 		t.Fatal("expected ok")
 	}
