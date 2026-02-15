@@ -134,6 +134,21 @@ func TestLoadFile_NotFound(t *testing.T) {
 	}
 }
 
+func TestLoad_PermissionError(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".sanat.yml")
+	if err := os.WriteFile(path, []byte("indent: 2\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(path, 0000); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Load(dir)
+	if err == nil {
+		t.Error("expected error for unreadable file")
+	}
+}
+
 func TestLoad_InvalidTOML(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, ".sanat.toml"), []byte("= invalid"), 0644); err != nil {
