@@ -17,6 +17,7 @@ var (
 	writeFlag   bool
 	indentFlag  int
 	newlineFlag bool
+	configFlag  string
 )
 
 var rootCmd = &cobra.Command{
@@ -36,6 +37,7 @@ func init() {
 	rootCmd.Flags().BoolVarP(&writeFlag, "write", "w", false, "overwrite files in place")
 	rootCmd.Flags().IntVar(&indentFlag, "indent", 2, "indent width for SQL formatting")
 	rootCmd.Flags().BoolVar(&newlineFlag, "newline", true, "add newline after opening backtick")
+	rootCmd.Flags().StringVarP(&configFlag, "config", "c", "", "path to config file")
 }
 
 func Execute() error {
@@ -43,11 +45,18 @@ func Execute() error {
 }
 
 func applyConfig(cmd *cobra.Command) error {
-	dir, err := os.Getwd()
-	if err != nil {
-		return err
+	var cfg config.Config
+	var err error
+	if configFlag != "" {
+		cfg, err = config.LoadFile(configFlag)
+	} else {
+		var dir string
+		dir, err = os.Getwd()
+		if err != nil {
+			return err
+		}
+		cfg, err = config.Load(dir)
 	}
-	cfg, err := config.Load(dir)
 	if err != nil {
 		return fmt.Errorf("loading config: %w", err)
 	}

@@ -89,6 +89,51 @@ func TestLoad_InvalidYAML(t *testing.T) {
 	}
 }
 
+func TestLoadFile_YAML(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "custom.yml")
+	if err := os.WriteFile(path, []byte("indent: 6\nwrite: true\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := LoadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Indent == nil || *cfg.Indent != 6 {
+		t.Errorf("indent: got %v, want 6", cfg.Indent)
+	}
+	if cfg.Write == nil || *cfg.Write != true {
+		t.Errorf("write: got %v, want true", cfg.Write)
+	}
+}
+
+func TestLoadFile_TOML(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "custom.toml")
+	if err := os.WriteFile(path, []byte("indent = 3\nnewline = false\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := LoadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Indent == nil || *cfg.Indent != 3 {
+		t.Errorf("indent: got %v, want 3", cfg.Indent)
+	}
+	if cfg.Newline == nil || *cfg.Newline != false {
+		t.Errorf("newline: got %v, want false", cfg.Newline)
+	}
+}
+
+func TestLoadFile_NotFound(t *testing.T) {
+	_, err := LoadFile("/nonexistent/path/config.yml")
+	if err == nil {
+		t.Error("expected error for nonexistent file")
+	}
+}
+
 func TestLoad_InvalidTOML(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, ".sanat.toml"), []byte("= invalid"), 0644); err != nil {

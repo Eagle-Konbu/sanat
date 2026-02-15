@@ -84,6 +84,7 @@ cat file.go | sanat > formatted.go
 | `-w, --write` | `false` | Overwrite files in place |
 | `--indent` | `2` | Indent width for SQL formatting |
 | `--newline` | `true` | Add newline after opening backtick |
+| `-c, --config` | | Path to config file |
 
 ## Configuration File
 
@@ -92,6 +93,12 @@ Settings can also be defined in a configuration file placed in the current direc
 1. `.sanat.yml`
 2. `.sanat.yaml`
 3. `.sanat.toml`
+
+You can also specify a config file explicitly with the `--config` (`-c`) flag:
+
+```bash
+sanat -c path/to/config.yml file.go
+```
 
 CLI flags take precedence over configuration file values when explicitly specified.
 
