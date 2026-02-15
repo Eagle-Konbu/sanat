@@ -85,6 +85,32 @@ cat file.go | sanat > formatted.go
 | `--indent` | `2` | Indent width for SQL formatting |
 | `--newline` | `true` | Add newline after opening backtick |
 
+## Configuration File
+
+Settings can also be defined in a configuration file placed in the current directory. The following files are searched in order:
+
+1. `.sanat.yml`
+2. `.sanat.yaml`
+3. `.sanat.toml`
+
+CLI flags take precedence over configuration file values when explicitly specified.
+
+### YAML example (`.sanat.yml`)
+
+```yaml
+write: true
+indent: 4
+newline: false
+```
+
+### TOML example (`.sanat.toml`)
+
+```toml
+write = true
+indent = 4
+newline = false
+```
+
 ## Supported SQL
 
 - `SELECT` (with subqueries, JOINs, window functions, CTEs)
