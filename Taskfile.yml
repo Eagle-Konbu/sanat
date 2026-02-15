@@ -28,7 +28,7 @@ tasks:
   build:
     desc: Build the project
     cmds:
-      - go build -v -o sanat ./cmd
+      - go build -v -o sanat .
 
   fmt:
     desc: Format code with gofmt and goreg

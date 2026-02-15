@@ -1,4 +1,4 @@
-package main
+package cmd
 
 import (
 	"fmt"
@@ -18,21 +18,26 @@ var (
 	newlineFlag bool
 )
 
-func main() {
-	root := &cobra.Command{
-		Use:          "sanat [flags] [pattern ...]",
-		Short:        "Format SQL strings in Go source files",
-		Long:         "Automatically formats embedded SQL string literals in Go source code.",
-		RunE:         run,
-		SilenceUsage: true,
-	}
-	root.Flags().BoolVarP(&writeFlag, "write", "w", false, "overwrite files in place")
-	root.Flags().IntVar(&indentFlag, "indent", 2, "indent width for SQL formatting")
-	root.Flags().BoolVar(&newlineFlag, "newline", true, "add newline after opening backtick")
+var rootCmd = &cobra.Command{
+	Use:          "sanat [flags] [pattern ...]",
+	Short:        "Format SQL strings in Go source files",
+	Long:         "Automatically formats embedded SQL string literals in Go source code.",
+	RunE:         run,
+	SilenceUsage: true,
+}
 
-	if err := root.Execute(); err != nil {
-		os.Exit(1)
-	}
+func SetVersion(v string) {
+	rootCmd.Version = v
+}
+
+func init() {
+	rootCmd.Flags().BoolVarP(&writeFlag, "write", "w", false, "overwrite files in place")
+	rootCmd.Flags().IntVar(&indentFlag, "indent", 2, "indent width for SQL formatting")
+	rootCmd.Flags().BoolVar(&newlineFlag, "newline", true, "add newline after opening backtick")
+}
+
+func Execute() error {
+	return rootCmd.Execute()
 }
 
 func opts() gofile.Options {
