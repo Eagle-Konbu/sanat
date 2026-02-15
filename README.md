@@ -120,7 +120,7 @@ newline = false
 
 ## Supported SQL
 
-- `SELECT` (with subqueries, JOINs, window functions, CTEs)
+- `SELECT`
 - `INSERT`
 - `UPDATE`
 - `DELETE`
