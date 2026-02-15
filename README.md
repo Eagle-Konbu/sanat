@@ -1,6 +1,7 @@
 # sanat
 
 [![CI](https://github.com/Eagle-Konbu/sanat/actions/workflows/ci.yml/badge.svg)](https://github.com/Eagle-Konbu/sanat/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/Eagle-Konbu/sanat/branch/main/graph/badge.svg)](https://codecov.io/gh/Eagle-Konbu/sanat)
 
 Yet another CLI tool that automatically formats embedded SQL literals in Go source files.
 
