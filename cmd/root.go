@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/Eagle-Konbu/sanat/internal/config"
 	"github.com/Eagle-Konbu/sanat/internal/gofile"
 )
 
@@ -16,6 +17,7 @@ var (
 	writeFlag   bool
 	indentFlag  int
 	newlineFlag bool
+	configFlag  string
 )
 
 var rootCmd = &cobra.Command{
@@ -35,10 +37,41 @@ func init() {
 	rootCmd.Flags().BoolVarP(&writeFlag, "write", "w", false, "overwrite files in place")
 	rootCmd.Flags().IntVar(&indentFlag, "indent", 2, "indent width for SQL formatting")
 	rootCmd.Flags().BoolVar(&newlineFlag, "newline", true, "add newline after opening backtick")
+	rootCmd.Flags().StringVarP(&configFlag, "config", "c", "", "path to config file")
 }
 
 func Execute() error {
 	return rootCmd.Execute()
+}
+
+func applyConfig(cmd *cobra.Command) error {
+	var cfg config.Config
+	var err error
+	if configFlag != "" {
+		cfg, err = config.LoadFile(configFlag)
+	} else {
+		var dir string
+		dir, err = os.Getwd()
+		if err != nil {
+			return err
+		}
+		cfg, err = config.Load(dir)
+	}
+	if err != nil {
+		return fmt.Errorf("loading config: %w", err)
+	}
+
+	// Config file values apply only when the flag was not explicitly set.
+	if !cmd.Flags().Changed("write") && cfg.Write != nil {
+		writeFlag = *cfg.Write
+	}
+	if !cmd.Flags().Changed("indent") && cfg.Indent != nil {
+		indentFlag = *cfg.Indent
+	}
+	if !cmd.Flags().Changed("newline") && cfg.Newline != nil {
+		newlineFlag = *cfg.Newline
+	}
+	return nil
 }
 
 func opts() gofile.Options {
@@ -48,7 +81,11 @@ func opts() gofile.Options {
 	}
 }
 
-func run(_ *cobra.Command, args []string) error {
+func run(cmd *cobra.Command, args []string) error {
+	if err := applyConfig(cmd); err != nil {
+		return err
+	}
+
 	if len(args) == 0 {
 		return processStdin()
 	}

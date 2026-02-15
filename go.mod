@@ -1,9 +1,11 @@
 module github.com/Eagle-Konbu/sanat
 
-go 1.25.5
+go 1.24.7
 
 require (
+	github.com/BurntSushi/toml v1.6.0
 	github.com/spf13/cobra v1.10.2
+	gopkg.in/yaml.v3 v3.0.1
 	vitess.io/vitess v0.22.0
 )
 
