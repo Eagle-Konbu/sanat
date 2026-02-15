@@ -28,7 +28,7 @@ tasks:
   build:
     desc: Build the project
     cmds:
-      - go build -v -o sql-assert ./cmd/sql-assert
+      - go build -v -o sql-assert ./cmd
 
   fmt:
     desc: Format code with gofmt and goreg
