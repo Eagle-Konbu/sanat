@@ -1,4 +1,4 @@
-module github.com/Eagle-Konbu/sql-assert
+module github.com/Eagle-Konbu/sanat
 
 go 1.25.5
 

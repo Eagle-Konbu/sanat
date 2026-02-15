@@ -7,7 +7,7 @@ import (
 	"go/token"
 	"strings"
 
-	"github.com/Eagle-Konbu/sql-assert/internal/sqlfmt"
+	"github.com/Eagle-Konbu/sanat/internal/sqlfmt"
 )
 
 type Options struct {

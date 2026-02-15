@@ -1,351 +1,109 @@
-# sql-assert
+# sanat
 
-[![CI](https://github.com/Eagle-Konbu/sql-assert/actions/workflows/test.yml/badge.svg)](https://github.com/Eagle-Konbu/sql-assert/actions/workflows/ci.yml)
-[![Go Reference](https://pkg.go.dev/badge/github.com/Eagle-Konbu/sql-assert.svg)](https://pkg.go.dev/github.com/Eagle-Konbu/sql-assert)
+[![CI](https://github.com/Eagle-Konbu/sanat/actions/workflows/test.yml/badge.svg)](https://github.com/Eagle-Konbu/sanat/actions/workflows/ci.yml)
+[![Go Reference](https://pkg.go.dev/badge/github.com/Eagle-Konbu/sanat.svg)](https://pkg.go.dev/github.com/Eagle-Konbu/sanat)
 
-A Go test helper library for validating SQL queries via AST inspection, without database execution.
+Yet another CLI tool that automatically formats embedded SQL literals in Go source files.
 
 ## Overview
 
-`sql-assert` provides testify/require-like APIs to validate SQL "contracts" using AST parsing. It enables fast, stable tests for SQL-generating code without needing database connections or fragile string comparisons.
+`sanat` scans Go source files for raw string literals (backtick strings) containing SQL, parses them, and reformats them into a consistent, readable style.
 
-### Why AST-based Contract Validation?
+### Before
 
-When testing SQL-generating code, you typically want to validate the **semantic intent** of the query rather than exact string equality. String comparison tests are brittle and break on harmless changes like:
+```go
+db.Query(`select u.id, o.total from users u join orders o on u.id = o.user_id where o.total > ?`, 100)
+```
 
-- Formatting differences (whitespace, newlines)
-- Keyword case changes (`SELECT` vs `select`)
-- Identifier quoting (`` `users` `` vs `users`)
-- Semantically equivalent refactors
+### After
 
-AST-based validation solves this by:
-
-1. **Parsing SQL into a structured tree** - Normalizes formatting and case
-2. **Checking semantic properties** - "Does this query join table X?" not "Does it contain 'JOIN X'?"
-3. **Being refactor-tolerant** - Validates contracts, not implementation details
-4. **Running instantly** - No database setup, connections, or data fixtures
-5. **Providing clear failures** - Precise error messages about what's missing
-
-### Design Philosophy
-
-**Contract Validation, Not Equivalence**
-
-This library validates that SQL queries satisfy specific **contracts**:
-
-- ✅ "The query must SELECT from table `users`"
-- ✅ "The WHERE clause must reference column `status`"
-- ✅ "The query must have a LIMIT clause"
-- ✅ "The window function must PARTITION BY `category`"
-
-**Not:**
-
-- ❌ "The query must be exactly equal to this reference query"
-- ❌ "The AST must match this exact structure"
-
-**Presence-Based, Not Exhaustive**
-
-Assertions check for the **presence** of required elements, not their absence or exact positioning:
-
-- `RequireFromHasTable(t, sel, "users")` passes if `users` appears **anywhere** in the FROM/JOIN tree
-- `RequireWhereContainsColumn(t, sel, "", "id")` passes if `id` appears **anywhere** in the WHERE clause
-- `RequireWindowPartitionByHasColumn(t, win, "grp")` passes if `grp` appears in PARTITION BY
-
-This tolerance makes tests robust to refactoring while still catching real contract violations.
+```go
+db.Query(`
+SELECT
+  u.id,
+  o.total
+FROM
+  users u
+  JOIN
+  orders o
+    ON u.id = o.user_id
+WHERE
+  o.total > ?
+`, 100)
+```
 
 ## Features
 
-- **No database execution** - Pure AST inspection, no connections required
-- **MySQL 8.0 dialect** - Full support including window functions
-- **Semantic validation** - Check query structure, not string formatting
-- **Clear error messages** - Testify-style assertions with helpful failures
-- **Tolerant matching** - Case-insensitive, handles backticks, formatting-agnostic
-- **Comprehensive API** - Parse, type, FROM/JOIN, SELECT, WHERE, ORDER BY, LIMIT, window functions, expression matchers
+- Formats SQL in raw string literals (backticks)
+- Supports SELECT, INSERT, UPDATE, DELETE, and UNION statements
+- Preserves placeholders (`?`)
+- Skips non-SQL strings (plain text, fmt templates, URLs)
+- Configurable indentation
+- Stdin/stdout support for editor integration
 
 ## Installation
 
 ```bash
-go get github.com/Eagle-Konbu/sql-assert
+go install github.com/Eagle-Konbu/sanat@latest
+```
+
+Or build from source:
+
+```bash
+git clone https://github.com/Eagle-Konbu/sanat.git
+cd sanat
+go build -o sanat ./cmd
 ```
 
 ## Usage
 
-### Basic Example: Generic SELECT
-
-```go
-package myapp_test
-
-import (
-    "testing"
-    "github.com/Eagle-Konbu/sql-assert/sqlassert"
-)
-
-func TestGenerateUserQuery(t *testing.T) {
-    sql := GenerateUserQuery() // Your SQL-generating function
-    // Example: "SELECT col1, col2 FROM t WHERE col1 = ? ORDER BY col2 LIMIT 10"
-
-    // Parse and validate it's a SELECT
-    stmt := sqlassert.RequireParseOne(t, sql)
-    sel := sqlassert.RequireSelect(t, stmt)
-
-    // Validate contracts
-    sqlassert.RequireFromHasTable(t, sel, "t")
-    sqlassert.RequireHasWhere(t, sel)
-    sqlassert.RequireWhereContainsColumn(t, sel, "", "col1")
-    sqlassert.RequireHasOrderBy(t, sel)
-    sqlassert.RequireHasLimit(t, sel)
-}
-```
-
-### JOIN Queries
-
-```go
-func TestJoinQuery(t *testing.T) {
-    sql := `SELECT t1.a, t2.b
-        FROM t1 JOIN t2 ON t1.id = t2.t1_id
-        WHERE t2.b IS NOT NULL`
-
-    stmt := sqlassert.RequireParseOne(t, sql)
-    sel := sqlassert.RequireSelect(t, stmt)
-
-    // Validates both tables appear in FROM/JOIN tree
-    sqlassert.RequireFromHasTable(t, sel, "t1")
-    sqlassert.RequireFromHasTable(t, sel, "t2")
-
-    // WHERE references t2.b
-    sqlassert.RequireWhereContainsColumn(t, sel, "t2", "b")
-}
-```
-
-### MySQL 8 Window Functions
-
-```go
-func TestWindowFunction(t *testing.T) {
-    sql := `SELECT id,
-        ROW_NUMBER() OVER (PARTITION BY grp ORDER BY created_at) AS rn
-        FROM t`
-
-    stmt := sqlassert.RequireParseOne(t, sql)
-    sel := sqlassert.RequireSelect(t, stmt)
-
-    // Validate basic structure
-    sqlassert.RequireFromHasTable(t, sel, "t")
-    sqlassert.RequireSelectHasAlias(t, sel, "rn")
-
-    // Validate window function
-    winExpr := sqlassert.RequireHasWindowFunc(t, sel, "ROW_NUMBER")
-    sqlassert.RequireWindowPartitionByHasColumn(t, winExpr, "grp")
-    sqlassert.RequireWindowOrderByHasColumn(t, winExpr, "created_at")
-}
-```
-
-### SELECT Clause Validation
-
-```go
-func TestSelectColumns(t *testing.T) {
-    sql := `SELECT id, name AS user_name, COUNT(*) AS total FROM users`
-
-    stmt := sqlassert.RequireParseOne(t, sql)
-    sel := sqlassert.RequireSelect(t, stmt)
-
-    // Check for aliases
-    sqlassert.RequireSelectHasAlias(t, sel, "user_name")
-    sqlassert.RequireSelectHasAlias(t, sel, "total")
-
-    // Check specific column with alias
-    sqlassert.RequireSelectExpr(t, sel, sqlassert.Selector{
-        Alias:  "user_name",
-        Column: "name",
-    })
-
-    // Check aggregate function
-    sqlassert.RequireSelectExpr(t, sel, sqlassert.Selector{
-        Alias: "total",
-        Func:  "COUNT",
-    })
-}
-```
-
-### Expression Matchers
-
-For more complex validations, use composable expression matchers:
-
-```go
-func TestComplexWhere(t *testing.T) {
-    sql := `SELECT id FROM users WHERE id = 123 AND name = 'test'`
-
-    stmt := sqlassert.RequireParseOne(t, sql)
-    sel := sqlassert.RequireSelect(t, stmt)
-    where := sqlassert.RequireHasWhere(t, sel)
-
-    // Match the AND expression structure
-    andMatcher := sqlassert.Binary("AND",
-        sqlassert.Binary("=", sqlassert.Col("", "id"), sqlassert.Any()),
-        sqlassert.Binary("=", sqlassert.Col("", "name"), sqlassert.Any()),
-    )
-
-    sqlassert.RequireExprMatch(t, where, andMatcher)
-}
-```
-
-Available matchers:
-- `Col(tableAlias, column)` - Match column references
-- `Func(name, args...)` - Match function calls
-- `Binary(op, left, right)` - Match binary operations
-- `Subquery(validator)` - Match subqueries
-- `Any()` - Match any expression
-
-## API Reference
-
-### Parsing
-
-```go
-func ParseOne(sql string) (ast.StmtNode, error)
-func RequireParseOne(t *testing.T, sql string) ast.StmtNode
-```
-
-### Statement Type Assertions
-
-```go
-func RequireSelect(t *testing.T, stmt ast.StmtNode) *ast.SelectStmt
-func RequireInsert(t *testing.T, stmt ast.StmtNode) *ast.InsertStmt
-func RequireUpdate(t *testing.T, stmt ast.StmtNode) *ast.UpdateStmt
-func RequireDelete(t *testing.T, stmt ast.StmtNode) *ast.DeleteStmt
-```
-
-### FROM/JOIN Detection
-
-```go
-// Checks if table appears anywhere in FROM/JOIN tree
-func RequireFromHasTable(t *testing.T, sel *ast.SelectStmt, table string, aliasOpt ...string)
-```
-
-### SELECT Clause
-
-```go
-func RequireSelectHasAlias(t *testing.T, sel *ast.SelectStmt, alias string)
-func RequireSelectExpr(t *testing.T, sel *ast.SelectStmt, s Selector) ast.ExprNode
-
-type Selector struct {
-    Alias  string // The alias (AS name)
-    Column string // Column name (for simple column references)
-    Func   string // Function name (for function calls)
-}
-```
-
-### WHERE/ORDER BY/LIMIT
-
-```go
-func RequireHasWhere(t *testing.T, node any) ast.ExprNode
-func RequireWhereContainsColumn(t *testing.T, node any, tableAliasOpt string, column string)
-func RequireHasOrderBy(t *testing.T, sel *ast.SelectStmt)
-func RequireHasLimit(t *testing.T, sel *ast.SelectStmt)
-```
-
-### Window Functions
-
-```go
-func RequireHasWindowFunc(t *testing.T, sel *ast.SelectStmt, funcName string) ast.ExprNode
-func RequireWindowPartitionByHasColumn(t *testing.T, winExpr ast.ExprNode, column string, tableAliasOpt ...string)
-func RequireWindowOrderByHasColumn(t *testing.T, winExpr ast.ExprNode, column string, tableAliasOpt ...string)
-```
-
-### Expression Matchers
-
-```go
-type Matcher interface {
-    Match(ast.ExprNode) bool
-    Describe() string
-}
-
-func RequireExprMatch(t *testing.T, expr ast.ExprNode, m Matcher)
-func Col(tableAlias, column string) Matcher
-func Func(name string, args ...Matcher) Matcher
-func Binary(op string, left, right Matcher) Matcher
-func Subquery(inner func(*ast.SelectStmt) error) Matcher
-func Any() Matcher
-```
-
-## MySQL Dialect Support
-
-### LIMIT Formats
-
-All MySQL LIMIT formats are supported:
-
-```sql
-LIMIT 10
-LIMIT 5, 10
-LIMIT 10 OFFSET 5
-```
-
-### Identifier Normalization
-
-- **Case-insensitive** - `SELECT`, `select`, `SeLeCt` all match
-- **Backtick-tolerant** - `` `users` `` and `users` are equivalent
-- **Whitespace-agnostic** - Formatting differences are ignored
-
-### Window Functions
-
-Supported window functions include:
-- `ROW_NUMBER()`
-- `RANK()`
-- `DENSE_RANK()`
-- `LAG()`
-- `LEAD()`
-- And all other MySQL 8.0 window functions
-
-Aggregate functions with `OVER` clause are also supported.
-
-## Non-Goals
-
-This library intentionally does **not**:
-
-- ❌ Execute SQL against a database
-- ❌ Validate SQL correctness (syntax errors are caught, but semantic validity is not guaranteed)
-- ❌ Check query equivalence (two different queries that produce the same result)
-- ❌ Optimize or rewrite queries
-- ❌ Support dialects other than MySQL 8.0 (may work with MariaDB, but not guaranteed)
-- ❌ Guarantee exhaustive structural matching (uses presence-based validation)
-
-## Implementation
-
-Built on [TiDB SQL Parser](https://github.com/pingcap/parser), a production-grade MySQL-compatible SQL parser extracted from TiDB. The parser is used in read-only mode for AST inspection - no execution or modification occurs.
-
-## Testing
-
-Run the test suite:
+### Format files and print to stdout
 
 ```bash
-go test ./...
+sanat file.go
+sanat ./...
 ```
 
-Run with coverage:
+### Format files in place
 
 ```bash
-go test -coverprofile=coverage.txt ./...
-go tool cover -html=coverage.txt
+sanat -w file.go
+sanat -w ./...
 ```
 
-## Contributing
+### Format from stdin
 
-Contributions are welcome! Please:
+```bash
+cat file.go | sanat > formatted.go
+```
 
-1. Fork the repository
-2. Create a feature branch
-3. Add tests for new functionality
-4. Ensure all tests pass
-5. Submit a pull request
+### Options
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-w, --write` | `false` | Overwrite files in place |
+| `--indent` | `2` | Indent width for SQL formatting |
+| `--newline` | `true` | Add newline after opening backtick |
+
+## Supported SQL
+
+- `SELECT` (with subqueries, JOINs, window functions, CTEs)
+- `INSERT`
+- `UPDATE`
+- `DELETE`
+- `UNION`
+
+Strings that don't parse as valid SQL are left unchanged.
+
+## How It Works
+
+1. Parses Go source files using `go/parser`
+2. Finds raw string literals (backtick strings)
+3. Detects SQL by checking for keywords (SELECT, INSERT, UPDATE, DELETE)
+4. Parses SQL using [Vitess](https://vitess.io/) SQL parser
+5. Reformats SQL with consistent indentation
+6. Outputs modified Go source
 
 ## License
 
-MIT License - see LICENSE file for details.
-
-## Related Projects
-
-- [TiDB Parser](https://github.com/pingcap/parser) - The underlying SQL parser
-- [testify](https://github.com/stretchr/testify) - Inspiration for the assertion API style
-- [sqlparser](https://github.com/xwb1989/sqlparser) - Alternative MySQL parser
-
-## Support
-
-- **Issues**: [GitHub Issues](https://github.com/Eagle-Konbu/sql-assert/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/Eagle-Konbu/sql-assert/discussions)
+MIT
