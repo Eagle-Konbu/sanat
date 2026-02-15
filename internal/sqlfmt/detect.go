@@ -15,8 +15,10 @@ func MightBeSQL(s string) bool {
 	if s == "" {
 		return false
 	}
+
 	if fmtVerbRe.MatchString(s) {
 		return false
 	}
+
 	return sqlPrefixRe.MatchString(s)
 }

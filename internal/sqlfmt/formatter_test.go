@@ -1,8 +1,10 @@
-package sqlfmt
+package sqlfmt_test
 
 import (
 	"strings"
 	"testing"
+
+	"github.com/Eagle-Konbu/sanat/internal/sqlfmt"
 )
 
 func TestFormatSQL_Select(t *testing.T) {
@@ -97,12 +99,15 @@ func TestFormatSQL_Select(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, ok := FormatSQL(tt.in, 2)
+			got, ok := sqlfmt.FormatSQL(tt.in, 2)
 			if ok != tt.ok {
 				t.Errorf("FormatSQL ok = %v, want %v", ok, tt.ok)
 			}
+
 			got = strings.TrimRight(got, "\n")
+
 			want := strings.TrimRight(tt.want, "\n")
+
 			if got != want {
 				t.Errorf("FormatSQL:\ngot:\n%s\n\nwant:\n%s", got, want)
 			}
@@ -111,10 +116,11 @@ func TestFormatSQL_Select(t *testing.T) {
 }
 
 func TestFormatSQL_Insert(t *testing.T) {
-	got, ok := FormatSQL("insert into users (name, email) values (?, ?)", 2)
+	got, ok := sqlfmt.FormatSQL("insert into users (name, email) values (?, ?)", 2)
 	if !ok {
 		t.Fatal("expected ok")
 	}
+
 	want := join(
 		"INSERT INTO",
 		"  users",
@@ -126,17 +132,20 @@ func TestFormatSQL_Insert(t *testing.T) {
 		"  (?, ?)",
 	)
 	got = strings.TrimRight(got, "\n")
+
 	want = strings.TrimRight(want, "\n")
+
 	if got != want {
 		t.Errorf("got:\n%s\n\nwant:\n%s", got, want)
 	}
 }
 
 func TestFormatSQL_Update(t *testing.T) {
-	got, ok := FormatSQL("update users set name = ?, email = ? where id = ?", 2)
+	got, ok := sqlfmt.FormatSQL("update users set name = ?, email = ? where id = ?", 2)
 	if !ok {
 		t.Fatal("expected ok")
 	}
+
 	want := join(
 		"UPDATE",
 		"  users",
@@ -147,17 +156,20 @@ func TestFormatSQL_Update(t *testing.T) {
 		"  id = ?",
 	)
 	got = strings.TrimRight(got, "\n")
+
 	want = strings.TrimRight(want, "\n")
+
 	if got != want {
 		t.Errorf("got:\n%s\n\nwant:\n%s", got, want)
 	}
 }
 
 func TestFormatSQL_Delete(t *testing.T) {
-	got, ok := FormatSQL("delete from users where id = ?", 2)
+	got, ok := sqlfmt.FormatSQL("delete from users where id = ?", 2)
 	if !ok {
 		t.Fatal("expected ok")
 	}
+
 	want := join(
 		"DELETE FROM",
 		"  users",
@@ -165,7 +177,9 @@ func TestFormatSQL_Delete(t *testing.T) {
 		"  id = ?",
 	)
 	got = strings.TrimRight(got, "\n")
+
 	want = strings.TrimRight(want, "\n")
+
 	if got != want {
 		t.Errorf("got:\n%s\n\nwant:\n%s", got, want)
 	}
@@ -173,10 +187,12 @@ func TestFormatSQL_Delete(t *testing.T) {
 
 func TestFormatSQL_Subquery(t *testing.T) {
 	in := "select u.id, u.name from users u where exists (select 1 from orders o where o.user_id = u.id and o.created_at >= ?) and u.status = ?"
-	got, ok := FormatSQL(in, 2)
+
+	got, ok := sqlfmt.FormatSQL(in, 2)
 	if !ok {
 		t.Fatal("expected ok")
 	}
+
 	want := join(
 		"SELECT",
 		"  u.id,",
@@ -196,7 +212,110 @@ func TestFormatSQL_Subquery(t *testing.T) {
 		"  AND u.status = ?",
 	)
 	got = strings.TrimRight(got, "\n")
+
 	want = strings.TrimRight(want, "\n")
+
+	if got != want {
+		t.Errorf("got:\n%s\n\nwant:\n%s", got, want)
+	}
+}
+
+func TestFormatSQL_Union(t *testing.T) {
+	got, ok := sqlfmt.FormatSQL("select id from users union all select id from admins", 2)
+	if !ok {
+		t.Fatal("expected ok")
+	}
+
+	want := join(
+		"SELECT",
+		"  id",
+		"FROM",
+		"  users",
+		"UNION ALL",
+		"SELECT",
+		"  id",
+		"FROM",
+		"  admins",
+	)
+	got = strings.TrimRight(got, "\n")
+	want = strings.TrimRight(want, "\n")
+
+	if got != want {
+		t.Errorf("got:\n%s\n\nwant:\n%s", got, want)
+	}
+}
+
+func TestFormatSQL_InsertOnDuplicateKey(t *testing.T) {
+	got, ok := sqlfmt.FormatSQL("insert into users (name, email) values (?, ?) on duplicate key update name = values(name), email = values(email)", 2)
+	if !ok {
+		t.Fatal("expected ok")
+	}
+
+	want := join(
+		"INSERT INTO",
+		"  users",
+		"(",
+		"  name,",
+		"  email",
+		")",
+		"VALUES",
+		"  (?, ?)",
+		"ON DUPLICATE KEY UPDATE",
+		"  name = values(name),",
+		"  email = values(email)",
+	)
+	got = strings.TrimRight(got, "\n")
+	want = strings.TrimRight(want, "\n")
+
+	if got != want {
+		t.Errorf("got:\n%s\n\nwant:\n%s", got, want)
+	}
+}
+
+func TestFormatSQL_DerivedTable(t *testing.T) {
+	got, ok := sqlfmt.FormatSQL("select t.id from (select id from users) t", 2)
+	if !ok {
+		t.Fatal("expected ok")
+	}
+
+	want := join(
+		"SELECT",
+		"  t.id",
+		"FROM",
+		"  (",
+		"  SELECT",
+		"    id",
+		"  FROM",
+		"    users",
+		"  ) t",
+	)
+	got = strings.TrimRight(got, "\n")
+	want = strings.TrimRight(want, "\n")
+
+	if got != want {
+		t.Errorf("got:\n%s\n\nwant:\n%s", got, want)
+	}
+}
+
+func TestFormatSQL_LimitOffset(t *testing.T) {
+	got, ok := sqlfmt.FormatSQL("select id from users limit 10 offset 20", 2)
+	if !ok {
+		t.Fatal("expected ok")
+	}
+
+	want := join(
+		"SELECT",
+		"  id",
+		"FROM",
+		"  users",
+		"LIMIT",
+		"  10",
+		"OFFSET",
+		"  20",
+	)
+	got = strings.TrimRight(got, "\n")
+	want = strings.TrimRight(want, "\n")
+
 	if got != want {
 		t.Errorf("got:\n%s\n\nwant:\n%s", got, want)
 	}

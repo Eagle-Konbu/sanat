@@ -1,6 +1,10 @@
-package sqlfmt
+package sqlfmt_test
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/Eagle-Konbu/sanat/internal/sqlfmt"
+)
 
 func TestMightBeSQL(t *testing.T) {
 	tests := []struct {
@@ -27,7 +31,7 @@ func TestMightBeSQL(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := MightBeSQL(tt.in)
+			got := sqlfmt.MightBeSQL(tt.in)
 			if got != tt.want {
 				t.Errorf("MightBeSQL(%q) = %v, want %v", tt.in, got, tt.want)
 			}

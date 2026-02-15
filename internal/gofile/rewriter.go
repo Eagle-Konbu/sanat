@@ -20,14 +20,17 @@ func RewriteFile(fset *token.FileSet, file *ast.File, literals []SQLLiteral, opt
 		if !sqlfmt.MightBeSQL(lit.Original) {
 			continue
 		}
+
 		formatted, ok := sqlfmt.FormatSQL(lit.Original, opts.Indent)
 		if !ok {
 			continue
 		}
+
 		formatted = strings.TrimRight(formatted, "\n")
 		if opts.Newline {
 			formatted = "\n" + formatted + "\n"
 		}
+
 		lit.Node.Value = "`" + formatted + "`"
 	}
 
@@ -35,5 +38,6 @@ func RewriteFile(fset *token.FileSet, file *ast.File, literals []SQLLiteral, opt
 	if err := format.Node(&buf, fset, file); err != nil {
 		return nil, err
 	}
+
 	return buf.Bytes(), nil
 }

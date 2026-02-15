@@ -1,9 +1,12 @@
-package gofile
+package gofile_test
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/Eagle-Konbu/sanat/internal/gofile"
 )
 
 func TestGoldenFiles(t *testing.T) {
@@ -19,6 +22,7 @@ func TestGoldenFiles(t *testing.T) {
 		if entry.IsDir() || filepath.Ext(entry.Name()) != ".go" {
 			continue
 		}
+
 		t.Run(entry.Name(), func(t *testing.T) {
 			inputPath := filepath.Join(inputDir, entry.Name())
 			expectedPath := filepath.Join(expectedDir, entry.Name())
@@ -27,21 +31,23 @@ func TestGoldenFiles(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+
 			expected, err := os.ReadFile(expectedPath)
 			if err != nil {
 				t.Fatal(err)
 			}
 
-			file, fset, literals, err := FindSQLLiterals(src, entry.Name())
-			if err != nil {
-				t.Fatal(err)
-			}
-			got, err := RewriteFile(fset, file, literals, Options{Indent: 2, Newline: true})
+			file, fset, literals, err := gofile.FindSQLLiterals(src, entry.Name())
 			if err != nil {
 				t.Fatal(err)
 			}
 
-			if string(got) != string(expected) {
+			got, err := gofile.RewriteFile(fset, file, literals, gofile.Options{Indent: 2, Newline: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if !bytes.Equal(got, expected) {
 				t.Errorf("output mismatch for %s\ngot:\n%s\nwant:\n%s", entry.Name(), got, expected)
 			}
 		})

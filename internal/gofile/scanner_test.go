@@ -1,8 +1,13 @@
-package gofile
+package gofile_test
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/Eagle-Konbu/sanat/internal/gofile"
+)
 
 func TestFindSQLLiterals_OnlyRawStrings(t *testing.T) {
+	//nolint: unqueryvet // intentionally includes concatenated query for testing
 	src := []byte(`package main
 
 import "database/sql"
@@ -15,7 +20,8 @@ func example(db *sql.DB) {
 	db.Query(` + "`select * from orders`" + `)
 }
 `)
-	_, _, literals, err := FindSQLLiterals(src, "test.go")
+
+	_, _, literals, err := gofile.FindSQLLiterals(src, "test.go")
 	if err != nil {
 		t.Fatal(err)
 	}

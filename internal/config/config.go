@@ -10,9 +10,9 @@ import (
 )
 
 type Config struct {
-	Write   *bool `yaml:"write" toml:"write"`
-	Indent  *int  `yaml:"indent" toml:"indent"`
-	Newline *bool `yaml:"newline" toml:"newline"`
+	Write   *bool `toml:"write"   yaml:"write"`
+	Indent  *int  `toml:"indent"  yaml:"indent"`
+	Newline *bool `toml:"newline" yaml:"newline"`
 }
 
 var configFiles = []string{
@@ -23,32 +23,40 @@ var configFiles = []string{
 
 // LoadFile reads and decodes the config file at the given path.
 func LoadFile(path string) (Config, error) {
-	data, err := os.ReadFile(path)
+	cleanPath := filepath.Clean(path)
+
+	data, err := os.ReadFile(cleanPath)
 	if err != nil {
 		return Config{}, err
 	}
-	return decode(filepath.Base(path), data)
+
+	return decode(filepath.Base(cleanPath), data)
 }
 
 // Load searches for a config file in the given directory and decodes it.
 // Returns a zero Config and nil error if no config file is found.
 func Load(dir string) (Config, error) {
 	for _, name := range configFiles {
-		path := filepath.Join(dir, name)
+		path := filepath.Clean(filepath.Join(dir, name))
+
 		data, err := os.ReadFile(path)
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
 				continue
 			}
+
 			return Config{}, err
 		}
+
 		return decode(name, data)
 	}
+
 	return Config{}, nil
 }
 
 func decode(name string, data []byte) (Config, error) {
 	var cfg Config
+
 	switch filepath.Ext(name) {
 	case ".toml":
 		if err := toml.Unmarshal(data, &cfg); err != nil {
@@ -59,5 +67,6 @@ func decode(name string, data []byte) (Config, error) {
 			return Config{}, err
 		}
 	}
+
 	return cfg, nil
 }

@@ -8,24 +8,28 @@ import (
 	"vitess.io/vitess/go/vt/sqlparser"
 )
 
+const descDir = " DESC"
+
 var (
 	parser        = sqlparser.NewTestParser()
 	sentinelRe    = regexp.MustCompile(`:_sqla_ph_(\d+)`)
 	placeholderRe = regexp.MustCompile(`\?`)
 )
 
-// FormatSQL parses and formats a SQL string. Returns formatted SQL and true on success.
-// On parse failure, returns the original string and false.
 func FormatSQL(sql string, indent int) (string, bool) {
 	replaced, count := replacePlaceholders(sql)
+
 	stmt, err := parser.Parse(replaced)
 	if err != nil {
 		return sql, false
 	}
+
 	var b strings.Builder
+
 	formatStatement(&b, stmt, 0, indent)
 	result := restorePlaceholders(b.String(), count)
 	result = stripIdentifierBackticks(result)
+
 	return result, true
 }
 
@@ -38,8 +42,10 @@ func replacePlaceholders(sql string) (string, int) {
 	result := placeholderRe.ReplaceAllStringFunc(sql, func(_ string) string {
 		s := fmt.Sprintf(":_sqla_ph_%d", count)
 		count++
+
 		return s
 	})
+
 	return result, count
 }
 
@@ -73,9 +79,11 @@ func formatSelect(b *strings.Builder, s *sqlparser.Select, depth, indent int) {
 	pi := pad(depth+1, indent)
 
 	b.WriteString(p + "SELECT")
+
 	if s.Distinct {
 		b.WriteString(" DISTINCT")
 	}
+
 	b.WriteString("\n")
 	formatSelectExprs(b, s.SelectExprs, pi, indent, depth)
 
@@ -89,36 +97,14 @@ func formatSelect(b *strings.Builder, s *sqlparser.Select, depth, indent int) {
 		formatWhere(b, s.Where.Expr, pi, indent, depth)
 	}
 
-	if s.GroupBy != nil && len(s.GroupBy.Exprs) > 0 {
-		b.WriteString(p + "GROUP BY\n")
-		for i, expr := range s.GroupBy.Exprs {
-			b.WriteString(pi + formatExpr(expr, indent, depth))
-			if i < len(s.GroupBy.Exprs)-1 {
-				b.WriteString(",")
-			}
-			b.WriteString("\n")
-		}
-	}
+	formatGroupBy(b, s.GroupBy, p, pi, indent, depth)
 
 	if s.Having != nil {
 		b.WriteString(p + "HAVING\n")
 		formatWhere(b, s.Having.Expr, pi, indent, depth)
 	}
 
-	if len(s.OrderBy) > 0 {
-		b.WriteString(p + "ORDER BY\n")
-		for i, order := range s.OrderBy {
-			dir := ""
-			if order.Direction == sqlparser.DescOrder {
-				dir = " DESC"
-			}
-			b.WriteString(pi + formatExpr(order.Expr, indent, depth) + dir)
-			if i < len(s.OrderBy)-1 {
-				b.WriteString(",")
-			}
-			b.WriteString("\n")
-		}
-	}
+	formatOrderBy(b, s.OrderBy, p, pi, indent, depth)
 
 	if s.Limit != nil {
 		formatLimit(b, s.Limit, p, indent, depth)
@@ -129,11 +115,14 @@ func formatSelectExprs(b *strings.Builder, exprs *sqlparser.SelectExprs, pi stri
 	if exprs == nil {
 		return
 	}
+
 	for i, expr := range exprs.Exprs {
 		b.WriteString(pi + formatSelectExpr(expr, indent, depth))
+
 		if i < len(exprs.Exprs)-1 {
 			b.WriteString(",")
 		}
+
 		b.WriteString("\n")
 	}
 }
@@ -145,11 +134,13 @@ func formatSelectExpr(expr sqlparser.SelectExpr, indent, depth int) string {
 		if !e.As.IsEmpty() {
 			s += " AS " + e.As.String()
 		}
+
 		return s
 	case *sqlparser.StarExpr:
 		if e.TableName.Name.IsEmpty() {
 			return "*"
 		}
+
 		return e.TableName.Name.String() + ".*"
 	default:
 		return sqlparser.String(expr)
@@ -162,33 +153,12 @@ func formatTableExprs(b *strings.Builder, exprs []sqlparser.TableExpr, pi string
 	}
 }
 
-func formatTableExpr(b *strings.Builder, expr sqlparser.TableExpr, pi string, indent, depth int, comma bool) {
+func formatTableExpr(b *strings.Builder, expr sqlparser.TableExpr, pi string, indent, depth int, _ bool) {
 	switch e := expr.(type) {
 	case *sqlparser.AliasedTableExpr:
-		prefix := pi
-		if comma {
-			prefix = pi
-		}
-		switch sub := e.Expr.(type) {
-		case *sqlparser.DerivedTable:
-			b.WriteString(prefix + "(\n")
-			formatStatement(b, sub.Select, depth+1, indent)
-			b.WriteString(prefix + ")")
-		default:
-			b.WriteString(prefix + sqlparser.String(e.Expr))
-		}
-		if !e.As.IsEmpty() {
-			b.WriteString(" " + e.As.String())
-		}
-		b.WriteString("\n")
+		formatAliasedTableExpr(b, e, pi, indent, depth)
 	case *sqlparser.JoinTableExpr:
-		formatTableExpr(b, e.LeftExpr, pi, indent, depth, false)
-		joinStr := strings.ToUpper(e.Join.ToString())
-		b.WriteString(pi + joinStr + "\n")
-		formatTableExpr(b, e.RightExpr, pi, indent, depth, false)
-		if e.Condition != nil && e.Condition.On != nil {
-			b.WriteString(pad(depth+2, indent) + "ON " + formatExpr(e.Condition.On, indent, depth) + "\n")
-		}
+		formatJoinTableExpr(b, e, pi, indent, depth)
 	case *sqlparser.ParenTableExpr:
 		b.WriteString(pi + "(\n")
 		formatTableExprs(b, e.Exprs, pad(depth+2, indent), indent, depth+1)
@@ -198,12 +168,40 @@ func formatTableExpr(b *strings.Builder, expr sqlparser.TableExpr, pi string, in
 	}
 }
 
+func formatAliasedTableExpr(b *strings.Builder, e *sqlparser.AliasedTableExpr, pi string, indent, depth int) {
+	if sub, ok := e.Expr.(*sqlparser.DerivedTable); ok {
+		b.WriteString(pi + "(\n")
+		formatStatement(b, sub.Select, depth+1, indent)
+		b.WriteString(pi + ")")
+	} else {
+		b.WriteString(pi + sqlparser.String(e.Expr))
+	}
+
+	if !e.As.IsEmpty() {
+		b.WriteString(" " + e.As.String())
+	}
+
+	b.WriteString("\n")
+}
+
+func formatJoinTableExpr(b *strings.Builder, e *sqlparser.JoinTableExpr, pi string, indent, depth int) {
+	formatTableExpr(b, e.LeftExpr, pi, indent, depth, false)
+	joinStr := strings.ToUpper(e.Join.ToString())
+	b.WriteString(pi + joinStr + "\n")
+	formatTableExpr(b, e.RightExpr, pi, indent, depth, false)
+
+	if e.Condition != nil && e.Condition.On != nil {
+		b.WriteString(pad(depth+2, indent) + "ON " + formatExpr(e.Condition.On, indent, depth) + "\n")
+	}
+}
+
 func formatWhere(b *strings.Builder, expr sqlparser.Expr, pi string, indent, depth int) {
 	formatWhereExpr(b, expr, pi, indent, depth, true)
 }
 
 func formatWhereExpr(b *strings.Builder, expr sqlparser.Expr, pi string, indent, depth int, first bool) {
 	exprDepth := depth + 1
+
 	switch e := expr.(type) {
 	case *sqlparser.AndExpr:
 		formatWhereExpr(b, e.Left, pi, indent, depth, first)
@@ -224,18 +222,23 @@ func formatExpr(expr sqlparser.Expr, indent, depth int) string {
 	switch e := expr.(type) {
 	case *sqlparser.ExistsExpr:
 		var b strings.Builder
+
 		b.WriteString("EXISTS (\n")
 		formatStatement(&b, e.Subquery.Select, depth+1, indent)
 		b.WriteString(pad(depth, indent) + ")")
+
 		return b.String()
 	case *sqlparser.Subquery:
 		var b strings.Builder
+
 		b.WriteString("(\n")
 		formatStatement(&b, e.Select, depth+1, indent)
 		b.WriteString(pad(depth, indent) + ")")
+
 		return b.String()
 	case *sqlparser.ComparisonExpr:
 		right := formatExpr(e.Right, indent, depth)
+
 		return formatExpr(e.Left, indent, depth) + " " + e.Operator.ToString() + " " + right
 	default:
 		return upperKeywords(sqlparser.String(expr))
@@ -250,50 +253,76 @@ func formatInsert(b *strings.Builder, s *sqlparser.Insert, depth, indent int) {
 	if s.Action == sqlparser.ReplaceAct {
 		action = "REPLACE"
 	}
+
 	b.WriteString(p + action + " INTO\n")
 	b.WriteString(pi + sqlparser.String(s.Table) + "\n")
 
-	if len(s.Columns) > 0 {
-		b.WriteString(p + "(\n")
-		for i, col := range s.Columns {
-			b.WriteString(pi + col.String())
-			if i < len(s.Columns)-1 {
-				b.WriteString(",")
-			}
-			b.WriteString("\n")
-		}
-		b.WriteString(p + ")\n")
+	formatInsertColumns(b, s.Columns, p, pi)
+	formatInsertRows(b, s.Rows, p, pi, indent, depth)
+	formatOnDupUpdate(b, s.OnDup, p, pi)
+}
+
+func formatInsertColumns(b *strings.Builder, cols sqlparser.Columns, p, pi string) {
+	if len(cols) == 0 {
+		return
 	}
 
-	switch rows := s.Rows.(type) {
+	b.WriteString(p + "(\n")
+
+	for i, col := range cols {
+		b.WriteString(pi + col.String())
+
+		if i < len(cols)-1 {
+			b.WriteString(",")
+		}
+
+		b.WriteString("\n")
+	}
+
+	b.WriteString(p + ")\n")
+}
+
+func formatInsertRows(b *strings.Builder, rows sqlparser.InsertRows, p, pi string, indent, depth int) {
+	switch r := rows.(type) {
 	case sqlparser.Values:
 		b.WriteString(p + "VALUES\n")
-		for i, row := range rows {
+
+		for i, row := range r {
 			vals := make([]string, len(row))
 			for j, v := range row {
 				vals[j] = formatExpr(v, indent, depth)
 			}
+
 			b.WriteString(pi + "(" + strings.Join(vals, ", ") + ")")
-			if i < len(rows)-1 {
+
+			if i < len(r)-1 {
 				b.WriteString(",")
 			}
+
 			b.WriteString("\n")
 		}
 	case *sqlparser.Select:
-		formatSelect(b, rows, depth, indent)
+		formatSelect(b, r, depth, indent)
 	default:
-		b.WriteString(p + sqlparser.String(s.Rows) + "\n")
+		b.WriteString(p + sqlparser.String(rows) + "\n")
+	}
+}
+
+func formatOnDupUpdate(b *strings.Builder, onDup sqlparser.OnDup, p, pi string) {
+	if len(onDup) == 0 {
+		return
 	}
 
-	if len(s.OnDup) > 0 {
-		b.WriteString(p + "ON DUPLICATE KEY UPDATE\n")
-		for i, expr := range s.OnDup {
-			b.WriteString(pi + sqlparser.String(expr))
-			if i < len(s.OnDup)-1 {
-				b.WriteString(",")
-			}
-			b.WriteString("\n")
+	b.WriteString(p + "ON DUPLICATE KEY UPDATE\n")
+
+	for i, expr := range onDup {
+		b.WriteString(pi + sqlparser.String(expr))
+
+		if i < len(onDup)-1 {
+			b.WriteString(",")
 		}
+
+		b.WriteString("\n")
 	}
 }
 
@@ -305,11 +334,14 @@ func formatUpdate(b *strings.Builder, s *sqlparser.Update, depth, indent int) {
 	formatTableExprs(b, s.TableExprs, pi, indent, depth)
 
 	b.WriteString(p + "SET\n")
+
 	for i, expr := range s.Exprs {
 		b.WriteString(pi + upperKeywords(sqlparser.String(expr)))
+
 		if i < len(s.Exprs)-1 {
 			b.WriteString(",")
 		}
+
 		b.WriteString("\n")
 	}
 
@@ -318,20 +350,7 @@ func formatUpdate(b *strings.Builder, s *sqlparser.Update, depth, indent int) {
 		formatWhere(b, s.Where.Expr, pi, indent, depth)
 	}
 
-	if len(s.OrderBy) > 0 {
-		b.WriteString(p + "ORDER BY\n")
-		for i, order := range s.OrderBy {
-			dir := ""
-			if order.Direction == sqlparser.DescOrder {
-				dir = " DESC"
-			}
-			b.WriteString(pi + formatExpr(order.Expr, indent, depth) + dir)
-			if i < len(s.OrderBy)-1 {
-				b.WriteString(",")
-			}
-			b.WriteString("\n")
-		}
-	}
+	formatOrderBy(b, s.OrderBy, p, pi, indent, depth)
 
 	if s.Limit != nil {
 		formatLimit(b, s.Limit, p, indent, depth)
@@ -350,20 +369,7 @@ func formatDelete(b *strings.Builder, s *sqlparser.Delete, depth, indent int) {
 		formatWhere(b, s.Where.Expr, pi, indent, depth)
 	}
 
-	if len(s.OrderBy) > 0 {
-		b.WriteString(p + "ORDER BY\n")
-		for i, order := range s.OrderBy {
-			dir := ""
-			if order.Direction == sqlparser.DescOrder {
-				dir = " DESC"
-			}
-			b.WriteString(pi + formatExpr(order.Expr, indent, depth) + dir)
-			if i < len(s.OrderBy)-1 {
-				b.WriteString(",")
-			}
-			b.WriteString("\n")
-		}
-	}
+	formatOrderBy(b, s.OrderBy, p, pi, indent, depth)
 
 	if s.Limit != nil {
 		formatLimit(b, s.Limit, p, indent, depth)
@@ -373,36 +379,67 @@ func formatDelete(b *strings.Builder, s *sqlparser.Delete, depth, indent int) {
 func formatUnion(b *strings.Builder, s *sqlparser.Union, depth, indent int) {
 	p := pad(depth, indent)
 	formatStatement(b, s.Left, depth, indent)
+
 	op := "UNION"
 	if !s.Distinct {
 		op = "UNION ALL"
 	}
+
 	b.WriteString(p + op + "\n")
 	formatStatement(b, s.Right, depth, indent)
 
-	if len(s.OrderBy) > 0 {
-		pi := pad(depth+1, indent)
-		b.WriteString(p + "ORDER BY\n")
-		for i, order := range s.OrderBy {
-			dir := ""
-			if order.Direction == sqlparser.DescOrder {
-				dir = " DESC"
-			}
-			b.WriteString(pi + formatExpr(order.Expr, indent, depth) + dir)
-			if i < len(s.OrderBy)-1 {
-				b.WriteString(",")
-			}
-			b.WriteString("\n")
-		}
-	}
+	pi := pad(depth+1, indent)
+	formatOrderBy(b, s.OrderBy, p, pi, indent, depth)
 
 	if s.Limit != nil {
 		formatLimit(b, s.Limit, p, indent, depth)
 	}
 }
 
+func formatGroupBy(b *strings.Builder, groupBy *sqlparser.GroupBy, p, pi string, indent, depth int) {
+	if groupBy == nil || len(groupBy.Exprs) == 0 {
+		return
+	}
+
+	b.WriteString(p + "GROUP BY\n")
+
+	for i, expr := range groupBy.Exprs {
+		b.WriteString(pi + formatExpr(expr, indent, depth))
+
+		if i < len(groupBy.Exprs)-1 {
+			b.WriteString(",")
+		}
+
+		b.WriteString("\n")
+	}
+}
+
+func formatOrderBy(b *strings.Builder, orders sqlparser.OrderBy, p, pi string, indent, depth int) {
+	if len(orders) == 0 {
+		return
+	}
+
+	b.WriteString(p + "ORDER BY\n")
+
+	for i, order := range orders {
+		dir := ""
+		if order.Direction == sqlparser.DescOrder {
+			dir = descDir
+		}
+
+		b.WriteString(pi + formatExpr(order.Expr, indent, depth) + dir)
+
+		if i < len(orders)-1 {
+			b.WriteString(",")
+		}
+
+		b.WriteString("\n")
+	}
+}
+
 func formatLimit(b *strings.Builder, limit *sqlparser.Limit, p string, indent, depth int) {
 	pi := pad(depth+1, indent)
+
 	if limit.Offset != nil {
 		b.WriteString(p + "LIMIT\n")
 		b.WriteString(pi + formatExpr(limit.Rowcount, indent, depth) + "\n")
