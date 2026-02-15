@@ -26,9 +26,9 @@ tasks:
       - golangci-lint run --fix ./...
 
   build:
-    desc: Build the project (verify compilation)
+    desc: Build the project
     cmds:
-      - go build -v ./...
+      - go build -v -o sql-assert ./cmd
 
   fmt:
     desc: Format code with gofmt and goreg
