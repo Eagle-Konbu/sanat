@@ -83,7 +83,16 @@ This project uses [Task](https://taskfile.dev/) for build automation. **Prefer `
 4. Use `task check` before committing to ensure code quality
 5. **Fallback**: If `task` is unavailable or a specific task doesn't exist, use direct commands
 
+## Documentation
+
+- All documentation must be written in **English**
+- When modifying code that changes behavior covered by a spec in `docs/`, update the corresponding spec document to reflect the change
+- Spec documents:
+  - `docs/formatter-spec.md` — Formatter specification (processing flow, format rules, CLI, configuration)
+  - `docs/detect-spec.md` — SQL detection specification (MightBeSQL heuristic)
+
 ## References
 
 - Skills: `.ai/skills/`
+- Specs: `docs/`
 - [Conventional Commits Specification](https://www.conventionalcommits.org/en/v1.0.0/)
