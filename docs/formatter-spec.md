@@ -1,85 +1,85 @@
 # Formatter Specification
 
-sanat の SQL フォーマッターの仕様を定義する。
+Defines the specification for sanat's SQL formatter.
 
-## 概要
+## Overview
 
-sanat は Go ソースファイルに埋め込まれた SQL 文字列リテラルを自動整形する CLI ツールである。Raw string literal（バッククォート文字列）内の SQL を検出し、一貫したスタイルでフォーマットする。
+sanat is a CLI tool that automatically formats SQL string literals embedded in Go source files. It detects SQL within raw string literals (backtick strings) and formats them in a consistent style.
 
-## 処理フロー
+## Processing Flow
 
 ```mermaid
 flowchart TD
-    A[Go ソースファイル入力] --> B[AST 解析]
-    B --> C[Raw string literal 抽出]
+    A[Go source file input] --> B[AST parsing]
+    B --> C[Extract raw string literals]
     C --> D{MightBeSQL?}
-    D -- No --> E[スキップ]
-    D -- Yes --> F[プレースホルダー置換<br/>? → :_sqla_ph_N]
-    F --> G[Vitess SQL パーサーで解析]
-    G --> H{パース成功?}
-    H -- No --> I[元の文字列を保持]
-    H -- Yes --> J[SQL 文に応じたフォーマット]
-    J --> K[プレースホルダー復元<br/>:_sqla_ph_N → ?]
-    K --> L[バッククォート識別子除去]
-    L --> M[フォーマット済み文字列で<br/>AST ノードを書き換え]
-    M --> N[go/format で整形出力]
+    D -- No --> E[Skip]
+    D -- Yes --> F[Placeholder substitution<br/>? → :_sqla_ph_N]
+    F --> G[Parse with Vitess SQL parser]
+    G --> H{Parse success?}
+    H -- No --> I[Keep original string]
+    H -- Yes --> J[Format according to SQL statement type]
+    J --> K[Restore placeholders<br/>:_sqla_ph_N → ?]
+    K --> L[Remove backtick identifiers]
+    L --> M[Replace AST node with<br/>formatted string]
+    M --> N[Output with go/format]
 ```
 
-## SQL 検出
+## SQL Detection
 
-SQL 検出ルールの詳細は [detect-spec.md](detect-spec.md) を参照。
+See [detect-spec.md](detect-spec.md) for SQL detection rules.
 
-## フォーマット対象
+## Format Targets
 
-- Go ソースファイル内の **Raw string literal**（バッククォートで囲まれた文字列）のみ
-- ダブルクォート文字列は対象外
+- Only **raw string literals** (backtick-quoted strings) in Go source files
+- Double-quoted strings are excluded
 
 ```go
-// フォーマット対象
+// Format target
 db.Exec(`select id from users where id = ?`, 1)
 
-// フォーマット対象外（ダブルクォート）
+// Not a format target (double-quoted)
 db.Exec("select id from users where id = ?", 1)
 ```
 
-## プレースホルダー処理
+## Placeholder Handling
 
-SQL パーサーが `?` を正しく処理できないため、パース前後で置換・復元を行う。
+Since the SQL parser cannot handle `?` correctly, substitution and restoration are performed before and after parsing.
 
-1. **置換**: `?` → `:_sqla_ph_0`, `:_sqla_ph_1`, ... （出現順にインデックス付与）
-2. **パース**: Vitess SQL パーサーで構文解析
-3. **復元**: `:_sqla_ph_N` → `?` に戻す
+1. **Substitution**: `?` → `:_sqla_ph_0`, `:_sqla_ph_1`, ... (indexed in order of appearance)
+2. **Parsing**: Syntax analysis with the Vitess SQL parser
+3. **Restoration**: `:_sqla_ph_N` → `?`
 
-## フォーマットルール
+## Format Rules
 
-### 共通ルール
+### Common Rules
 
-- SQL キーワードは **大文字** に変換する
-- 各句（clause）は **独立した行** に配置する
-- 句の内容は **インデント** して記述する（デフォルト: スペース 2 文字）
-- バッククォート識別子（MySQL 形式）はフォーマット後に除去する
-- パースに失敗した場合は **元の文字列をそのまま返す**
+- SQL keywords are converted to **UPPERCASE**
+- Each clause is placed on a **separate line**
+- Clause contents are **indented** (default: 2 spaces)
+- Backtick identifiers (MySQL style) are removed after formatting
+- If parsing fails, the **original string is returned as-is**
 
-### キーワード大文字化
+### Keyword Uppercasing
 
-以下のキーワードがフォーマット時に大文字に変換される:
+The following keywords are uppercased during formatting:
 
 `AS`, `ASC`, `DESC`, `AND`, `OR`, `NOT`, `IN`, `IS`, `LIKE`, `BETWEEN`, `EXISTS`, `NULL`, `TRUE`, `FALSE`, `ON`, `USING`
 
-句のキーワード（`SELECT`, `FROM`, `WHERE` 等）は構造的に大文字で出力される。
+Clause keywords (`SELECT`, `FROM`, `WHERE`, etc.) are structurally output in uppercase.
 
-### インデント
+### Indentation
 
 ```
-depth * indent 文字のスペース
+depth * indent spaces
 ```
 
-- `depth`: ネストの深さ（0 始まり）
-- `indent`: インデント幅（デフォルト: 2）
+- `depth`: nesting depth (0-based)
+- `indent`: indent width (default: 2)
 
-ネストが深くなるほど（サブクエリ等）インデントが増える。
+Indentation increases with deeper nesting (e.g., subqueries).
 
-## 文タイプ別フォーマット
+## Statement Type Formatting
 
 ### SELECT
 
@@ -94,24 +94,24 @@ flowchart TD
     F -- Yes --> FE[FROM + TableExprs]
     F -- No --> W
     FE --> W{WHERE?}
-    W -- Yes --> WE[WHERE + 条件式]
+    W -- Yes --> WE[WHERE + condition]
     W -- No --> G
     WE --> G{GROUP BY?}
-    G -- Yes --> GE[GROUP BY + 式]
+    G -- Yes --> GE[GROUP BY + expressions]
     G -- No --> H
     GE --> H{HAVING?}
-    H -- Yes --> HE[HAVING + 条件式]
+    H -- Yes --> HE[HAVING + condition]
     H -- No --> O
     HE --> O{ORDER BY?}
-    O -- Yes --> OE[ORDER BY + 式]
+    O -- Yes --> OE[ORDER BY + expressions]
     O -- No --> L
     OE --> L{LIMIT?}
     L -- Yes --> LE[LIMIT / OFFSET]
-    L -- No --> END[終了]
+    L -- No --> END[End]
     LE --> END
 ```
 
-**出力例:**
+**Example output:**
 
 ```sql
 SELECT
@@ -137,20 +137,20 @@ OFFSET
 ### INSERT
 
 ```
-INSERT INTO          -- または REPLACE INTO
-  <テーブル名>
-(                    -- カラムリスト（存在する場合）
-  <カラム1>,
-  <カラム2>
+INSERT INTO          -- or REPLACE INTO
+  <table>
+(                    -- column list (if present)
+  <column1>,
+  <column2>
 )
-VALUES               -- または SELECT サブクエリ
-  (<値1>, <値2>)
-ON DUPLICATE KEY UPDATE  -- 存在する場合
-  <式1>,
-  <式2>
+VALUES               -- or SELECT subquery
+  (<value1>, <value2>)
+ON DUPLICATE KEY UPDATE  -- if present
+  <expr1>,
+  <expr2>
 ```
 
-**出力例:**
+**Example output:**
 
 ```sql
 INSERT INTO
@@ -170,19 +170,19 @@ ON DUPLICATE KEY UPDATE
 
 ```
 UPDATE
-  <テーブル>
+  <table>
 SET
-  <式1>,
-  <式2>
-WHERE              -- 存在する場合
-  <条件>
-ORDER BY           -- 存在する場合
-  <式>
-LIMIT              -- 存在する場合
-  <値>
+  <expr1>,
+  <expr2>
+WHERE              -- if present
+  <condition>
+ORDER BY           -- if present
+  <expression>
+LIMIT              -- if present
+  <value>
 ```
 
-**出力例:**
+**Example output:**
 
 ```sql
 UPDATE
@@ -198,16 +198,16 @@ WHERE
 
 ```
 DELETE FROM
-  <テーブル>
-WHERE              -- 存在する場合
-  <条件>
-ORDER BY           -- 存在する場合
-  <式>
-LIMIT              -- 存在する場合
-  <値>
+  <table>
+WHERE              -- if present
+  <condition>
+ORDER BY           -- if present
+  <expression>
+LIMIT              -- if present
+  <value>
 ```
 
-**出力例:**
+**Example output:**
 
 ```sql
 DELETE FROM
@@ -218,9 +218,9 @@ WHERE
 
 ### UNION / UNION ALL
 
-左辺と右辺の SELECT をそれぞれフォーマットし、`UNION` または `UNION ALL` で接続する。
+Formats the left and right SELECT statements independently and joins them with `UNION` or `UNION ALL`.
 
-**出力例:**
+**Example output:**
 
 ```sql
 SELECT
@@ -234,13 +234,13 @@ FROM
   admins
 ```
 
-## 式のフォーマット
+## Expression Formatting
 
-### WHERE 句の条件式
+### WHERE Clause Conditions
 
-- `AND` で結合された条件は各行に展開する
-- `OR` で結合された条件も各行に展開する
-- 最初の条件にはプレフィックスなし、2 番目以降は `AND` / `OR` を付与する
+- Conditions joined with `AND` are expanded to separate lines
+- Conditions joined with `OR` are also expanded to separate lines
+- The first condition has no prefix; subsequent conditions are prefixed with `AND` / `OR`
 
 ```sql
 WHERE
@@ -249,9 +249,9 @@ WHERE
   OR u.role = 'admin'
 ```
 
-### テーブル式
+### Table Expressions
 
-#### 通常のテーブル
+#### Simple Table
 
 ```sql
 FROM
@@ -260,7 +260,7 @@ FROM
 
 #### JOIN
 
-JOIN の左辺・右辺をそれぞれ展開し、`ON` 条件を追加インデントで記述する。
+Expands the left and right sides of the JOIN, with the `ON` condition at additional indentation.
 
 ```sql
 FROM
@@ -270,9 +270,9 @@ FROM
     ON u.id = o.user_id
 ```
 
-#### 派生テーブル（サブクエリ）
+#### Derived Table (Subquery)
 
-サブクエリを括弧で囲み、内部をネストしたインデントでフォーマットする。
+Wraps the subquery in parentheses and formats the interior with nested indentation.
 
 ```sql
 FROM
@@ -284,7 +284,7 @@ FROM
   ) t
 ```
 
-### サブクエリ式
+### Subquery Expressions
 
 #### EXISTS
 
@@ -300,7 +300,7 @@ WHERE
   )
 ```
 
-#### スカラーサブクエリ
+#### Scalar Subquery
 
 ```sql
   (
@@ -311,11 +311,11 @@ WHERE
   )
 ```
 
-### SELECT 式
+### SELECT Expressions
 
-- 各カラムを独立した行に配置する
-- エイリアスは `AS` で接続する
-- ワイルドカード `*` やテーブル修飾 `t.*` をサポートする
+- Each column is placed on a separate line
+- Aliases are connected with `AS`
+- Wildcard `*` and table-qualified `t.*` are supported
 
 ```sql
 SELECT
@@ -324,25 +324,25 @@ SELECT
   count(*) AS cnt
 ```
 
-## 設定
+## Configuration
 
-### 設定ファイル
+### Configuration File
 
-以下の順序で設定ファイルを探索する（最初に見つかったものを使用）:
+Configuration files are searched in the following order (first match is used):
 
 1. `.sanat.yml`
 2. `.sanat.yaml`
 3. `.sanat.toml`
 
-### 設定項目
+### Configuration Options
 
-| 項目 | 型 | デフォルト | 説明 |
-|------|----|-----------|------|
-| `write` | bool | `false` | ファイルを上書きするか |
-| `indent` | int | `2` | SQL インデント幅（スペース数） |
-| `newline` | bool | `true` | 開きバッククォートの後に改行を挿入するか |
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `write` | bool | `false` | Whether to overwrite files |
+| `indent` | int | `2` | SQL indent width (number of spaces) |
+| `newline` | bool | `true` | Whether to insert a newline after the opening backtick |
 
-### 設定例
+### Configuration Examples
 
 **YAML:**
 
@@ -360,56 +360,56 @@ indent = 4
 newline = true
 ```
 
-### 優先順位
+### Precedence
 
-CLI フラグ > 設定ファイル > デフォルト値
+CLI flags > configuration file > default values
 
-明示的にフラグが指定された場合、設定ファイルの値より優先される。
+When a flag is explicitly specified, it takes precedence over the configuration file value.
 
 ## CLI
 
-### 使用方法
+### Usage
 
 ```
 sanat [flags] [pattern ...]
 ```
 
-### フラグ
+### Flags
 
-| フラグ | 短縮 | デフォルト | 説明 |
-|--------|------|-----------|------|
-| `--write` | `-w` | `false` | ファイルを上書き |
-| `--indent` | | `2` | SQL インデント幅 |
-| `--newline` | | `true` | 開きバッククォート後の改行 |
-| `--config` | `-c` | | 設定ファイルパス |
+| Flag | Short | Default | Description |
+|------|-------|---------|-------------|
+| `--write` | `-w` | `false` | Overwrite files |
+| `--indent` | | `2` | SQL indent width |
+| `--newline` | | `true` | Newline after opening backtick |
+| `--config` | `-c` | | Configuration file path |
 
-### 入力方法
+### Input Methods
 
-- **ファイルパターン**: `sanat file.go`, `sanat ./...`, `sanat *.go`
-- **標準入力**: `cat file.go | sanat`
+- **File patterns**: `sanat file.go`, `sanat ./...`, `sanat *.go`
+- **Standard input**: `cat file.go | sanat`
 
-### パターン解決
+### Pattern Resolution
 
-- `./...` — 再帰的にディレクトリを走査
-- ディレクトリ指定 — そのディレクトリ内の `.go` ファイルを走査
-- glob パターン — マッチする `.go` ファイルを対象
+- `./...` — recursively traverse directories
+- Directory path — traverse `.go` files within the directory
+- Glob pattern — target matching `.go` files
 
-### 除外ディレクトリ
+### Excluded Directories
 
-以下のディレクトリは走査から除外される:
+The following directories are excluded from traversal:
 
 - `vendor/`
 - `.git/`
 - `testdata/`
 
-### 出力
+### Output
 
-- デフォルト: フォーマット結果を標準出力に出力
-- `-w` 指定時: ファイルを直接上書き（パーミッション 0600）
+- Default: output formatted result to stdout
+- With `-w`: overwrite files directly (permission 0600)
 
-## Newline オプション
+## Newline Option
 
-`newline` オプションが `true`（デフォルト）の場合、フォーマット済み SQL の前後に改行を挿入する。
+When the `newline` option is `true` (default), newlines are inserted before and after the formatted SQL.
 
 **newline: true:**
 
@@ -431,18 +431,18 @@ FROM
   users`, 1)
 ```
 
-## パーサー
+## Parser
 
-SQL の構文解析には [Vitess](https://vitess.io/) の SQL パーサー（`vitess.io/vitess/go/vt/sqlparser`）を使用する。MySQL 互換の SQL 構文をサポートする。
+The [Vitess](https://vitess.io/) SQL parser (`vitess.io/vitess/go/vt/sqlparser`) is used for SQL syntax analysis. It supports MySQL-compatible SQL syntax.
 
-### 対応する SQL 文
+### Supported SQL Statements
 
-| 文タイプ | 対応 |
-|----------|------|
+| Statement Type | Supported |
+|---------------|-----------|
 | SELECT | o |
 | INSERT | o |
 | REPLACE | o |
 | UPDATE | o |
 | DELETE | o |
 | UNION / UNION ALL | o |
-| その他 | Vitess のデフォルト出力にフォールバック |
+| Other | Falls back to Vitess default output |

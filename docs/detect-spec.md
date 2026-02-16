@@ -1,85 +1,85 @@
-# SQL 検出仕様（MightBeSQL）
+# SQL Detection Specification (MightBeSQL)
 
-Raw string literal から抽出された文字列が SQL であるかをヒューリスティックに判定する。
+Heuristically determines whether a string extracted from a raw string literal is SQL.
 
-## 判定フロー
+## Detection Flow
 
 ```mermaid
 flowchart TD
-    A[入力文字列] --> B[前後の空白を除去]
-    B --> C{空文字列?}
-    C -- Yes --> D[非 SQL]
-    C -- No --> E{fmt 書式動詞を含む?}
+    A[Input string] --> B[Trim whitespace]
+    B --> C{Empty string?}
+    C -- Yes --> D[Not SQL]
+    C -- No --> E{Contains fmt verb?}
     E -- Yes --> D
-    E -- No --> F{SQL キーワードで開始?}
+    E -- No --> F{Starts with SQL keyword?}
     F -- Yes --> G[SQL]
     F -- No --> D
 ```
 
-## 判定条件
+## Detection Rules
 
-以下の順序で評価する。先に該当した条件で判定が確定する。
+Evaluated in the following order. The first matching condition determines the result.
 
-1. 前後の空白を除去する
-2. 空文字列 → **非 SQL**
-3. `fmt` の書式動詞を含む → **非 SQL**
-4. 先頭が SQL キーワードで始まる → **SQL**
-5. 上記以外 → **非 SQL**
+1. Trim leading and trailing whitespace
+2. Empty string → **Not SQL**
+3. Contains `fmt` format verb → **Not SQL**
+4. Starts with a SQL keyword → **SQL**
+5. Otherwise → **Not SQL**
 
-## fmt 書式動詞の検出
+## fmt Format Verb Detection
 
-以下の正規表現パターンに一致する文字列は、Go の `fmt` テンプレートとみなし SQL として扱わない。
+Strings matching the following regex pattern are considered Go `fmt` templates and are not treated as SQL.
 
 ```
 %[+\-# 0]*[*]?[0-9]*[.*]?[0-9]*[vTtbcdoOqxXUeEfFgGsp]
 ```
 
-これにより `%s`, `%d`, `%v`, `%02d`, `%-10s` 等の書式動詞を含む文字列を除外する。
+This excludes strings containing format verbs such as `%s`, `%d`, `%v`, `%02d`, `%-10s`, etc.
 
-### 除外例
+### Exclusion Example
 
 ```go
-// fmt テンプレート — フォーマット対象外
+// fmt template — not a format target
 tpl := `SELECT %s FROM %s WHERE id = %d`
 ```
 
-## SQL キーワード判定
+## SQL Keyword Detection
 
-以下の正規表現パターンで先頭のキーワードを判定する（大文字小文字不問）。
+The following regex pattern is used to detect a leading keyword (case-insensitive).
 
 ```
 (?i)^\s*(SELECT|INSERT|UPDATE|DELETE)\b
 ```
 
-### 対象キーワード
+### Target Keywords
 
-| キーワード | 説明 |
-|-----------|------|
-| `SELECT` | データ取得 |
-| `INSERT` | データ挿入 |
-| `UPDATE` | データ更新 |
-| `DELETE` | データ削除 |
+| Keyword | Description |
+|---------|-------------|
+| `SELECT` | Data retrieval |
+| `INSERT` | Data insertion |
+| `UPDATE` | Data modification |
+| `DELETE` | Data deletion |
 
-先頭の空白は許容されるが、キーワードの後に単語境界（`\b`）が必要である。
+Leading whitespace is allowed, but a word boundary (`\b`) is required after the keyword.
 
-## 判定結果の例
+## Detection Result Examples
 
-| 入力 | 判定 | 理由 |
-|------|------|------|
-| `select id from users` | SQL | `SELECT` で開始 |
-| `INSERT INTO users (name) VALUES (?)` | SQL | `INSERT` で開始 |
-| `update users set name = ?` | SQL | `UPDATE` で開始（小文字） |
-| `delete from users where id = ?` | SQL | `DELETE` で開始（小文字） |
-| `  SELECT id FROM users` | SQL | 先頭空白の後に `SELECT` |
-| `SELECT %s FROM %s` | 非 SQL | fmt 書式動詞 `%s` を含む |
-| `SELECT %d items` | 非 SQL | fmt 書式動詞 `%d` を含む |
-| `hello world` | 非 SQL | SQL キーワードで開始しない |
-| `https://example.com/select/users` | 非 SQL | SQL キーワードで開始しない |
-| _(空文字列)_ | 非 SQL | 空文字列 |
-| `CREATE TABLE users (...)` | 非 SQL | `CREATE` は対象キーワードでない |
+| Input | Result | Reason |
+|-------|--------|--------|
+| `select id from users` | SQL | Starts with `SELECT` |
+| `INSERT INTO users (name) VALUES (?)` | SQL | Starts with `INSERT` |
+| `update users set name = ?` | SQL | Starts with `UPDATE` (lowercase) |
+| `delete from users where id = ?` | SQL | Starts with `DELETE` (lowercase) |
+| `  SELECT id FROM users` | SQL | `SELECT` after leading whitespace |
+| `SELECT %s FROM %s` | Not SQL | Contains fmt verb `%s` |
+| `SELECT %d items` | Not SQL | Contains fmt verb `%d` |
+| `hello world` | Not SQL | Does not start with a SQL keyword |
+| `https://example.com/select/users` | Not SQL | Does not start with a SQL keyword |
+| _(empty string)_ | Not SQL | Empty string |
+| `CREATE TABLE users (...)` | Not SQL | `CREATE` is not a target keyword |
 
-## 設計意図
+## Design Rationale
 
-- **偽陽性の抑制**: fmt テンプレートや URL など、SQL に似た文字列を誤検出しないようにする
-- **軽量な事前フィルタ**: Vitess パーサーへの不要な入力を減らし、パフォーマンスを維持する
-- **保守的な判定**: 対象を DML 4 種（SELECT/INSERT/UPDATE/DELETE）に限定し、DDL 等は対象外とする
+- **Minimize false positives**: Avoid misdetecting strings that resemble SQL, such as fmt templates and URLs
+- **Lightweight pre-filter**: Reduce unnecessary input to the Vitess parser to maintain performance
+- **Conservative detection**: Limit targets to 4 DML types (SELECT/INSERT/UPDATE/DELETE), excluding DDL and others
