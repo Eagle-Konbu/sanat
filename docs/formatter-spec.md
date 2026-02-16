@@ -25,26 +25,9 @@ flowchart TD
     M --> N[go/format で整形出力]
 ```
 
-## SQL 検出ルール（MightBeSQL）
+## SQL 検出
 
-対象文字列が SQL であるかをヒューリスティックに判定する。
-
-### 判定条件
-
-1. 空文字列 → **非 SQL**
-2. `fmt` の書式動詞（`%s`, `%d`, `%v` 等）を含む → **非 SQL**
-3. 先頭が `SELECT`, `INSERT`, `UPDATE`, `DELETE` のいずれかで始まる（大文字小文字不問） → **SQL**
-4. 上記以外 → **非 SQL**
-
-### 対象・除外の例
-
-| 入力 | 判定 | 理由 |
-|------|------|------|
-| `select id from users` | SQL | SELECT で開始 |
-| `INSERT INTO users ...` | SQL | INSERT で開始 |
-| `SELECT %s FROM %s` | 非 SQL | fmt 書式動詞を含む |
-| `hello world` | 非 SQL | SQL キーワードで開始しない |
-| `https://example.com/select/users` | 非 SQL | SQL キーワードで開始しない |
+SQL 検出ルールの詳細は [detect-spec.md](detect-spec.md) を参照。
 
 ## フォーマット対象
 
