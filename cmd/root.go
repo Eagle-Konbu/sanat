@@ -96,6 +96,10 @@ func run(cmd *cobra.Command, args []string) error {
 	}
 
 	if len(args) == 0 {
+		if isTerminal(os.Stdin) {
+			return cmd.Help()
+		}
+
 		return processStdin()
 	}
 
@@ -159,6 +163,15 @@ func processFile(path string) error {
 	_, err = os.Stdout.Write(out)
 
 	return err
+}
+
+func isTerminal(f *os.File) bool {
+	fi, err := f.Stat()
+	if err != nil {
+		return false
+	}
+
+	return fi.Mode()&os.ModeCharDevice != 0
 }
 
 var excludeDirs = map[string]bool{
