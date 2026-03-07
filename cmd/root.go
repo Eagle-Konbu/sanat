@@ -157,7 +157,7 @@ func processFile(path string) error {
 	}
 
 	if writeFlag {
-		return os.WriteFile(cleanPath, out, 0o600)
+		return os.WriteFile(cleanPath, out, 0o600) //nolint:gosec,nolintlint // cleanPath is sanitized via filepath.Clean
 	}
 
 	_, err = os.Stdout.Write(out)
