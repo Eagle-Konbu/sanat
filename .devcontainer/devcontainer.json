@@ -9,7 +9,8 @@
       "installOhMyZsh": true
     },
     "ghcr.io/devcontainers-extra/features/golangci-lint:1": {},
-    "ghcr.io/eitsupi/devcontainer-features/go-task:1": {}
+    "ghcr.io/eitsupi/devcontainer-features/go-task:1": {},
+    "ghcr.io/devcontainers-contrib/features/direnv-asdf:2": {}
   },
   "customizations": {
     "vscode": {
@@ -45,6 +46,11 @@
   },
   "remoteUser": "vscode",
   "mounts": [
-    "source=${localEnv:HOME}${localEnv:USERPROFILE}/.gitconfig,target=/home/vscode/.gitconfig,type=bind,consistency=cached"
-  ]
+    "source=${localEnv:HOME}${localEnv:USERPROFILE}/.gitconfig,target=/home/vscode/.gitconfig,type=bind,consistency=cached",
+    "source=${localEnv:HOME}/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock,target=/tmp/1password-agent.sock,type=bind"
+  ],
+  "remoteEnv": {
+    "SSH_AUTH_SOCK": "/tmp/1password-agent.sock"
+  },
+  "postCreateCommand": "bash .devcontainer/setup-1password.sh"
 }
