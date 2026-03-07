@@ -483,7 +483,7 @@ func formatWindowSpecParts(spec *sqlparser.WindowSpecification) []string {
 	}
 
 	if spec.FrameClause != nil {
-		parts = append(parts, strings.ToUpper(sqlparser.String(spec.FrameClause)))
+		parts = append(parts, strings.ToUpper(strings.TrimSpace(sqlparser.String(spec.FrameClause))))
 	}
 
 	return parts

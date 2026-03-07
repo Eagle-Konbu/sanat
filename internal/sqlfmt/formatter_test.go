@@ -811,6 +811,209 @@ func TestFormatSQL_WindowFunction(t *testing.T) {
 	}
 }
 
+func TestFormatSQL_WindowFunction_AllTypes(t *testing.T) {
+	// Tests that all aggregate/window function types with OVER clause are formatted correctly.
+	// Each entry: SQL function call -> expected lowercase output in formatted result.
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"COUNT", "SELECT COUNT(id) OVER (ORDER BY id) FROM t", "count(id)"},
+		{"COUNT(*)", "SELECT COUNT(*) OVER (ORDER BY id) FROM t", "count(*)"},
+		{"AVG", "SELECT AVG(x) OVER (ORDER BY id) FROM t", "avg(x)"},
+		{"MIN", "SELECT MIN(x) OVER (ORDER BY id) FROM t", "min(x)"},
+		{"MAX", "SELECT MAX(x) OVER (ORDER BY id) FROM t", "max(x)"},
+		{"BIT_AND", "SELECT BIT_AND(x) OVER (ORDER BY id) FROM t", "bit_and(x)"},
+		{"BIT_OR", "SELECT BIT_OR(x) OVER (ORDER BY id) FROM t", "bit_or(x)"},
+		{"BIT_XOR", "SELECT BIT_XOR(x) OVER (ORDER BY id) FROM t", "bit_xor(x)"},
+		{"STD", "SELECT STD(x) OVER (ORDER BY id) FROM t", "std(x)"},
+		{"STDDEV", "SELECT STDDEV(x) OVER (ORDER BY id) FROM t", "stddev(x)"},
+		{"STDDEV_POP", "SELECT STDDEV_POP(x) OVER (ORDER BY id) FROM t", "stddev_pop(x)"},
+		{"STDDEV_SAMP", "SELECT STDDEV_SAMP(x) OVER (ORDER BY id) FROM t", "stddev_samp(x)"},
+		{"VAR_POP", "SELECT VAR_POP(x) OVER (ORDER BY id) FROM t", "var_pop(x)"},
+		{"VAR_SAMP", "SELECT VAR_SAMP(x) OVER (ORDER BY id) FROM t", "var_samp(x)"},
+		{"VARIANCE", "SELECT VARIANCE(x) OVER (ORDER BY id) FROM t", "variance(x)"},
+		{"DENSE_RANK", "SELECT DENSE_RANK() OVER (ORDER BY id) FROM t", "dense_rank()"},
+		{"CUME_DIST", "SELECT CUME_DIST() OVER (ORDER BY id) FROM t", "cume_dist()"},
+		{"PERCENT_RANK", "SELECT PERCENT_RANK() OVER (ORDER BY id) FROM t", "percent_rank()"},
+		{"FIRST_VALUE", "SELECT FIRST_VALUE(x) OVER (ORDER BY id) FROM t", "first_value(x)"},
+		{"LAST_VALUE", "SELECT LAST_VALUE(x) OVER (ORDER BY id) FROM t", "last_value(x)"},
+		{"NTILE", "SELECT NTILE(4) OVER (ORDER BY id) FROM t", "ntile(4)"},
+		{"NTH_VALUE", "SELECT NTH_VALUE(x, 2) OVER (ORDER BY id) FROM t", "nth_value(x, 2)"},
+		{"LAG", "SELECT LAG(x) OVER (ORDER BY id) FROM t", "lag(x)"},
+		{"LEAD", "SELECT LEAD(x) OVER (ORDER BY id) FROM t", "lead(x)"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := sqlfmt.FormatSQL(tt.in, 2)
+			if !ok {
+				t.Fatal("expected ok")
+			}
+
+			want := join(
+				"SELECT",
+				"  "+tt.want+" OVER (",
+				"    ORDER BY id",
+				"  )",
+				"FROM",
+				"  t",
+			)
+
+			assertSQL(t, got, want)
+		})
+	}
+}
+
+func TestFormatSQL_IndexHintForType(t *testing.T) {
+	got, ok := sqlfmt.FormatSQL("SELECT id FROM users USE INDEX FOR ORDER BY (idx_name) WHERE id = ?", 2)
+	if !ok {
+		t.Fatal("expected ok")
+	}
+
+	want := join(
+		"SELECT",
+		"  id",
+		"FROM",
+		"  users USE INDEX FOR ORDER BY (idx_name)",
+		"WHERE",
+		"  id = ?",
+	)
+
+	assertSQL(t, got, want)
+}
+
+func TestFormatSQL_UnionLock(t *testing.T) {
+	got, ok := sqlfmt.FormatSQL("SELECT id FROM users UNION ALL SELECT id FROM admins FOR UPDATE", 2)
+	if !ok {
+		t.Fatal("expected ok")
+	}
+
+	want := join(
+		"SELECT",
+		"  id",
+		"FROM",
+		"  users",
+		"UNION ALL",
+		"SELECT",
+		"  id",
+		"FROM",
+		"  admins",
+		"FOR UPDATE",
+	)
+
+	assertSQL(t, got, want)
+}
+
+func TestFormatSQL_WithCTE_Update(t *testing.T) {
+	got, ok := sqlfmt.FormatSQL("WITH cte AS (SELECT id FROM users WHERE active = 1) UPDATE users SET status = 0 WHERE id IN (SELECT id FROM cte)", 2)
+	if !ok {
+		t.Fatal("expected ok")
+	}
+
+	want := join(
+		"WITH",
+		"  cte AS (",
+		"    SELECT",
+		"      id",
+		"    FROM",
+		"      users",
+		"    WHERE",
+		"      active = 1",
+		"  )",
+		"UPDATE",
+		"  users",
+		"SET",
+		"  status = 0",
+		"WHERE",
+		"  id in (",
+		"    SELECT",
+		"      id",
+		"    FROM",
+		"      cte",
+		"  )",
+	)
+
+	assertSQL(t, got, want)
+}
+
+func TestFormatSQL_WithCTE_Delete(t *testing.T) {
+	got, ok := sqlfmt.FormatSQL("WITH cte AS (SELECT id FROM users WHERE active = 0) DELETE FROM users WHERE id IN (SELECT id FROM cte)", 2)
+	if !ok {
+		t.Fatal("expected ok")
+	}
+
+	want := join(
+		"WITH",
+		"  cte AS (",
+		"    SELECT",
+		"      id",
+		"    FROM",
+		"      users",
+		"    WHERE",
+		"      active = 0",
+		"  )",
+		"DELETE FROM",
+		"  users",
+		"WHERE",
+		"  id in (",
+		"    SELECT",
+		"      id",
+		"    FROM",
+		"      cte",
+		"  )",
+	)
+
+	assertSQL(t, got, want)
+}
+
+func TestFormatSQL_WithCTE_Union(t *testing.T) {
+	got, ok := sqlfmt.FormatSQL("WITH cte AS (SELECT id FROM users) SELECT id FROM cte UNION ALL SELECT id FROM admins", 2)
+	if !ok {
+		t.Fatal("expected ok")
+	}
+
+	want := join(
+		"WITH",
+		"  cte AS (",
+		"    SELECT",
+		"      id",
+		"    FROM",
+		"      users",
+		"  )",
+		"SELECT",
+		"  id",
+		"FROM",
+		"  cte",
+		"UNION ALL",
+		"SELECT",
+		"  id",
+		"FROM",
+		"  admins",
+	)
+
+	assertSQL(t, got, want)
+}
+
+func TestFormatSQL_WindowFrameClause(t *testing.T) {
+	got, ok := sqlfmt.FormatSQL("SELECT SUM(amount) OVER (ORDER BY id ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) FROM t", 2)
+	if !ok {
+		t.Fatal("expected ok")
+	}
+
+	want := join(
+		"SELECT",
+		"  sum(amount) OVER (",
+		"    ORDER BY id",
+		"    ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW",
+		"  )",
+		"FROM",
+		"  t",
+	)
+
+	assertSQL(t, got, want)
+}
+
 func assertSQL(t *testing.T, got, want string) {
 	t.Helper()
 
