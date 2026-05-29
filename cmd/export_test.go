@@ -6,12 +6,4 @@ import "io"
 var RunInitWith = runInitWith
 
 // RunInitWithFunc is the function signature for runInitWith.
-type RunInitWithFunc func(dir string, in io.Reader, out io.Writer) error
-
-// Exported error sentinels for testing.
-var (
-	ErrConfigAlreadyExists = errConfigAlreadyExists
-	ErrInvalidFormatChoice = errInvalidFormatChoice
-	ErrInvalidIndentWidth  = errInvalidIndentWidth
-	ErrInvalidYesNo        = errInvalidYesNo
-)
+type RunInitWithFunc func(dir string, p Prompter, out io.Writer) error
