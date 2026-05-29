@@ -10,9 +10,9 @@ import (
 )
 
 type Config struct {
-	Write   *bool `toml:"write"   yaml:"write"`
-	Indent  *int  `toml:"indent"  yaml:"indent"`
-	Newline *bool `toml:"newline" yaml:"newline"`
+	Write   *bool `toml:"write,omitempty"   yaml:"write,omitempty"`
+	Indent  *int  `toml:"indent,omitempty"  yaml:"indent,omitempty"`
+	Newline *bool `toml:"newline,omitempty" yaml:"newline,omitempty"`
 }
 
 var configFiles = []string{
