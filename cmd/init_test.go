@@ -12,6 +12,8 @@ import (
 	"github.com/Eagle-Konbu/sanat/internal/config"
 )
 
+const sanatYML = ".sanat.yml"
+
 func assertConfig(t *testing.T, cfg config.Config, indent int, newline, write bool) {
 	t.Helper()
 
@@ -41,11 +43,11 @@ func TestInit_CreateConfig(t *testing.T) {
 		{
 			name:    "yaml with custom values",
 			input:   "1\n4\nn\ny\n",
-			file:    ".sanat.yml",
+			file:    sanatYML,
 			indent:  4,
 			newline: false,
 			write:   true,
-			wantMsg: "Created .sanat.yml",
+			wantMsg: "Created " + sanatYML,
 		},
 		{
 			name:    "toml with custom values",
@@ -59,11 +61,11 @@ func TestInit_CreateConfig(t *testing.T) {
 		{
 			name:    "all defaults",
 			input:   "\n\n\n\n",
-			file:    ".sanat.yml",
+			file:    sanatYML,
 			indent:  2,
 			newline: true,
 			write:   false,
-			wantMsg: "Created .sanat.yml",
+			wantMsg: "Created " + sanatYML,
 		},
 	}
 
@@ -98,7 +100,7 @@ func TestInit_ExistingFile(t *testing.T) {
 		name string
 		file string
 	}{
-		{"existing yml", ".sanat.yml"},
+		{"existing yml", sanatYML},
 		{"existing toml", ".sanat.toml"},
 	}
 
