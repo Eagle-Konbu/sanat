@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -12,6 +13,8 @@ import (
 	"github.com/Eagle-Konbu/sanat/internal/config"
 	"github.com/Eagle-Konbu/sanat/internal/gofile"
 )
+
+var errPathOutsideWorkDir = errors.New("path is outside working directory")
 
 var (
 	writeFlag   bool
@@ -103,13 +106,23 @@ func run(cmd *cobra.Command, args []string) error {
 		return processStdin()
 	}
 
+	baseDir, err := filepath.Abs(".")
+	if err != nil {
+		return err
+	}
+
+	baseDir, err = filepath.EvalSymlinks(baseDir)
+	if err != nil {
+		return err
+	}
+
 	files, err := resolvePatterns(args)
 	if err != nil {
 		return err
 	}
 
 	for _, path := range files {
-		if err := processFile(path); err != nil {
+		if err := processFile(path, baseDir); err != nil {
 			fmt.Fprintf(os.Stderr, "%s: %v\n", path, err)
 		}
 	}
@@ -138,10 +151,13 @@ func processStdin() error {
 	return err
 }
 
-func processFile(path string) error {
-	cleanPath := filepath.Clean(path)
+func processFile(path, baseDir string) error {
+	cleanPath, err := safePath(path, baseDir)
+	if err != nil {
+		return err
+	}
 
-	src, err := os.ReadFile(cleanPath)
+	src, err := os.ReadFile(cleanPath) //nolint:gosec // path validated by safePath
 	if err != nil {
 		return err
 	}
@@ -163,6 +179,24 @@ func processFile(path string) error {
 	_, err = os.Stdout.Write(out)
 
 	return err
+}
+
+func safePath(path, baseDir string) (string, error) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+
+	resolved, err := filepath.EvalSymlinks(abs)
+	if err != nil {
+		return "", err
+	}
+
+	if resolved != baseDir && !strings.HasPrefix(resolved, baseDir+string(filepath.Separator)) {
+		return "", errPathOutsideWorkDir
+	}
+
+	return resolved, nil
 }
 
 func isTerminal(f *os.File) bool {
