@@ -147,8 +147,10 @@ const (
 	CrossJoinType
 )
 
+const joinStr = "join"
+
 var joinTypeStrings = [...]string{
-	NormalJoinType:       "join",
+	NormalJoinType:       joinStr,
 	StraightJoinType:     "straight_join",
 	LeftJoinType:         "left join",
 	RightJoinType:        "right join",
@@ -163,7 +165,7 @@ func (jt JoinType) ToString() string {
 		return joinTypeStrings[jt]
 	}
 
-	return "join"
+	return joinStr
 }
 
 // JoinCondition represents the ON condition of a JOIN.
@@ -247,7 +249,7 @@ const (
 func (t IndexHintForType) ToString() string {
 	switch t {
 	case JoinForType:
-		return "join"
+		return joinStr
 	case GroupByForType:
 		return "group by"
 	case OrderByForType:
