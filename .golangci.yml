@@ -61,6 +61,7 @@ linters:
           - funlen
           - lll
           - gosec
+          - goconst
 
 formatters:
   enable:
