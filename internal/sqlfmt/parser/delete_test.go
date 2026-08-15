@@ -121,6 +121,10 @@ func TestParseDelete_errors(t *testing.T) {
 		"DELETE FROM t ORDER",
 		"DELETE FROM t LIMIT",
 		"DELETE FROM t WHERE id = 1 EXTRA",
+		"DELETE t1, t2 FROM t1 JOIN t2 ON t1.id = t2.t1_id ORDER BY t1.id",
+		"DELETE t1, t2 FROM t1 JOIN t2 ON t1.id = t2.t1_id LIMIT 10",
+		"DELETE FROM t1, t2 USING t1 JOIN t2 ON t1.id = t2.t1_id ORDER BY t1.id",
+		"DELETE FROM t1, t2 USING t1 JOIN t2 ON t1.id = t2.t1_id LIMIT 10",
 	}
 
 	for _, in := range tests {

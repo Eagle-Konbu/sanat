@@ -43,8 +43,10 @@ func (p *Parser) parseDeleteStatement() *sqlast.Delete {
 
 	del.Ignore = p.consume(IGNORE)
 
+	var singleTable bool
+
 	if p.at(FROM) {
-		p.parseDeleteFromClause(del)
+		singleTable = p.parseDeleteFromClause(del)
 	} else {
 		del.Targets = p.parseTableNameList()
 		p.expect(FROM)
@@ -52,16 +54,22 @@ func (p *Parser) parseDeleteStatement() *sqlast.Delete {
 	}
 
 	del.Where = p.parseOptionalWhereClause(WHERE)
-	del.OrderBy = p.parseOptionalOrderBy()
-	del.Limit = p.parseOptionalLimit()
+
+	// ORDER BY and LIMIT are only valid for the single-table form (Form A);
+	// MySQL rejects them on the multi-table forms (Form B and Form C).
+	if singleTable {
+		del.OrderBy = p.parseOptionalOrderBy()
+		del.Limit = p.parseOptionalLimit()
+	}
 
 	return del
 }
 
 // parseDeleteFromClause parses the FROM clause of a DELETE statement,
 // disambiguating between the single-table form (Form A) and the multi-table
-// USING form (Form C). The current token must be FROM.
-func (p *Parser) parseDeleteFromClause(del *sqlast.Delete) {
+// USING form (Form C). The current token must be FROM. It reports whether
+// the statement is the single-table form.
+func (p *Parser) parseDeleteFromClause(del *sqlast.Delete) bool {
 	p.advance() // consume FROM
 
 	names := p.parseTableNameList()
@@ -70,7 +78,7 @@ func (p *Parser) parseDeleteFromClause(del *sqlast.Delete) {
 		del.Targets = names
 		del.TableExprs = p.parseTableReferenceList()
 
-		return
+		return false
 	}
 
 	if len(names) != 1 {
@@ -81,6 +89,8 @@ func (p *Parser) parseDeleteFromClause(del *sqlast.Delete) {
 	hints := p.parseOptionalIndexHints()
 
 	del.TableExprs = []sqlast.TableExpr{&sqlast.AliasedTableExpr{Expr: names[0], As: alias, Hints: hints}}
+
+	return true
 }
 
 // parseTableNameList parses a comma-separated list of plain (possibly
