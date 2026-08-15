@@ -1,0 +1,75 @@
+# yaml-language-server: $schema=https://storage.googleapis.com/coderabbit_public_assets/schema.v2.json
+
+language: en-US
+early_access: false
+
+reviews:
+  profile: chill
+  request_changes_workflow: true
+
+  auto_review:
+    enabled: true
+    drafts: true
+    # Renovate opens automated dependency-bump PRs; blocking review on these
+    # adds manual-override friction without much benefit.
+    ignore_usernames:
+      - renovate[bot]
+
+  # CI already runs golangci-lint via `task lint`; avoid reviewing the same
+  # concern twice.
+  tools:
+    golangci-lint:
+      enabled: false
+
+  pre_merge_checks:
+    title:
+      mode: error
+      requirements: >
+        Follow Conventional Commits: `<type>[optional scope]: <description>`.
+        Allowed types: feat, fix, docs, style, refactor, perf, test, build,
+        ci, chore. Description must be imperative mood, lowercase, no
+        trailing period, and 72 characters or fewer.
+    description:
+      mode: warning
+    docstrings:
+      mode: warning
+      threshold: 50
+    issue_assessment:
+      mode: "off"
+
+  finishing_touches:
+    autofix:
+      enabled: true
+
+  path_instructions:
+    - path: "**/*.go"
+      instructions: >
+        Follow this project's Go guidelines (see .ai/instructions.md): prefer
+        clarity over cleverness and simplicity over premature optimization;
+        code should be self-explanatory through descriptive names and
+        straightforward control flow. Comments should explain "why", not
+        "what" — flag comments that merely restate the code. Favor idiomatic
+        Go (effective Go conventions for error handling, naming, and
+        receivers) over non-idiomatic patterns. For doc comments on exported
+        identifiers, prioritize whether the explanation is accurate and
+        clear over simply being present.
+    - path: "**/*_test.go"
+      instructions: >
+        Test coverage percentage and lint/formatting issues are already
+        enforced by CI (`task test`, `task lint`) — do not comment on
+        coverage numbers or style. Focus on whether the test cases
+        themselves are appropriate: missing edge cases, redundant or
+        overlapping cases, and whether assertions actually validate the
+        intended behavior.
+    - path: "testdata/**"
+      instructions: >
+        These are fixture files for the SQL formatter (input/expected
+        pairs) and may intentionally contain non-standard or unusual
+        formatting on purpose as test input. Do not flag stylistic issues
+        inside fixture content itself, but do flag if the set of fixtures
+        seems redundant or insufficient to cover realistic formatting
+        scenarios.
+    - path: "**/*.md"
+      instructions: >
+        Documentation must be written in English only, per project
+        guidelines.
