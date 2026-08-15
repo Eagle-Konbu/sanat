@@ -217,6 +217,7 @@ var tokenNames = map[TokenType]string{
 	MODE:         "MODE",
 }
 
+// String returns the token type's display name, used in error messages.
 func (t TokenType) String() string {
 	if name, ok := tokenNames[t]; ok {
 		return name
