@@ -8,6 +8,15 @@ import (
 	"github.com/Eagle-Konbu/sanat/internal/sqlfmt/sqlast"
 )
 
+func TestParseError_Error(t *testing.T) {
+	err := &parser.ParseError{Pos: parser.Position{Line: 3, Column: 7}, Msg: "expected RPAREN, got EOF"}
+
+	want := "3:7: expected RPAREN, got EOF"
+	if got := err.Error(); got != want {
+		t.Errorf("Error() = %q, want %q", got, want)
+	}
+}
+
 func parseExpr(t *testing.T, input string) sqlast.Expr {
 	t.Helper()
 
@@ -353,6 +362,20 @@ func TestParseExpr_windowFunctions(t *testing.T) {
 		}
 		assertExpr(t, "ROW_NUMBER() OVER (RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)", want)
 	})
+
+	t.Run("unbounded following", func(t *testing.T) {
+		want := &sqlast.ArgumentLessWindowExpr{
+			Type: sqlast.RowNumberExprType,
+			OverClause: &sqlast.OverClause{WindowSpec: &sqlast.WindowSpecification{
+				FrameClause: &sqlast.FrameClause{
+					Unit:  sqlast.FrameRowsType,
+					Start: &sqlast.FramePoint{Type: sqlast.CurrentRowType},
+					End:   &sqlast.FramePoint{Type: sqlast.UnboundedFollowingType},
+				},
+			}},
+		}
+		assertExpr(t, "ROW_NUMBER() OVER (ROWS BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING)", want)
+	})
 }
 
 func TestParseExpr_errors(t *testing.T) {
@@ -384,6 +407,44 @@ func TestParseExpr_errors(t *testing.T) {
 		"EXISTS (1)",
 		"a IN (SELECT",
 		"FIRST_VALUE(a",
+
+		// Lexer-level errors (unterminated string, illegal byte) positioned
+		// deep inside each construct, to exercise the advance()/expect()
+		// error-propagation paths that a wrong-token syntax error can't reach.
+		"a OR b OR 'unterminated",
+		"a AND b AND 'unterminated",
+		"NOT 'unterminated",
+		"a = 'unterminated",
+		"a LIKE 'unterminated",
+		"a NOT LIKE 'unterminated",
+		"a IN (1, 2, 'unterminated)",
+		"a NOT IN (1, 'unterminated)",
+		"a BETWEEN 1 AND 'unterminated",
+		"a NOT BETWEEN 1 AND 'unterminated",
+		"1 + 2 + 'unterminated",
+		"1 * 2 * 'unterminated",
+		"- - 'unterminated",
+		"+ + 'unterminated",
+		"(1 + 'unterminated)",
+		"(SELECT 'unterminated FROM t)",
+		"CASE 'unterminated WHEN 1 THEN 2 END",
+		"CASE WHEN 'unterminated THEN 1 END",
+		"CASE WHEN a THEN 'unterminated END",
+		"CASE WHEN a THEN 1 ELSE 'unterminated END",
+		"EXISTS (SELECT 'unterminated FROM t)",
+		"COALESCE(a, 'unterminated)",
+		"COUNT(DISTINCT 'unterminated)",
+		"ROW_NUMBER() OVER (PARTITION BY 'unterminated)",
+		"ROW_NUMBER() OVER (ORDER BY 'unterminated)",
+		"ROW_NUMBER() OVER (ROWS BETWEEN 'unterminated AND CURRENT ROW)",
+		"ROW_NUMBER() OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND 'unterminated FOLLOWING)",
+		"LAG(a, 1, 'unterminated) OVER ()",
+		"NTH_VALUE(a, 'unterminated) OVER ()",
+		"JSON_OBJECTAGG('unterminated, v)",
+		"JSON_OBJECTAGG(k, 'unterminated)",
+		`a "illegal`,
+		`a OR "illegal`,
+		`t."illegal`,
 	}
 
 	for _, in := range tests {

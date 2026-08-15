@@ -194,6 +194,40 @@ func TestParseSelect_errors(t *testing.T) {
 		"SELECT * FROM (SELECT 1",
 		"FROM t",
 		"SELECT * FROM t extra tokens FROM u",
+
+		// Lexer-level errors (unterminated string, illegal byte) positioned
+		// deep inside each clause, to exercise the advance()/expect()
+		// error-propagation paths that a wrong-token syntax error can't reach.
+		"WITH c AS (SELECT 'unterminated) SELECT 1",
+		"WITH c ('unterminated) AS (SELECT 1) SELECT 1",
+		"SELECT a, 'unterminated FROM t",
+		"SELECT a AS 'unterminated FROM t",
+		"SELECT a FROM 'unterminated",
+		"SELECT a FROM t JOIN 'unterminated",
+		"SELECT a FROM t JOIN u ON 'unterminated",
+		"SELECT a FROM t NATURAL JOIN 'unterminated",
+		"SELECT a FROM t.'unterminated",
+		"SELECT a FROM (t JOIN u ON 'unterminated)",
+		"SELECT a FROM ('unterminated)",
+		"SELECT a FROM (SELECT 'unterminated) x",
+		"SELECT a FROM t USE INDEX ('unterminated)",
+		"SELECT a FROM t FORCE INDEX FOR JOIN ('unterminated)",
+		"SELECT a FROM t WHERE 'unterminated",
+		"SELECT a FROM t GROUP BY 'unterminated",
+		"SELECT a FROM t GROUP BY a HAVING 'unterminated",
+		"SELECT a FROM t ORDER BY 'unterminated",
+		"SELECT a FROM t LIMIT 'unterminated",
+		"SELECT a FROM t LIMIT 1 OFFSET 'unterminated",
+		`SELECT "illegal FROM t`,
+		`SELECT a FROM t WHERE "illegal`,
+		"SELECT a FROM t LEFT 'unterminated",
+		"SELECT a FROM t RIGHT 'unterminated",
+		"SELECT a FROM t LEFT OUTER 'unterminated",
+		"SELECT a FROM t NATURAL 'unterminated",
+		"SELECT a FROM t NATURAL LEFT 'unterminated",
+		"SELECT a FROM t NATURAL LEFT OUTER 'unterminated",
+		"SELECT a FROM t CROSS 'unterminated",
+		"SELECT a FROM t INNER 'unterminated",
 	}
 
 	for _, in := range tests {
