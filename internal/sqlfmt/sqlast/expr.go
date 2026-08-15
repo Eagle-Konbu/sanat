@@ -83,7 +83,7 @@ var arithmeticOpStrings = [...]string{
 	ModOp:   "%",
 }
 
-// ToString returns ArithmeticOperator's lower-case SQL keyword; String upper-cases the result.
+// ToString returns ArithmeticOperator's SQL operator text; String upper-cases the result.
 func (o ArithmeticOperator) ToString() string {
 	if int(o) < len(arithmeticOpStrings) {
 		return arithmeticOpStrings[o]
@@ -112,7 +112,7 @@ const (
 	UMinusOp
 )
 
-// ToString returns UnaryOperator's lower-case SQL keyword; String upper-cases the result.
+// ToString returns UnaryOperator's SQL operator text; String upper-cases the result.
 func (u UnaryOperator) ToString() string {
 	if u == UMinusOp {
 		return "-"

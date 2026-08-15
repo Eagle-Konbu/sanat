@@ -39,7 +39,7 @@ deferred; see [#14](https://github.com/Eagle-Konbu/sanat/issues/14).
 
 ## Package Layout
 
-```
+```text
 internal/sqlfmt/
 ├── sqlast/   AST node types + String() fallback serialization (no parsing logic)
 └── parser/   Lexer + recursive-descent parser producing sqlast nodes

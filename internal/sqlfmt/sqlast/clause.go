@@ -108,7 +108,7 @@ const (
 	ForShareLock
 )
 
-// ToString returns Lock's lower-case SQL keyword; String upper-cases the result.
+// ToString returns Lock's lower-case SQL clause text; String upper-cases the result.
 func (l Lock) ToString() string {
 	switch l {
 	case ForUpdateLock:
@@ -193,7 +193,7 @@ var joinTypeStrings = [...]string{
 	CrossJoinType:        "cross join",
 }
 
-// ToString returns JoinType's lower-case SQL keyword; String upper-cases the result.
+// ToString returns JoinType's lower-case SQL join text; String upper-cases the result.
 func (jt JoinType) ToString() string {
 	if int(jt) < len(joinTypeStrings) {
 		return joinTypeStrings[jt]
@@ -242,7 +242,7 @@ var comparisonOpStrings = [...]string{
 	NotRegexpOp:     "not regexp",
 }
 
-// ToString returns ComparisonOperator's lower-case SQL keyword; String upper-cases the result.
+// ToString returns ComparisonOperator's SQL operator text; String upper-cases the result.
 func (op ComparisonOperator) ToString() string {
 	if int(op) < len(comparisonOpStrings) {
 		return comparisonOpStrings[op]
@@ -282,7 +282,7 @@ const (
 	OrderByForType
 )
 
-// ToString returns IndexHintForType's lower-case SQL keyword; String upper-cases the result.
+// ToString returns IndexHintForType's lower-case SQL clause text; String upper-cases the result.
 func (t IndexHintForType) ToString() string {
 	switch t {
 	case JoinForType:
