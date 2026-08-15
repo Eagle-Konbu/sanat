@@ -184,7 +184,8 @@ func (c *CaseExpr) String() string {
 	b.WriteString("CASE")
 
 	if c.Expr != nil {
-		b.WriteString(" " + c.Expr.String())
+		b.WriteString(" ")
+		b.WriteString(c.Expr.String())
 	}
 
 	for _, w := range c.Whens {
@@ -192,7 +193,8 @@ func (c *CaseExpr) String() string {
 	}
 
 	if c.Else != nil {
-		b.WriteString(" ELSE " + c.Else.String())
+		b.WriteString(" ELSE ")
+		b.WriteString(c.Else.String())
 	}
 
 	b.WriteString(" END")
@@ -282,20 +284,23 @@ func (p *ParenExpr) String() string {
 
 func appendOver(b *strings.Builder, oc *OverClause) {
 	if oc != nil {
-		b.WriteString(" " + oc.String())
+		b.WriteString(" ")
+		b.WriteString(oc.String())
 	}
 }
 
 func formatDistinctAgg(name string, arg Expr, distinct bool, oc *OverClause) string {
 	var b strings.Builder
 
-	b.WriteString(name + "(")
+	b.WriteString(name)
+	b.WriteString("(")
 
 	if distinct {
 		b.WriteString("DISTINCT ")
 	}
 
-	b.WriteString(arg.String() + ")")
+	b.WriteString(arg.String())
+	b.WriteString(")")
 	appendOver(&b, oc)
 
 	return b.String()
@@ -304,7 +309,10 @@ func formatDistinctAgg(name string, arg Expr, distinct bool, oc *OverClause) str
 func formatSimpleAgg(name string, arg Expr, oc *OverClause) string {
 	var b strings.Builder
 
-	b.WriteString(name + "(" + arg.String() + ")")
+	b.WriteString(name)
+	b.WriteString("(")
+	b.WriteString(arg.String())
+	b.WriteString(")")
 	appendOver(&b, oc)
 
 	return b.String()
@@ -332,7 +340,8 @@ func (c *Count) String() string {
 		b.WriteString("DISTINCT ")
 	}
 
-	b.WriteString(strings.Join(args, ", ") + ")")
+	b.WriteString(strings.Join(args, ", "))
+	b.WriteString(")")
 	appendOver(&b, c.OverClause)
 
 	return b.String()
@@ -493,7 +502,8 @@ type ArgumentLessWindowExpr struct {
 func (a *ArgumentLessWindowExpr) String() string {
 	var b strings.Builder
 
-	b.WriteString(a.Type.String() + "()")
+	b.WriteString(a.Type.String())
+	b.WriteString("()")
 	appendOver(&b, a.OverClause)
 
 	return b.String()
@@ -511,10 +521,14 @@ type FirstOrLastValueExpr struct {
 func (f *FirstOrLastValueExpr) String() string {
 	var b strings.Builder
 
-	b.WriteString(f.Type.String() + "(" + f.Expr.String() + ")")
+	b.WriteString(f.Type.String())
+	b.WriteString("(")
+	b.WriteString(f.Expr.String())
+	b.WriteString(")")
 
 	if f.NullTreatmentClause != nil {
-		b.WriteString(" " + f.NullTreatmentClause.String())
+		b.WriteString(" ")
+		b.WriteString(f.NullTreatmentClause.String())
 	}
 
 	appendOver(&b, f.OverClause)
@@ -532,7 +546,9 @@ type NtileExpr struct {
 func (n *NtileExpr) String() string {
 	var b strings.Builder
 
-	b.WriteString("NTILE(" + n.N.String() + ")")
+	b.WriteString("NTILE(")
+	b.WriteString(n.N.String())
+	b.WriteString(")")
 	appendOver(&b, n.OverClause)
 
 	return b.String()
@@ -551,14 +567,20 @@ type NTHValueExpr struct {
 func (n *NTHValueExpr) String() string {
 	var b strings.Builder
 
-	b.WriteString("NTH_VALUE(" + n.Expr.String() + ", " + n.N.String() + ")")
+	b.WriteString("NTH_VALUE(")
+	b.WriteString(n.Expr.String())
+	b.WriteString(", ")
+	b.WriteString(n.N.String())
+	b.WriteString(")")
 
 	if n.FromFirstLastClause != nil {
-		b.WriteString(" " + n.FromFirstLastClause.String())
+		b.WriteString(" ")
+		b.WriteString(n.FromFirstLastClause.String())
 	}
 
 	if n.NullTreatmentClause != nil {
-		b.WriteString(" " + n.NullTreatmentClause.String())
+		b.WriteString(" ")
+		b.WriteString(n.NullTreatmentClause.String())
 	}
 
 	appendOver(&b, n.OverClause)
@@ -589,10 +611,14 @@ func (l *LagLeadExpr) String() string {
 		args = append(args, l.Default.String())
 	}
 
-	b.WriteString(l.Type.String() + "(" + strings.Join(args, ", ") + ")")
+	b.WriteString(l.Type.String())
+	b.WriteString("(")
+	b.WriteString(strings.Join(args, ", "))
+	b.WriteString(")")
 
 	if l.NullTreatmentClause != nil {
-		b.WriteString(" " + l.NullTreatmentClause.String())
+		b.WriteString(" ")
+		b.WriteString(l.NullTreatmentClause.String())
 	}
 
 	appendOver(&b, l.OverClause)
@@ -622,7 +648,11 @@ type JSONObjectAgg struct {
 func (j *JSONObjectAgg) String() string {
 	var b strings.Builder
 
-	b.WriteString("JSON_OBJECTAGG(" + j.Key.String() + ", " + j.Value.String() + ")")
+	b.WriteString("JSON_OBJECTAGG(")
+	b.WriteString(j.Key.String())
+	b.WriteString(", ")
+	b.WriteString(j.Value.String())
+	b.WriteString(")")
 	appendOver(&b, j.OverClause)
 
 	return b.String()

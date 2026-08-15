@@ -16,11 +16,13 @@ func (a *AliasedTableExpr) String() string {
 	b.WriteString(a.Expr.String())
 
 	if !a.As.IsEmpty() {
-		b.WriteString(" " + a.As.String())
+		b.WriteString(" ")
+		b.WriteString(a.As.String())
 	}
 
 	for _, hint := range a.Hints {
-		b.WriteString(" " + hint.String())
+		b.WriteString(" ")
+		b.WriteString(hint.String())
 	}
 
 	return b.String()
@@ -39,11 +41,14 @@ func (j *JoinTableExpr) String() string {
 	var b strings.Builder
 
 	b.WriteString(j.LeftExpr.String())
-	b.WriteString(" " + strings.ToUpper(j.Join.ToString()) + " ")
+	b.WriteString(" ")
+	b.WriteString(strings.ToUpper(j.Join.ToString()))
+	b.WriteString(" ")
 	b.WriteString(j.RightExpr.String())
 
 	if j.Condition != nil && j.Condition.On != nil {
-		b.WriteString(" ON " + j.Condition.On.String())
+		b.WriteString(" ON ")
+		b.WriteString(j.Condition.On.String())
 	}
 
 	return b.String()

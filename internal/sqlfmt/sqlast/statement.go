@@ -64,16 +64,21 @@ func (ins *Insert) String() string {
 		b.WriteString(" IGNORE")
 	}
 
-	b.WriteString(" INTO " + ins.Table.String())
+	b.WriteString(" INTO ")
+	b.WriteString(ins.Table.String())
 
 	if len(ins.Columns) > 0 {
-		b.WriteString(" (" + ins.Columns.String() + ")")
+		b.WriteString(" (")
+		b.WriteString(ins.Columns.String())
+		b.WriteString(")")
 	}
 
-	b.WriteString(" " + ins.Rows.String())
+	b.WriteString(" ")
+	b.WriteString(ins.Rows.String())
 
 	if len(ins.OnDup) > 0 {
-		b.WriteString(" " + ins.OnDup.String())
+		b.WriteString(" ")
+		b.WriteString(ins.OnDup.String())
 	}
 
 	return b.String()
@@ -107,14 +112,16 @@ func (u *Update) String() string {
 		tables[i] = t.String()
 	}
 
-	b.WriteString(" " + strings.Join(tables, ", "))
+	b.WriteString(" ")
+	b.WriteString(strings.Join(tables, ", "))
 
 	sets := make([]string, len(u.Exprs))
 	for i, e := range u.Exprs {
 		sets[i] = e.String()
 	}
 
-	b.WriteString(" SET " + strings.Join(sets, ", "))
+	b.WriteString(" SET ")
+	b.WriteString(strings.Join(sets, ", "))
 	writeWhereClause(&b, "WHERE", u.Where)
 	writeOrderBy(&b, u.OrderBy)
 	writeLimit(&b, u.Limit)
@@ -235,7 +242,8 @@ func (c *CommonTableExpr) String() string {
 func writeOptionalPrefix(b *strings.Builder, w SQLNode) {
 	s := w.String()
 	if s != "" {
-		b.WriteString(s + " ")
+		b.WriteString(s)
+		b.WriteString(" ")
 	}
 }
 
@@ -258,7 +266,8 @@ func writeFromClause(b *strings.Builder, from []TableExpr) {
 		strs[i] = f.String()
 	}
 
-	b.WriteString(" FROM " + strings.Join(strs, ", "))
+	b.WriteString(" FROM ")
+	b.WriteString(strings.Join(strs, ", "))
 }
 
 func writeWhereClause(b *strings.Builder, keyword string, w *Where) {
@@ -266,7 +275,10 @@ func writeWhereClause(b *strings.Builder, keyword string, w *Where) {
 		return
 	}
 
-	b.WriteString(" " + keyword + " " + w.String())
+	b.WriteString(" ")
+	b.WriteString(keyword)
+	b.WriteString(" ")
+	b.WriteString(w.String())
 }
 
 func writeGroupBy(b *strings.Builder, g *GroupBy) {
@@ -274,7 +286,8 @@ func writeGroupBy(b *strings.Builder, g *GroupBy) {
 		return
 	}
 
-	b.WriteString(" " + g.String())
+	b.WriteString(" ")
+	b.WriteString(g.String())
 }
 
 func writeOrderBy(b *strings.Builder, o OrderBy) {
@@ -282,7 +295,8 @@ func writeOrderBy(b *strings.Builder, o OrderBy) {
 		return
 	}
 
-	b.WriteString(" " + o.String())
+	b.WriteString(" ")
+	b.WriteString(o.String())
 }
 
 func writeLimit(b *strings.Builder, l *Limit) {
@@ -290,7 +304,8 @@ func writeLimit(b *strings.Builder, l *Limit) {
 		return
 	}
 
-	b.WriteString(" " + l.String())
+	b.WriteString(" ")
+	b.WriteString(l.String())
 }
 
 func writeLock(b *strings.Builder, l Lock, wait LockWaitType) {
@@ -298,10 +313,12 @@ func writeLock(b *strings.Builder, l Lock, wait LockWaitType) {
 		return
 	}
 
-	b.WriteString(" " + l.String())
+	b.WriteString(" ")
+	b.WriteString(l.String())
 
 	if s := wait.String(); s != "" {
-		b.WriteString(" " + s)
+		b.WriteString(" ")
+		b.WriteString(s)
 	}
 }
 
@@ -315,7 +332,8 @@ func writeTargets(b *strings.Builder, targets []TableName) {
 		strs[i] = t.String()
 	}
 
-	b.WriteString(" " + strings.Join(strs, ", "))
+	b.WriteString(" ")
+	b.WriteString(strings.Join(strs, ", "))
 }
 
 func writeTableExprs(b *strings.Builder, exprs []TableExpr) {
@@ -324,5 +342,6 @@ func writeTableExprs(b *strings.Builder, exprs []TableExpr) {
 		strs[i] = e.String()
 	}
 
-	b.WriteString(" FROM " + strings.Join(strs, ", "))
+	b.WriteString(" FROM ")
+	b.WriteString(strings.Join(strs, ", "))
 }
