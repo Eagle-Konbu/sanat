@@ -316,8 +316,6 @@ func (v Values) String() string {
 	return "VALUES " + strings.Join(rows, ", ")
 }
 
-func (Values) iInsertRows() {}
-
 // UpdateExpr represents a SET assignment in an UPDATE statement.
 type UpdateExpr struct {
 	Name *ColName

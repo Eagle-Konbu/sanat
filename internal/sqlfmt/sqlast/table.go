@@ -25,8 +25,6 @@ func (a *AliasedTableExpr) String() string {
 	return b.String()
 }
 
-func (*AliasedTableExpr) iTableExpr() {}
-
 // JoinTableExpr represents a JOIN expression.
 type JoinTableExpr struct {
 	LeftExpr  TableExpr
@@ -49,8 +47,6 @@ func (j *JoinTableExpr) String() string {
 	return b.String()
 }
 
-func (*JoinTableExpr) iTableExpr() {}
-
 // ParenTableExpr represents a parenthesized list of table expressions.
 type ParenTableExpr struct {
 	Exprs []TableExpr
@@ -65,8 +61,6 @@ func (p *ParenTableExpr) String() string {
 	return "(" + strings.Join(strs, ", ") + ")"
 }
 
-func (*ParenTableExpr) iTableExpr() {}
-
 // DerivedTable represents a subquery used as a table.
 type DerivedTable struct {
 	Select Statement
@@ -75,8 +69,6 @@ type DerivedTable struct {
 func (d *DerivedTable) String() string {
 	return "(" + d.Select.String() + ")"
 }
-
-func (*DerivedTable) iSimpleTableExpr() {}
 
 // AliasedExpr represents an expression with an optional alias in a SELECT clause.
 type AliasedExpr struct {
@@ -93,8 +85,6 @@ func (a *AliasedExpr) String() string {
 	return s
 }
 
-func (*AliasedExpr) iSelectExpr() {}
-
 // StarExpr represents a * or table.* expression in a SELECT clause.
 type StarExpr struct {
 	TableName TableName
@@ -107,5 +97,3 @@ func (s *StarExpr) String() string {
 
 	return s.TableName.Name.String() + ".*"
 }
-
-func (*StarExpr) iSelectExpr() {}

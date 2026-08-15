@@ -42,9 +42,6 @@ func (s *Select) String() string {
 	return b.String()
 }
 
-func (*Select) iStatement()  {}
-func (*Select) iInsertRows() {}
-
 // Insert represents an INSERT or REPLACE statement.
 type Insert struct {
 	Action  InsertAction
@@ -78,8 +75,6 @@ func (ins *Insert) String() string {
 
 	return b.String()
 }
-
-func (*Insert) iStatement() {}
 
 // Update represents an UPDATE statement.
 type Update struct {
@@ -123,8 +118,6 @@ func (u *Update) String() string {
 	return b.String()
 }
 
-func (*Update) iStatement() {}
-
 // Delete represents a DELETE statement.
 type Delete struct {
 	With       *With
@@ -155,8 +148,6 @@ func (d *Delete) String() string {
 
 	return b.String()
 }
-
-func (*Delete) iStatement() {}
 
 // Union represents a UNION statement.
 type Union struct {
@@ -189,8 +180,6 @@ func (u *Union) String() string {
 
 	return b.String()
 }
-
-func (*Union) iStatement() {}
 
 // With represents a WITH (CTE) clause.
 type With struct {
@@ -235,10 +224,6 @@ func (c *CommonTableExpr) String() string {
 // --- helpers to reduce cyclomatic complexity ---
 
 func writeOptionalPrefix(b *strings.Builder, w SQLNode) {
-	if w == nil {
-		return
-	}
-
 	s := w.String()
 	if s != "" {
 		b.WriteString(s + " ")
@@ -321,10 +306,6 @@ func writeTargets(b *strings.Builder, targets []TableName) {
 }
 
 func writeTableExprs(b *strings.Builder, exprs []TableExpr) {
-	if len(exprs) == 0 {
-		return
-	}
-
 	strs := make([]string, len(exprs))
 	for i, e := range exprs {
 		strs[i] = e.String()

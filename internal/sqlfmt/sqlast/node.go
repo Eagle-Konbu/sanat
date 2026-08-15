@@ -68,5 +68,3 @@ func (t TableName) String() string {
 }
 
 func (t TableName) IsEmpty() bool { return t.Name.IsEmpty() }
-
-func (TableName) iSimpleTableExpr() {}
