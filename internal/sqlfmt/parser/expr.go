@@ -439,8 +439,6 @@ func (p *Parser) parseIdentExpr() sqlast.Expr {
 // parseColName parses a possibly-qualified column reference (col or
 // table.col) as an assignment target. Shared by UPDATE's SET clause and
 // INSERT's SET / ON DUPLICATE KEY UPDATE clauses.
-//
-//nolint:unused // consumed by the UPDATE/INSERT parsers landing in #25/#26
 func (p *Parser) parseColName() *sqlast.ColName {
 	name := p.readIdent()
 
@@ -454,8 +452,6 @@ func (p *Parser) parseColName() *sqlast.ColName {
 }
 
 // parseSetExpr parses a single "col = expr" assignment.
-//
-//nolint:unused // consumed by the UPDATE/INSERT parsers landing in #25/#26
 func (p *Parser) parseSetExpr() *sqlast.UpdateExpr {
 	name := p.parseColName()
 	p.expect(EQ)
@@ -466,8 +462,6 @@ func (p *Parser) parseSetExpr() *sqlast.UpdateExpr {
 // parseSetExprList parses a comma-separated list of "col = expr"
 // assignments, as used by UPDATE's SET clause, INSERT's SET rows, and
 // ON DUPLICATE KEY UPDATE.
-//
-//nolint:unused // consumed by the UPDATE/INSERT parsers landing in #25/#26
 func (p *Parser) parseSetExprList() []*sqlast.UpdateExpr {
 	var exprs []*sqlast.UpdateExpr
 

@@ -367,6 +367,20 @@ func (u *UpdateExpr) String() string {
 	return u.Name.String() + " = " + u.Expr.String()
 }
 
+// SetExprs represents "SET col = val, ..." rows for an INSERT statement,
+// MySQL's alternative to the VALUES clause.
+type SetExprs []*UpdateExpr
+
+// String returns SetExprs's SQL text.
+func (s SetExprs) String() string {
+	strs := make([]string, len(s))
+	for i, e := range s {
+		strs[i] = e.String()
+	}
+
+	return "SET " + strings.Join(strs, ", ")
+}
+
 // OnDup represents an ON DUPLICATE KEY UPDATE clause.
 type OnDup []*UpdateExpr
 

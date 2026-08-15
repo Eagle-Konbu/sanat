@@ -198,6 +198,29 @@ func TestUpdateExpr_String(t *testing.T) {
 	assertEqual(t, "status = 1", ue.String())
 }
 
+func TestSetExprs_String(t *testing.T) {
+	tests := []struct {
+		name string
+		s    sqlast.SetExprs
+		want string
+	}{
+		{"empty", sqlast.SetExprs(nil), "SET "},
+		{"single", sqlast.SetExprs{
+			{Name: &sqlast.ColName{Name: "status"}, Expr: lit("1")},
+		}, "SET status = 1"},
+		{"multiple", sqlast.SetExprs{
+			{Name: &sqlast.ColName{Name: "a"}, Expr: lit("1")},
+			{Name: &sqlast.ColName{Name: "b"}, Expr: lit("2")},
+		}, "SET a = 1, b = 2"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assertEqual(t, tt.want, tt.s.String())
+		})
+	}
+}
+
 func TestOnDup_String(t *testing.T) {
 	assertEqual(t, "", sqlast.OnDup(nil).String())
 
