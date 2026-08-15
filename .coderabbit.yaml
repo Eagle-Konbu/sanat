@@ -3,6 +3,16 @@
 language: en-US
 early_access: false
 
+# Frame the reviewer's expertise: this repo is an in-house SQL lexer/parser
+# and formatter library, so reviews should come from someone fluent in
+# relational database/SQL semantics and in designing Go libraries (public
+# API surface, zero-value usability, error handling conventions), not just
+# general Go style.
+tone_instructions: >
+  Review as a senior engineer with deep expertise in relational databases,
+  SQL semantics, and Go library API design. Weigh SQL correctness and
+  idiomatic, well-encapsulated Go library APIs over style nitpicks.
+
 reviews:
   profile: chill
   request_changes_workflow: true
@@ -56,6 +66,51 @@ reviews:
         receivers) over non-idiomatic patterns. For doc comments on exported
         identifiers, prioritize whether the explanation is accurate and
         clear over simply being present.
+
+        This package implements an in-house SQL lexer/parser and formatter
+        (see docs/parser-spec.md, docs/formatter-spec.md), so bring a
+        relational-database/SQL specialist's eye to lexer, parser, and AST
+        code: check that tokenization and grammar handling match real SQL
+        semantics (dialect-specific keywords, operator precedence, quoting
+        and escaping rules, comment/whitespace edge cases, multi-statement
+        and nested-expression handling) rather than assuming a simplified
+        model of SQL. Flag cases where an edge case in the SQL grammar could
+        silently produce an incorrect AST or malformed output.
+
+        Also review as a Go library author: public API in exported types,
+        functions, and interfaces should be reviewed for a good library
+        surface — meaningful zero values, minimal exported surface area,
+        stable and composable signatures, errors that are wrapped/typed so
+        callers can handle them programmatically (errors.Is/As), and
+        avoidance of breaking changes to already-exported APIs. Prefer
+        catching these library-design concerns over restating linter-level
+        style feedback.
+    - path: "internal/sqlfmt/sqlast/**"
+      instructions: >
+        This package defines the SQL AST using marker methods to seal each
+        node interface to types declared in this package. Review new or
+        changed node types as a tree-design problem, not just a
+        SQL-semantics one: every node must implement the marker method(s)
+        for the interface(s) it claims, have a correct String()
+        implementation, and use receiver types (value vs. pointer)
+        consistently with sibling node types. Check that a new or changed
+        node type is exhaustively handled everywhere nodes of its
+        interface are switched over elsewhere in the codebase (printer,
+        formatter, other visitors) — a missed case is a silent formatting
+        bug, not a compile error, since these are interface types. Prefer
+        minimal, composable node shapes over reusing an unrelated existing
+        node type just to avoid adding a new one.
+    - path: "internal/sqlfmt/parser/**"
+      instructions: >
+        This is a hand-written recursive-descent SQL parser producing the
+        sqlast tree (see docs/parser-spec.md). Review precedence and
+        associativity changes against real SQL operator precedence, not
+        just internal consistency — an error in precedence handling
+        silently reorders or misgroups a valid query rather than failing
+        loudly. If the codebase parses SQL through more than one path
+        (e.g. this parser alongside a third-party parser elsewhere),
+        flag behavioral divergence between them for the same construct
+        unless the PR explains the divergence is intentional.
     - path: "**/*_test.go"
       instructions: >
         Test coverage percentage and lint/formatting issues are already
