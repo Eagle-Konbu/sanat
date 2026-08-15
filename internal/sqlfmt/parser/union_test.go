@@ -212,3 +212,20 @@ func TestParseUnion_errorType(t *testing.T) {
 		t.Errorf("ParseUnion(\"SELECT 1\") error type = %T, want *parser.ParseError", err)
 	}
 }
+
+// TestParseUnion_lexErrorType confirms a lexer-level failure (an
+// unterminated string literal) surfaces as a *parser.LexError specifically,
+// distinct from the syntax-error case covered by TestParseUnion_errorType.
+func TestParseUnion_lexErrorType(t *testing.T) {
+	const in = "SELECT 1 UNION 'unterminated"
+
+	_, err := parser.ParseUnion(in)
+	if err == nil {
+		t.Fatalf("ParseUnion(%q) expected error, got nil", in)
+	}
+
+	var lexErr *parser.LexError
+	if !errors.As(err, &lexErr) {
+		t.Errorf("ParseUnion(%q) error type = %T, want *parser.LexError", in, err)
+	}
+}
