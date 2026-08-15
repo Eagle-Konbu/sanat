@@ -6,6 +6,7 @@ early_access: false
 reviews:
   profile: chill
   request_changes_workflow: true
+  poem: true
 
   auto_review:
     enabled: true
@@ -28,14 +29,13 @@ reviews:
     title:
       mode: error
       requirements: >
-        Follow Conventional Commits: `<type>[optional scope]: <description>`.
-        Allowed types: feat, fix, docs, style, refactor, perf, test, build,
-        ci, chore. Description must be imperative mood, lowercase, no
-        trailing period, and 72 characters or fewer.
+        Write a concise, descriptive summary of the change in imperative
+        mood (e.g. "Add", "Fix", "Refactor"), so a reviewer can understand
+        the change at a glance.
     description:
       mode: warning
     docstrings:
-      mode: warning
+      mode: error
       threshold: 50
     issue_assessment:
       mode: "off"
