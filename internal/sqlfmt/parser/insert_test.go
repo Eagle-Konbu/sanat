@@ -51,11 +51,6 @@ func TestParseInsert_basic(t *testing.T) {
 			"REPLACE INTO t (a) VALUES (1)",
 		},
 		{
-			"replace ignore",
-			"REPLACE IGNORE INTO t (a) VALUES (1)",
-			"REPLACE IGNORE INTO t (a) VALUES (1)",
-		},
-		{
 			"qualified table",
 			"INSERT INTO mydb.t (a) VALUES (1)",
 			"INSERT INTO mydb.t (a) VALUES (1)",
@@ -181,6 +176,8 @@ func TestParseInsert_errors(t *testing.T) {
 		"INSERT INTO t (a) VALUES (1) extra tokens",
 		"UPDATE t SET a = 1",
 		"REPLACE",
+		"REPLACE IGNORE INTO t (a) VALUES (1)",
+		"REPLACE INTO t (a, b) VALUES (1, 2) ON DUPLICATE KEY UPDATE b = 3",
 
 		// Lexer-level errors positioned deep inside each clause.
 		"INSERT INTO 'unterminated",

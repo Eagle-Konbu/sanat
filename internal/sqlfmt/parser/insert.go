@@ -23,14 +23,19 @@ func ParseInsert(input string) (ins *sqlast.Insert, err error) {
 func (p *Parser) parseInsertStatement() *sqlast.Insert {
 	ins := &sqlast.Insert{Action: p.parseInsertAction()}
 
-	ins.Ignore = p.consume(IGNORE)
+	if ins.Action == sqlast.InsertAct {
+		ins.Ignore = p.consume(IGNORE)
+	}
 
 	p.expect(INTO)
 
 	ins.Table = p.parseTableName()
 	ins.Columns = p.parseOptionalColumnList()
 	ins.Rows = p.parseInsertRows()
-	ins.OnDup = p.parseOptionalOnDup()
+
+	if ins.Action == sqlast.InsertAct {
+		ins.OnDup = p.parseOptionalOnDup()
+	}
 
 	return ins
 }
@@ -78,7 +83,7 @@ func (p *Parser) parseInsertRows() sqlast.InsertRows {
 // parseValuesRows parses a VALUES clause: one or more parenthesized,
 // comma-separated expression lists. The current token must be VALUES.
 func (p *Parser) parseValuesRows() sqlast.Values {
-	p.advance() // consume VALUES
+	p.advance()
 
 	var rows sqlast.Values
 
@@ -98,7 +103,7 @@ func (p *Parser) parseValuesRows() sqlast.Values {
 // parseSetRows parses a SET clause: a comma-separated list of "col = expr"
 // assignments. The current token must be SET.
 func (p *Parser) parseSetRows() sqlast.SetExprs {
-	p.advance() // consume SET
+	p.advance()
 
 	return sqlast.SetExprs(p.parseSetExprList())
 }
