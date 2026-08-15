@@ -54,10 +54,14 @@ jobs:
   e2e:
     name: E2E
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
+      with:
+        persist-credentials: false
 
     - name: Set up Go
       uses: actions/setup-go@v5
