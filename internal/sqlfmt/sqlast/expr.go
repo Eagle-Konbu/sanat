@@ -13,7 +13,115 @@ type ComparisonExpr struct {
 }
 
 func (c *ComparisonExpr) String() string {
-	return fmt.Sprintf("%s %s %s", c.Left.String(), c.Operator.ToString(), c.Right.String())
+	return fmt.Sprintf("%s %s %s", c.Left.String(), strings.ToUpper(c.Operator.ToString()), c.Right.String())
+}
+
+// RangeCond represents a [NOT] BETWEEN ... AND ... expression.
+type RangeCond struct {
+	Not  bool
+	Left Expr
+	From Expr
+	To   Expr
+}
+
+func (r *RangeCond) String() string {
+	not := ""
+	if r.Not {
+		not = "NOT "
+	}
+
+	return fmt.Sprintf("%s %sBETWEEN %s AND %s", r.Left.String(), not, r.From.String(), r.To.String())
+}
+
+// IsExpr represents an IS [NOT] NULL expression.
+type IsExpr struct {
+	Not  bool
+	Expr Expr
+}
+
+func (i *IsExpr) String() string {
+	if i.Not {
+		return i.Expr.String() + " IS NOT NULL"
+	}
+
+	return i.Expr.String() + " IS NULL"
+}
+
+// ValTuple represents a parenthesized list of expressions, e.g. the value
+// list on the right-hand side of an IN predicate.
+type ValTuple []Expr
+
+func (v ValTuple) String() string {
+	strs := make([]string, len(v))
+	for i, e := range v {
+		strs[i] = e.String()
+	}
+
+	return "(" + strings.Join(strs, ", ") + ")"
+}
+
+// ArithmeticOperator represents a binary arithmetic operator.
+type ArithmeticOperator int8
+
+const (
+	PlusOp ArithmeticOperator = iota
+	MinusOp
+	MultOp
+	DivOp
+	ModOp
+)
+
+var arithmeticOpStrings = [...]string{
+	PlusOp:  "+",
+	MinusOp: "-",
+	MultOp:  "*",
+	DivOp:   "/",
+	ModOp:   "%",
+}
+
+func (o ArithmeticOperator) ToString() string {
+	if int(o) < len(arithmeticOpStrings) {
+		return arithmeticOpStrings[o]
+	}
+
+	return "+"
+}
+
+// ArithmeticExpr represents a binary arithmetic expression (e.g., a + b).
+type ArithmeticExpr struct {
+	Operator ArithmeticOperator
+	Left     Expr
+	Right    Expr
+}
+
+func (a *ArithmeticExpr) String() string {
+	return fmt.Sprintf("%s %s %s", a.Left.String(), a.Operator.ToString(), a.Right.String())
+}
+
+// UnaryOperator represents a unary + or - operator.
+type UnaryOperator int8
+
+const (
+	UPlusOp UnaryOperator = iota
+	UMinusOp
+)
+
+func (u UnaryOperator) ToString() string {
+	if u == UMinusOp {
+		return "-"
+	}
+
+	return "+"
+}
+
+// UnaryExpr represents a unary +expr or -expr.
+type UnaryExpr struct {
+	Operator UnaryOperator
+	Expr     Expr
+}
+
+func (u *UnaryExpr) String() string {
+	return u.Operator.ToString() + u.Expr.String()
 }
 
 // AndExpr represents an AND expression.

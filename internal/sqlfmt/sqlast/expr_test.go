@@ -56,6 +56,84 @@ func TestCaseExpr_String(t *testing.T) {
 	})
 }
 
+func TestComparisonExpr_String_wordOperators(t *testing.T) {
+	tests := []struct {
+		op   sqlast.ComparisonOperator
+		want string
+	}{
+		{sqlast.InOp, "a IN 1"},
+		{sqlast.NotInOp, "a NOT IN 1"},
+		{sqlast.LikeOp, "a LIKE 1"},
+		{sqlast.NotLikeOp, "a NOT LIKE 1"},
+	}
+
+	for _, tt := range tests {
+		e := &sqlast.ComparisonExpr{Left: lit("a"), Operator: tt.op, Right: lit("1")}
+		assertEqual(t, tt.want, e.String())
+	}
+}
+
+func TestRangeCond_String(t *testing.T) {
+	t.Run("positive", func(t *testing.T) {
+		e := &sqlast.RangeCond{Left: lit("a"), From: lit("1"), To: lit("10")}
+		assertEqual(t, "a BETWEEN 1 AND 10", e.String())
+	})
+
+	t.Run("negated", func(t *testing.T) {
+		e := &sqlast.RangeCond{Not: true, Left: lit("a"), From: lit("1"), To: lit("10")}
+		assertEqual(t, "a NOT BETWEEN 1 AND 10", e.String())
+	})
+}
+
+func TestIsExpr_String(t *testing.T) {
+	t.Run("is null", func(t *testing.T) {
+		e := &sqlast.IsExpr{Expr: lit("a")}
+		assertEqual(t, "a IS NULL", e.String())
+	})
+
+	t.Run("is not null", func(t *testing.T) {
+		e := &sqlast.IsExpr{Not: true, Expr: lit("a")}
+		assertEqual(t, "a IS NOT NULL", e.String())
+	})
+}
+
+func TestValTuple_String(t *testing.T) {
+	v := sqlast.ValTuple{lit("1"), lit("2"), lit("3")}
+	assertEqual(t, "(1, 2, 3)", v.String())
+}
+
+func TestArithmeticExpr_String(t *testing.T) {
+	tests := []struct {
+		op   sqlast.ArithmeticOperator
+		want string
+	}{
+		{sqlast.PlusOp, "a + b"},
+		{sqlast.MinusOp, "a - b"},
+		{sqlast.MultOp, "a * b"},
+		{sqlast.DivOp, "a / b"},
+		{sqlast.ModOp, "a % b"},
+	}
+
+	for _, tt := range tests {
+		e := &sqlast.ArithmeticExpr{Left: lit("a"), Operator: tt.op, Right: lit("b")}
+		assertEqual(t, tt.want, e.String())
+	}
+}
+
+func TestArithmeticOperator_ToString(t *testing.T) {
+	assertEqual(t, "+", sqlast.ArithmeticOperator(99).ToString())
+}
+
+func TestUnaryExpr_String(t *testing.T) {
+	assertEqual(t, "-a", (&sqlast.UnaryExpr{Operator: sqlast.UMinusOp, Expr: lit("a")}).String())
+	assertEqual(t, "+a", (&sqlast.UnaryExpr{Operator: sqlast.UPlusOp, Expr: lit("a")}).String())
+}
+
+func TestUnaryOperator_ToString(t *testing.T) {
+	assertEqual(t, "-", sqlast.UMinusOp.ToString())
+	assertEqual(t, "+", sqlast.UPlusOp.ToString())
+}
+
 func TestExistsExpr_String(t *testing.T) {
 	e := &sqlast.ExistsExpr{
 		Subquery: &sqlast.Subquery{

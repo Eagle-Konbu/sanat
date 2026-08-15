@@ -62,6 +62,9 @@ linters:
           - lll
           - gosec
           - goconst
+      - path: internal/sqlfmt/parser/
+        linters:
+          - ireturn # a recursive-descent AST parser must return sqlast's node interfaces
 
 formatters:
   enable:

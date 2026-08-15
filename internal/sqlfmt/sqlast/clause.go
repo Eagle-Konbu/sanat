@@ -100,6 +100,7 @@ const (
 	NoLock Lock = iota
 	ForUpdateLock
 	ShareModeLock
+	ForShareLock
 )
 
 func (l Lock) ToString() string {
@@ -108,6 +109,8 @@ func (l Lock) ToString() string {
 		return "for update"
 	case ShareModeLock:
 		return "lock in share mode"
+	case ForShareLock:
+		return "for share"
 	default:
 		return ""
 	}
@@ -115,6 +118,27 @@ func (l Lock) ToString() string {
 
 func (l Lock) String() string {
 	return strings.ToUpper(l.ToString())
+}
+
+// LockWaitType represents the NOWAIT/SKIP LOCKED modifier on a FOR UPDATE
+// or FOR SHARE locking clause.
+type LockWaitType int8
+
+const (
+	NoLockWait LockWaitType = iota
+	NowaitType
+	SkipLockedType
+)
+
+func (t LockWaitType) String() string {
+	switch t {
+	case NowaitType:
+		return "NOWAIT"
+	case SkipLockedType:
+		return "SKIP LOCKED"
+	default:
+		return ""
+	}
 }
 
 // InsertAction represents INSERT or REPLACE.
