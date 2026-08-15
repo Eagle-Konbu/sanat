@@ -9,6 +9,7 @@ type AliasedTableExpr struct {
 	Hints IndexHints
 }
 
+// String returns AliasedTableExpr's SQL text.
 func (a *AliasedTableExpr) String() string {
 	var b strings.Builder
 
@@ -33,6 +34,7 @@ type JoinTableExpr struct {
 	Condition *JoinCondition
 }
 
+// String returns JoinTableExpr's SQL text.
 func (j *JoinTableExpr) String() string {
 	var b strings.Builder
 
@@ -52,6 +54,7 @@ type ParenTableExpr struct {
 	Exprs []TableExpr
 }
 
+// String returns ParenTableExpr's SQL text.
 func (p *ParenTableExpr) String() string {
 	strs := make([]string, len(p.Exprs))
 	for i, e := range p.Exprs {
@@ -66,6 +69,7 @@ type DerivedTable struct {
 	Select Statement
 }
 
+// String returns DerivedTable's SQL text.
 func (d *DerivedTable) String() string {
 	return "(" + d.Select.String() + ")"
 }
@@ -76,6 +80,7 @@ type AliasedExpr struct {
 	As   ColIdent
 }
 
+// String returns AliasedExpr's SQL text.
 func (a *AliasedExpr) String() string {
 	s := a.Expr.String()
 	if !a.As.IsEmpty() {
@@ -90,6 +95,7 @@ type StarExpr struct {
 	TableName TableName
 }
 
+// String returns StarExpr's SQL text.
 func (s *StarExpr) String() string {
 	if s.TableName.Name.IsEmpty() {
 		return "*"

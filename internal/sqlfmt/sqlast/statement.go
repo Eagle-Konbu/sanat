@@ -20,6 +20,7 @@ type Select struct {
 	LockWait    LockWaitType
 }
 
+// String returns Select's SQL text.
 func (s *Select) String() string {
 	var b strings.Builder
 
@@ -53,6 +54,7 @@ type Insert struct {
 	OnDup   OnDup
 }
 
+// String returns Insert's SQL text.
 func (ins *Insert) String() string {
 	var b strings.Builder
 
@@ -88,6 +90,7 @@ type Update struct {
 	Limit      *Limit
 }
 
+// String returns Update's SQL text.
 func (u *Update) String() string {
 	var b strings.Builder
 
@@ -130,6 +133,7 @@ type Delete struct {
 	Limit      *Limit
 }
 
+// String returns Delete's SQL text.
 func (d *Delete) String() string {
 	var b strings.Builder
 
@@ -162,6 +166,7 @@ type Union struct {
 	LockWait LockWaitType
 }
 
+// String returns Union's SQL text.
 func (u *Union) String() string {
 	var b strings.Builder
 
@@ -189,6 +194,7 @@ type With struct {
 	Recursive bool
 }
 
+// String returns With's SQL text.
 func (w *With) String() string {
 	if w == nil {
 		return ""
@@ -214,6 +220,7 @@ type CommonTableExpr struct {
 	Subquery Statement
 }
 
+// String returns CommonTableExpr's SQL text.
 func (c *CommonTableExpr) String() string {
 	name := c.ID.String()
 	if len(c.Columns) > 0 {

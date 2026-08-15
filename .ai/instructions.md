@@ -90,6 +90,7 @@ This project uses [Task](https://taskfile.dev/) for build automation. **Prefer `
 - Spec documents:
   - `docs/formatter-spec.md` — Formatter specification (processing flow, format rules, CLI, configuration)
   - `docs/detect-spec.md` — SQL detection specification (MightBeSQL heuristic)
+  - `docs/parser-spec.md` — In-house SQL lexer/parser specification (`internal/sqlfmt/sqlast`, `internal/sqlfmt/parser`)
 
 ## References
 
