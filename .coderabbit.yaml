@@ -10,6 +10,9 @@ reviews:
   auto_review:
     enabled: true
     drafts: true
+    # Review PRs against any base branch, not just the default branch.
+    base_branches:
+      - ".*"
     # Renovate opens automated dependency-bump PRs; blocking review on these
     # adds manual-override friction without much benefit.
     ignore_usernames:
