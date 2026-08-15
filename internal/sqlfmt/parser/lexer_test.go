@@ -158,6 +158,23 @@ func TestLexer_NumberLiterals(t *testing.T) {
 			{parser.EOF, ""},
 		})
 	})
+
+	t.Run("trailing e without digits is not an exponent", func(t *testing.T) {
+		assertTokens(t, "1e", []wantToken{
+			{parser.INT, "1"},
+			{parser.IDENT, "e"},
+			{parser.EOF, ""},
+		})
+	})
+
+	t.Run("trailing e with sign but no digits is not an exponent", func(t *testing.T) {
+		assertTokens(t, "1e+", []wantToken{
+			{parser.INT, "1"},
+			{parser.IDENT, "e"},
+			{parser.PLUS, "+"},
+			{parser.EOF, ""},
+		})
+	})
 }
 
 func TestLexer_StringLiterals(t *testing.T) {
@@ -173,6 +190,11 @@ func TestLexer_StringLiterals(t *testing.T) {
 		{"backslash escape quote", `'it\'s'`, "it's"},
 		{"backslash escape backslash", `'a\\b'`, `a\b`},
 		{"backslash escape percent", `'50\%'`, "50%"},
+		{"backslash escape nul", `'a\0b'`, "a\x00b"},
+		{"backslash escape backspace", `'a\bb'`, "a\bb"},
+		{"backslash escape carriage return", `'a\rb'`, "a\rb"},
+		{"backslash escape tab", `'a\tb'`, "a\tb"},
+		{"backslash escape ctrl-z", `'a\Zb'`, "a\x1ab"},
 	}
 
 	for _, tt := range tests {
