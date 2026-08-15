@@ -105,20 +105,23 @@ func (p *Parser) consume(tt TokenType) bool {
 	return true
 }
 
-// recoverParseError recovers a panic raised by this package and assigns it
-// to *err; any other panic (a real bug, not a parse error) keeps propagating.
+// recoverParseError recovers a *ParseError or *LexError panic raised by this
+// package and assigns it to *err; any other panic (a real bug, not a parse
+// error) keeps propagating.
 func recoverParseError(err *error) {
 	r := recover()
 	if r == nil {
 		return
 	}
 
-	e, ok := r.(error)
-	if !ok {
+	switch e := r.(type) {
+	case *ParseError:
+		*err = e
+	case *LexError:
+		*err = e
+	default:
 		panic(r)
 	}
-
-	*err = e
 }
 
 // ParseExpr parses a single SQL expression from input.
