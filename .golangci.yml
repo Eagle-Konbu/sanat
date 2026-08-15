@@ -65,7 +65,6 @@ linters:
       - path: internal/sqlfmt/parser/
         linters:
           - ireturn # a recursive-descent AST parser must return sqlast's node interfaces
-          - nilnil # (nil, nil) is the legitimate "clause absent" outcome, distinct from a parse error
 
 formatters:
   enable:

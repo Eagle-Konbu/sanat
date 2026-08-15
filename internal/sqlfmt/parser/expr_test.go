@@ -103,6 +103,10 @@ func TestParseExpr_unaryMinus(t *testing.T) {
 	assertExpr(t, "-1 + 2", want)
 }
 
+func TestParseExpr_unaryPlus(t *testing.T) {
+	assertExpr(t, "+1", &sqlast.UnaryExpr{Operator: sqlast.UPlusOp, Expr: num("1")})
+}
+
 func TestParseExpr_orAndNotPrecedence(t *testing.T) {
 	// NOT > AND > OR: "a OR b AND NOT c" must parse as a OR (b AND (NOT c)).
 	want := &sqlast.OrExpr{

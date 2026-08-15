@@ -77,10 +77,8 @@ var argumentLessWindowTypes = map[string]sqlast.ArgumentLessWindowExprType{
 // call whose name and opening '(' have already been seen; the current token
 // is the one immediately after '('. It dispatches to the specific AST node
 // the function name maps to, falling back to a generic FuncExpr.
-func (p *Parser) parseFuncCall(name string) (sqlast.Expr, error) {
-	if err := p.advance(); err != nil { // consume '('
-		return nil, err
-	}
+func (p *Parser) parseFuncCall(name string) sqlast.Expr {
+	p.advance() // consume '('
 
 	upper := strings.ToUpper(name)
 
@@ -105,7 +103,7 @@ func (p *Parser) parseFuncCall(name string) (sqlast.Expr, error) {
 // parseMappedOrGenericFuncCall handles the function names whose parsing
 // shape is looked up from a constructor table, falling back to a generic
 // FuncExpr for anything not recognized.
-func (p *Parser) parseMappedOrGenericFuncCall(upper, name string) (sqlast.Expr, error) {
+func (p *Parser) parseMappedOrGenericFuncCall(upper, name string) sqlast.Expr {
 	if _, ok := argumentLessWindowTypes[upper]; ok {
 		return p.parseArgumentLessWindowCall(upper)
 	}
@@ -121,504 +119,253 @@ func (p *Parser) parseMappedOrGenericFuncCall(upper, name string) (sqlast.Expr, 
 	return p.parseGenericFuncCall(name)
 }
 
-func (p *Parser) parseGenericFuncCall(name string) (sqlast.Expr, error) {
+func (p *Parser) parseGenericFuncCall(name string) sqlast.Expr {
 	var args []sqlast.Expr
 
 	if !p.at(RPAREN) {
-		var err error
-
-		args, err = p.parseExprList()
-		if err != nil {
-			return nil, err
-		}
+		args = p.parseExprList()
 	}
 
-	if err := p.expect(RPAREN); err != nil {
-		return nil, err
-	}
+	p.expect(RPAREN)
 
-	return &sqlast.FuncExpr{Name: sqlast.ColIdent(name), Exprs: args}, nil
+	return &sqlast.FuncExpr{Name: sqlast.ColIdent(name), Exprs: args}
 }
 
-func (p *Parser) parseCountCall() (sqlast.Expr, error) {
-	if ok, err := p.consume(STAR); err != nil {
-		return nil, err
-	} else if ok {
-		if err := p.expect(RPAREN); err != nil {
-			return nil, err
-		}
+func (p *Parser) parseCountCall() sqlast.Expr {
+	if p.consume(STAR) {
+		p.expect(RPAREN)
 
-		oc, err := p.parseOptionalOverClause()
-		if err != nil {
-			return nil, err
-		}
-
-		return &sqlast.CountStar{OverClause: oc}, nil
+		return &sqlast.CountStar{OverClause: p.parseOptionalOverClause()}
 	}
 
-	distinct, err := p.consumeDistinct()
-	if err != nil {
-		return nil, err
-	}
+	distinct := p.consumeDistinct()
+	args := p.parseExprList()
+	p.expect(RPAREN)
 
-	args, err := p.parseExprList()
-	if err != nil {
-		return nil, err
-	}
-
-	if err := p.expect(RPAREN); err != nil {
-		return nil, err
-	}
-
-	oc, err := p.parseOptionalOverClause()
-	if err != nil {
-		return nil, err
-	}
-
-	return &sqlast.Count{Args: args, Distinct: distinct, OverClause: oc}, nil
+	return &sqlast.Count{Args: args, Distinct: distinct, OverClause: p.parseOptionalOverClause()}
 }
 
-func (p *Parser) parseDistinctAggCall(ctor distinctAggCtor) (sqlast.Expr, error) {
-	distinct, err := p.consumeDistinct()
-	if err != nil {
-		return nil, err
-	}
+func (p *Parser) parseDistinctAggCall(ctor distinctAggCtor) sqlast.Expr {
+	distinct := p.consumeDistinct()
+	arg := p.parseExpr()
+	p.expect(RPAREN)
 
-	arg, err := p.parseExpr()
-	if err != nil {
-		return nil, err
-	}
-
-	if err := p.expect(RPAREN); err != nil {
-		return nil, err
-	}
-
-	oc, err := p.parseOptionalOverClause()
-	if err != nil {
-		return nil, err
-	}
-
-	return ctor(arg, distinct, oc), nil
+	return ctor(arg, distinct, p.parseOptionalOverClause())
 }
 
-func (p *Parser) parseSimpleAggCall(ctor simpleAggCtor) (sqlast.Expr, error) {
-	arg, err := p.parseExpr()
-	if err != nil {
-		return nil, err
-	}
+func (p *Parser) parseSimpleAggCall(ctor simpleAggCtor) sqlast.Expr {
+	arg := p.parseExpr()
+	p.expect(RPAREN)
 
-	if err := p.expect(RPAREN); err != nil {
-		return nil, err
-	}
-
-	oc, err := p.parseOptionalOverClause()
-	if err != nil {
-		return nil, err
-	}
-
-	return ctor(arg, oc), nil
+	return ctor(arg, p.parseOptionalOverClause())
 }
 
-func (p *Parser) parseArgumentLessWindowCall(name string) (sqlast.Expr, error) {
-	if err := p.expect(RPAREN); err != nil {
-		return nil, err
-	}
+func (p *Parser) parseArgumentLessWindowCall(name string) sqlast.Expr {
+	p.expect(RPAREN)
 
-	oc, err := p.parseOptionalOverClause()
-	if err != nil {
-		return nil, err
-	}
-
-	return &sqlast.ArgumentLessWindowExpr{Type: argumentLessWindowTypes[name], OverClause: oc}, nil
+	return &sqlast.ArgumentLessWindowExpr{Type: argumentLessWindowTypes[name], OverClause: p.parseOptionalOverClause()}
 }
 
-func (p *Parser) parseFirstOrLastValueCall(isLast bool) (sqlast.Expr, error) {
-	expr, err := p.parseExpr()
-	if err != nil {
-		return nil, err
-	}
+func (p *Parser) parseFirstOrLastValueCall(isLast bool) sqlast.Expr {
+	expr := p.parseExpr()
+	p.expect(RPAREN)
 
-	if err := p.expect(RPAREN); err != nil {
-		return nil, err
-	}
-
-	nt, err := p.parseOptionalNullTreatment()
-	if err != nil {
-		return nil, err
-	}
-
-	oc, err := p.parseOptionalOverClause()
-	if err != nil {
-		return nil, err
-	}
+	nt := p.parseOptionalNullTreatment()
+	oc := p.parseOptionalOverClause()
 
 	typ := sqlast.FirstValueExprType
 	if isLast {
 		typ = sqlast.LastValueExprType
 	}
 
-	return &sqlast.FirstOrLastValueExpr{Type: typ, Expr: expr, NullTreatmentClause: nt, OverClause: oc}, nil
+	return &sqlast.FirstOrLastValueExpr{Type: typ, Expr: expr, NullTreatmentClause: nt, OverClause: oc}
 }
 
-func (p *Parser) parseNtileCall() (sqlast.Expr, error) {
-	n, err := p.parseExpr()
-	if err != nil {
-		return nil, err
-	}
+func (p *Parser) parseNtileCall() sqlast.Expr {
+	n := p.parseExpr()
+	p.expect(RPAREN)
 
-	if err := p.expect(RPAREN); err != nil {
-		return nil, err
-	}
-
-	oc, err := p.parseOptionalOverClause()
-	if err != nil {
-		return nil, err
-	}
-
-	return &sqlast.NtileExpr{N: n, OverClause: oc}, nil
+	return &sqlast.NtileExpr{N: n, OverClause: p.parseOptionalOverClause()}
 }
 
-func (p *Parser) parseNthValueCall() (sqlast.Expr, error) {
-	expr, err := p.parseExpr()
-	if err != nil {
-		return nil, err
-	}
+func (p *Parser) parseNthValueCall() sqlast.Expr {
+	expr := p.parseExpr()
+	p.expect(COMMA)
 
-	if err := p.expect(COMMA); err != nil {
-		return nil, err
-	}
+	n := p.parseExpr()
+	p.expect(RPAREN)
 
-	n, err := p.parseExpr()
-	if err != nil {
-		return nil, err
-	}
+	fl := p.parseOptionalFromFirstLast()
+	nt := p.parseOptionalNullTreatment()
+	oc := p.parseOptionalOverClause()
 
-	if err := p.expect(RPAREN); err != nil {
-		return nil, err
-	}
-
-	fl, err := p.parseOptionalFromFirstLast()
-	if err != nil {
-		return nil, err
-	}
-
-	nt, err := p.parseOptionalNullTreatment()
-	if err != nil {
-		return nil, err
-	}
-
-	oc, err := p.parseOptionalOverClause()
-	if err != nil {
-		return nil, err
-	}
-
-	return &sqlast.NTHValueExpr{Expr: expr, N: n, FromFirstLastClause: fl, NullTreatmentClause: nt, OverClause: oc}, nil
+	return &sqlast.NTHValueExpr{Expr: expr, N: n, FromFirstLastClause: fl, NullTreatmentClause: nt, OverClause: oc}
 }
 
-func (p *Parser) parseLagLeadCall(isLead bool) (sqlast.Expr, error) {
-	expr, err := p.parseExpr()
-	if err != nil {
-		return nil, err
-	}
+func (p *Parser) parseLagLeadCall(isLead bool) sqlast.Expr {
+	expr := p.parseExpr()
+	n, def := p.parseOptionalLagLeadArgs()
+	p.expect(RPAREN)
 
-	n, def, err := p.parseOptionalLagLeadArgs()
-	if err != nil {
-		return nil, err
-	}
-
-	if err := p.expect(RPAREN); err != nil {
-		return nil, err
-	}
-
-	nt, err := p.parseOptionalNullTreatment()
-	if err != nil {
-		return nil, err
-	}
-
-	oc, err := p.parseOptionalOverClause()
-	if err != nil {
-		return nil, err
-	}
+	nt := p.parseOptionalNullTreatment()
+	oc := p.parseOptionalOverClause()
 
 	typ := sqlast.LagExprType
 	if isLead {
 		typ = sqlast.LeadExprType
 	}
 
-	return &sqlast.LagLeadExpr{Type: typ, Expr: expr, N: n, Default: def, NullTreatmentClause: nt, OverClause: oc}, nil
+	return &sqlast.LagLeadExpr{Type: typ, Expr: expr, N: n, Default: def, NullTreatmentClause: nt, OverClause: oc}
 }
 
-func (p *Parser) parseOptionalLagLeadArgs() (sqlast.Expr, sqlast.Expr, error) {
-	ok, err := p.consume(COMMA)
-	if err != nil || !ok {
-		return nil, nil, err
-	}
-
-	n, err := p.parseExpr()
-	if err != nil {
-		return nil, nil, err
-	}
-
-	ok, err = p.consume(COMMA)
-	if err != nil || !ok {
-		return n, nil, err
-	}
-
-	def, err := p.parseExpr()
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return n, def, nil
-}
-
-func (p *Parser) parseJSONObjectAggCall() (sqlast.Expr, error) {
-	key, err := p.parseExpr()
-	if err != nil {
-		return nil, err
-	}
-
-	if err := p.expect(COMMA); err != nil {
-		return nil, err
-	}
-
-	val, err := p.parseExpr()
-	if err != nil {
-		return nil, err
-	}
-
-	if err := p.expect(RPAREN); err != nil {
-		return nil, err
-	}
-
-	oc, err := p.parseOptionalOverClause()
-	if err != nil {
-		return nil, err
-	}
-
-	return &sqlast.JSONObjectAgg{Key: key, Value: val, OverClause: oc}, nil
-}
-
-func (p *Parser) parseOptionalNullTreatment() (*sqlast.NullTreatmentClause, error) {
-	switch {
-	case p.at(RESPECT):
-		if err := p.advance(); err != nil {
-			return nil, err
-		}
-
-		if err := p.expect(NULLS); err != nil {
-			return nil, err
-		}
-
-		return &sqlast.NullTreatmentClause{Type: sqlast.RespectNullsType}, nil
-	case p.at(IGNORE):
-		if err := p.advance(); err != nil {
-			return nil, err
-		}
-
-		if err := p.expect(NULLS); err != nil {
-			return nil, err
-		}
-
-		return &sqlast.NullTreatmentClause{Type: sqlast.IgnoreNullsType}, nil
-	default:
+func (p *Parser) parseOptionalLagLeadArgs() (sqlast.Expr, sqlast.Expr) {
+	if !p.consume(COMMA) {
 		return nil, nil
 	}
+
+	n := p.parseExpr()
+
+	if !p.consume(COMMA) {
+		return n, nil
+	}
+
+	return n, p.parseExpr()
 }
 
-func (p *Parser) parseOptionalFromFirstLast() (*sqlast.FromFirstLastClause, error) {
-	if ok, err := p.consume(FROM); err != nil || !ok {
-		return nil, err
+func (p *Parser) parseJSONObjectAggCall() sqlast.Expr {
+	key := p.parseExpr()
+	p.expect(COMMA)
+
+	val := p.parseExpr()
+	p.expect(RPAREN)
+
+	return &sqlast.JSONObjectAgg{Key: key, Value: val, OverClause: p.parseOptionalOverClause()}
+}
+
+func (p *Parser) parseOptionalNullTreatment() *sqlast.NullTreatmentClause {
+	switch {
+	case p.consume(RESPECT):
+		p.expect(NULLS)
+
+		return &sqlast.NullTreatmentClause{Type: sqlast.RespectNullsType}
+	case p.consume(IGNORE):
+		p.expect(NULLS)
+
+		return &sqlast.NullTreatmentClause{Type: sqlast.IgnoreNullsType}
+	default:
+		return nil
+	}
+}
+
+func (p *Parser) parseOptionalFromFirstLast() *sqlast.FromFirstLastClause {
+	if !p.consume(FROM) {
+		return nil
 	}
 
 	switch {
-	case p.at(FIRST):
-		if err := p.advance(); err != nil {
-			return nil, err
-		}
-
-		return &sqlast.FromFirstLastClause{Type: sqlast.FromFirstType}, nil
-	case p.at(LAST):
-		if err := p.advance(); err != nil {
-			return nil, err
-		}
-
-		return &sqlast.FromFirstLastClause{Type: sqlast.FromLastType}, nil
+	case p.consume(FIRST):
+		return &sqlast.FromFirstLastClause{Type: sqlast.FromFirstType}
+	case p.consume(LAST):
+		return &sqlast.FromFirstLastClause{Type: sqlast.FromLastType}
 	default:
-		return nil, p.errorf("expected FIRST or LAST after FROM")
+		return failReturn[*sqlast.FromFirstLastClause](p, "expected FIRST or LAST after FROM")
 	}
 }
 
-func (p *Parser) parseOptionalOverClause() (*sqlast.OverClause, error) {
-	if ok, err := p.consume(OVER); err != nil || !ok {
-		return nil, err
+func (p *Parser) parseOptionalOverClause() *sqlast.OverClause {
+	if !p.consume(OVER) {
+		return nil
 	}
 
 	if p.at(IDENT) {
 		name := p.tok.Literal
+		p.advance()
 
-		if err := p.advance(); err != nil {
-			return nil, err
-		}
-
-		return &sqlast.OverClause{WindowName: sqlast.ColIdent(name)}, nil
+		return &sqlast.OverClause{WindowName: sqlast.ColIdent(name)}
 	}
 
-	if err := p.expect(LPAREN); err != nil {
-		return nil, err
-	}
+	p.expect(LPAREN)
 
-	spec, err := p.parseWindowSpecification()
-	if err != nil {
-		return nil, err
-	}
+	spec := p.parseWindowSpecification()
 
-	if err := p.expect(RPAREN); err != nil {
-		return nil, err
-	}
+	p.expect(RPAREN)
 
-	return &sqlast.OverClause{WindowSpec: spec}, nil
+	return &sqlast.OverClause{WindowSpec: spec}
 }
 
-func (p *Parser) parseWindowSpecification() (*sqlast.WindowSpecification, error) {
+func (p *Parser) parseWindowSpecification() *sqlast.WindowSpecification {
 	spec := &sqlast.WindowSpecification{}
 
-	if ok, err := p.consume(PARTITION); err != nil {
-		return nil, err
-	} else if ok {
-		if err := p.expect(BY); err != nil {
-			return nil, err
-		}
+	if p.consume(PARTITION) {
+		p.expect(BY)
 
-		exprs, err := p.parseExprList()
-		if err != nil {
-			return nil, err
-		}
-
-		spec.PartitionClause = exprs
+		spec.PartitionClause = p.parseExprList()
 	}
 
 	if p.at(ORDER) {
-		ob, err := p.parseOrderByClause()
-		if err != nil {
-			return nil, err
-		}
-
-		spec.OrderClause = ob
+		spec.OrderClause = p.parseOrderByClause()
 	}
 
 	if p.at(ROWS) || p.at(RANGE) {
-		fc, err := p.parseFrameClause()
-		if err != nil {
-			return nil, err
-		}
-
-		spec.FrameClause = fc
+		spec.FrameClause = p.parseFrameClause()
 	}
 
-	return spec, nil
+	return spec
 }
 
-func (p *Parser) parseFrameClause() (*sqlast.FrameClause, error) {
+func (p *Parser) parseFrameClause() *sqlast.FrameClause {
 	unit := sqlast.FrameRowsType
 	if p.at(RANGE) {
 		unit = sqlast.FrameRangeType
 	}
 
-	if err := p.advance(); err != nil { // consume ROWS/RANGE
-		return nil, err
+	p.advance() // consume ROWS/RANGE
+
+	if p.consume(BETWEEN) {
+		start := p.parseFramePoint()
+		p.expect(AND)
+
+		end := p.parseFramePoint()
+
+		return &sqlast.FrameClause{Unit: unit, Start: start, End: end}
 	}
 
-	if ok, err := p.consume(BETWEEN); err != nil {
-		return nil, err
-	} else if ok {
-		start, err := p.parseFramePoint()
-		if err != nil {
-			return nil, err
-		}
-
-		if err := p.expect(AND); err != nil {
-			return nil, err
-		}
-
-		end, err := p.parseFramePoint()
-		if err != nil {
-			return nil, err
-		}
-
-		return &sqlast.FrameClause{Unit: unit, Start: start, End: end}, nil
-	}
-
-	start, err := p.parseFramePoint()
-	if err != nil {
-		return nil, err
-	}
-
-	return &sqlast.FrameClause{Unit: unit, Start: start}, nil
+	return &sqlast.FrameClause{Unit: unit, Start: p.parseFramePoint()}
 }
 
-func (p *Parser) parseFramePoint() (*sqlast.FramePoint, error) {
+func (p *Parser) parseFramePoint() *sqlast.FramePoint {
 	switch {
-	case p.at(CURRENT):
-		if err := p.advance(); err != nil {
-			return nil, err
-		}
+	case p.consume(CURRENT):
+		p.expect(ROW)
 
-		if err := p.expect(ROW); err != nil {
-			return nil, err
-		}
-
-		return &sqlast.FramePoint{Type: sqlast.CurrentRowType}, nil
-	case p.at(UNBOUNDED):
-		if err := p.advance(); err != nil {
-			return nil, err
-		}
-
+		return &sqlast.FramePoint{Type: sqlast.CurrentRowType}
+	case p.consume(UNBOUNDED):
 		return p.parseUnboundedFramePoint()
 	default:
 		return p.parseExprFramePoint()
 	}
 }
 
-func (p *Parser) parseUnboundedFramePoint() (*sqlast.FramePoint, error) {
+func (p *Parser) parseUnboundedFramePoint() *sqlast.FramePoint {
 	switch {
-	case p.at(PRECEDING):
-		if err := p.advance(); err != nil {
-			return nil, err
-		}
-
-		return &sqlast.FramePoint{Type: sqlast.UnboundedPrecedingType}, nil
-	case p.at(FOLLOWING):
-		if err := p.advance(); err != nil {
-			return nil, err
-		}
-
-		return &sqlast.FramePoint{Type: sqlast.UnboundedFollowingType}, nil
+	case p.consume(PRECEDING):
+		return &sqlast.FramePoint{Type: sqlast.UnboundedPrecedingType}
+	case p.consume(FOLLOWING):
+		return &sqlast.FramePoint{Type: sqlast.UnboundedFollowingType}
 	default:
-		return nil, p.errorf("expected PRECEDING or FOLLOWING after UNBOUNDED")
+		return failReturn[*sqlast.FramePoint](p, "expected PRECEDING or FOLLOWING after UNBOUNDED")
 	}
 }
 
-func (p *Parser) parseExprFramePoint() (*sqlast.FramePoint, error) {
-	expr, err := p.parseAdditiveExpr()
-	if err != nil {
-		return nil, err
-	}
+func (p *Parser) parseExprFramePoint() *sqlast.FramePoint {
+	expr := p.parseAdditiveExpr()
 
 	switch {
-	case p.at(PRECEDING):
-		if err := p.advance(); err != nil {
-			return nil, err
-		}
-
-		return &sqlast.FramePoint{Type: sqlast.ExprPrecedingType, Expr: expr}, nil
-	case p.at(FOLLOWING):
-		if err := p.advance(); err != nil {
-			return nil, err
-		}
-
-		return &sqlast.FramePoint{Type: sqlast.ExprFollowingType, Expr: expr}, nil
+	case p.consume(PRECEDING):
+		return &sqlast.FramePoint{Type: sqlast.ExprPrecedingType, Expr: expr}
+	case p.consume(FOLLOWING):
+		return &sqlast.FramePoint{Type: sqlast.ExprFollowingType, Expr: expr}
 	default:
-		return nil, p.errorf("expected PRECEDING or FOLLOWING")
+		return failReturn[*sqlast.FramePoint](p, "expected PRECEDING or FOLLOWING")
 	}
 }

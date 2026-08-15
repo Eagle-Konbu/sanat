@@ -4,314 +4,176 @@ import "github.com/Eagle-Konbu/sanat/internal/sqlfmt/sqlast"
 
 // parseSelectStatement parses a SELECT statement, optionally preceded by a
 // WITH clause. The current token must be WITH or SELECT.
-func (p *Parser) parseSelectStatement() (*sqlast.Select, error) {
-	sel := &sqlast.Select{}
+func (p *Parser) parseSelectStatement() *sqlast.Select {
+	sel := &sqlast.Select{With: p.parseOptionalWith()}
 
-	with, err := p.parseOptionalWith()
-	if err != nil {
-		return nil, err
-	}
+	p.expect(SELECT)
+	p.parseSelectModifiers(sel)
 
-	sel.With = with
+	sel.SelectExprs = p.parseSelectExprList()
+	sel.From = p.parseOptionalFromClause()
 
-	if err := p.expect(SELECT); err != nil {
-		return nil, err
-	}
+	p.parseSelectFilters(sel)
+	p.parseSelectTail(sel)
 
-	if err := p.parseSelectModifiers(sel); err != nil {
-		return nil, err
-	}
-
-	if sel.SelectExprs, err = p.parseSelectExprList(); err != nil {
-		return nil, err
-	}
-
-	if sel.From, err = p.parseOptionalFromClause(); err != nil {
-		return nil, err
-	}
-
-	if err := p.parseSelectFilters(sel); err != nil {
-		return nil, err
-	}
-
-	if err := p.parseSelectTail(sel); err != nil {
-		return nil, err
-	}
-
-	return sel, nil
+	return sel
 }
 
 // parseSelectModifiers parses the [DISTINCT|ALL] modifier following SELECT.
-func (p *Parser) parseSelectModifiers(sel *sqlast.Select) error {
-	distinct, err := p.consumeDistinct()
-	if err != nil {
-		return err
+func (p *Parser) parseSelectModifiers(sel *sqlast.Select) {
+	sel.Distinct = p.consumeDistinct()
+
+	if !sel.Distinct {
+		p.consume(ALL)
 	}
-
-	sel.Distinct = distinct
-
-	if !distinct {
-		if _, err := p.consume(ALL); err != nil {
-			return err
-		}
-	}
-
-	return nil
 }
 
 // parseSelectFilters parses the WHERE/GROUP BY/HAVING clauses into sel.
-func (p *Parser) parseSelectFilters(sel *sqlast.Select) error {
-	var err error
-
-	if sel.Where, err = p.parseOptionalWhereClause(WHERE); err != nil {
-		return err
-	}
-
-	if sel.GroupBy, err = p.parseOptionalGroupBy(); err != nil {
-		return err
-	}
-
-	sel.Having, err = p.parseOptionalWhereClause(HAVING)
-
-	return err
+func (p *Parser) parseSelectFilters(sel *sqlast.Select) {
+	sel.Where = p.parseOptionalWhereClause(WHERE)
+	sel.GroupBy = p.parseOptionalGroupBy()
+	sel.Having = p.parseOptionalWhereClause(HAVING)
 }
 
 // parseSelectTail parses the ORDER BY/LIMIT/locking clauses into sel.
-func (p *Parser) parseSelectTail(sel *sqlast.Select) error {
-	var err error
-
-	if sel.OrderBy, err = p.parseOptionalOrderBy(); err != nil {
-		return err
-	}
-
-	if sel.Limit, err = p.parseOptionalLimit(); err != nil {
-		return err
-	}
-
-	sel.Lock, sel.LockWait, err = p.parseOptionalLock()
-
-	return err
+func (p *Parser) parseSelectTail(sel *sqlast.Select) {
+	sel.OrderBy = p.parseOptionalOrderBy()
+	sel.Limit = p.parseOptionalLimit()
+	sel.Lock, sel.LockWait = p.parseOptionalLock()
 }
 
-func (p *Parser) parseOptionalWith() (*sqlast.With, error) {
-	if ok, err := p.consume(WITH); err != nil {
-		return nil, err
-	} else if !ok {
-		return nil, nil
+func (p *Parser) parseOptionalWith() *sqlast.With {
+	if !p.consume(WITH) {
+		return nil
 	}
 
-	recursive, err := p.consume(RECURSIVE)
-	if err != nil {
-		return nil, err
-	}
+	recursive := p.consume(RECURSIVE)
 
 	var ctes []*sqlast.CommonTableExpr
 
 	for {
-		cte, err := p.parseCTE()
-		if err != nil {
-			return nil, err
-		}
+		ctes = append(ctes, p.parseCTE())
 
-		ctes = append(ctes, cte)
-
-		if ok, err := p.consume(COMMA); err != nil {
-			return nil, err
-		} else if !ok {
+		if !p.consume(COMMA) {
 			break
 		}
 	}
 
-	return &sqlast.With{CTEs: ctes, Recursive: recursive}, nil
+	return &sqlast.With{CTEs: ctes, Recursive: recursive}
 }
 
-func (p *Parser) parseCTE() (*sqlast.CommonTableExpr, error) {
-	name, err := p.readIdent()
-	if err != nil {
-		return nil, err
-	}
+func (p *Parser) parseCTE() *sqlast.CommonTableExpr {
+	name := p.readIdent()
 
 	var columns sqlast.Columns
 
-	if p.at(LPAREN) {
-		if err := p.advance(); err != nil {
-			return nil, err
-		}
-
-		columns, err = p.parseIdentList()
-		if err != nil {
-			return nil, err
-		}
-
-		if err := p.expect(RPAREN); err != nil {
-			return nil, err
-		}
+	if p.consume(LPAREN) {
+		columns = p.parseIdentList()
+		p.expect(RPAREN)
 	}
 
-	if err := p.expect(AS); err != nil {
-		return nil, err
-	}
+	p.expect(AS)
+	p.expect(LPAREN)
 
-	if err := p.expect(LPAREN); err != nil {
-		return nil, err
-	}
+	sel := p.parseSelectStatement()
 
-	sel, err := p.parseSelectStatement()
-	if err != nil {
-		return nil, err
-	}
+	p.expect(RPAREN)
 
-	if err := p.expect(RPAREN); err != nil {
-		return nil, err
-	}
-
-	return &sqlast.CommonTableExpr{ID: sqlast.TableIdent(name), Columns: columns, Subquery: sel}, nil
+	return &sqlast.CommonTableExpr{ID: sqlast.TableIdent(name), Columns: columns, Subquery: sel}
 }
 
-func (p *Parser) parseIdentList() (sqlast.Columns, error) {
+func (p *Parser) parseIdentList() sqlast.Columns {
 	var cols sqlast.Columns
 
 	for {
-		name, err := p.readIdent()
-		if err != nil {
-			return nil, err
-		}
+		cols = append(cols, sqlast.ColIdent(p.readIdent()))
 
-		cols = append(cols, sqlast.ColIdent(name))
-
-		if ok, err := p.consume(COMMA); err != nil {
-			return nil, err
-		} else if !ok {
-			return cols, nil
+		if !p.consume(COMMA) {
+			return cols
 		}
 	}
 }
 
-func (p *Parser) parseSelectExprList() ([]sqlast.SelectExpr, error) {
+func (p *Parser) parseSelectExprList() []sqlast.SelectExpr {
 	var exprs []sqlast.SelectExpr
 
 	for {
-		e, err := p.parseSelectExpr()
-		if err != nil {
-			return nil, err
-		}
+		exprs = append(exprs, p.parseSelectExpr())
 
-		exprs = append(exprs, e)
-
-		if ok, err := p.consume(COMMA); err != nil {
-			return nil, err
-		} else if !ok {
-			return exprs, nil
+		if !p.consume(COMMA) {
+			return exprs
 		}
 	}
 }
 
-func (p *Parser) parseSelectExpr() (sqlast.SelectExpr, error) {
-	if ok, err := p.consume(STAR); err != nil {
-		return nil, err
-	} else if ok {
-		return &sqlast.StarExpr{}, nil
+func (p *Parser) parseSelectExpr() sqlast.SelectExpr {
+	if p.consume(STAR) {
+		return &sqlast.StarExpr{}
 	}
 
-	if star, err := p.tryParseQualifiedStar(); err != nil || star != nil {
-		return star, err
+	if star := p.tryParseQualifiedStar(); star != nil {
+		return star
 	}
 
-	expr, err := p.parseExpr()
-	if err != nil {
-		return nil, err
-	}
+	expr := p.parseExpr()
+	alias := p.parseOptionalColAlias()
 
-	alias, err := p.parseOptionalColAlias()
-	if err != nil {
-		return nil, err
-	}
-
-	return &sqlast.AliasedExpr{Expr: expr, As: alias}, nil
+	return &sqlast.AliasedExpr{Expr: expr, As: alias}
 }
 
 // tryParseQualifiedStar consumes and returns a `table.*` select item if the
 // next three tokens spell one out; otherwise it consumes nothing and
-// returns (nil, nil), leaving the caller to parse a general expression.
-func (p *Parser) tryParseQualifiedStar() (sqlast.SelectExpr, error) {
+// returns nil, leaving the caller to parse a general expression.
+func (p *Parser) tryParseQualifiedStar() sqlast.SelectExpr {
 	if (!p.at(IDENT) && !p.at(QuotedIdent)) || !p.peekAt(DOT) || !p.peek2At(STAR) {
-		return nil, nil
+		return nil
 	}
 
 	name := p.tok.Literal
 
 	for range 3 { // ident, '.', '*'
-		if err := p.advance(); err != nil {
-			return nil, err
-		}
+		p.advance()
 	}
 
-	return &sqlast.StarExpr{TableName: sqlast.TableName{Name: sqlast.TableIdent(name)}}, nil
+	return &sqlast.StarExpr{TableName: sqlast.TableName{Name: sqlast.TableIdent(name)}}
 }
 
-func (p *Parser) parseOptionalColAlias() (sqlast.ColIdent, error) {
-	if ok, err := p.consume(AS); err != nil {
-		return "", err
-	} else if ok {
-		name, err := p.readIdent()
-		if err != nil {
-			return "", err
-		}
-
-		return sqlast.ColIdent(name), nil
+func (p *Parser) parseOptionalColAlias() sqlast.ColIdent {
+	if p.consume(AS) {
+		return sqlast.ColIdent(p.readIdent())
 	}
 
 	if p.at(IDENT) || p.at(QuotedIdent) {
-		name, err := p.readIdent()
-		if err != nil {
-			return "", err
-		}
-
-		return sqlast.ColIdent(name), nil
+		return sqlast.ColIdent(p.readIdent())
 	}
 
-	return "", nil
+	return ""
 }
 
-func (p *Parser) parseOptionalFromClause() ([]sqlast.TableExpr, error) {
-	if ok, err := p.consume(FROM); err != nil {
-		return nil, err
-	} else if !ok {
-		return nil, nil
+func (p *Parser) parseOptionalFromClause() []sqlast.TableExpr {
+	if !p.consume(FROM) {
+		return nil
 	}
 
 	var tables []sqlast.TableExpr
 
 	for {
-		t, err := p.parseTableReference()
-		if err != nil {
-			return nil, err
-		}
+		tables = append(tables, p.parseTableReference())
 
-		tables = append(tables, t)
-
-		if ok, err := p.consume(COMMA); err != nil {
-			return nil, err
-		} else if !ok {
-			return tables, nil
+		if !p.consume(COMMA) {
+			return tables
 		}
 	}
 }
 
-func (p *Parser) parseTableReference() (sqlast.TableExpr, error) {
-	left, err := p.parseTableFactor()
-	if err != nil {
-		return nil, err
-	}
+func (p *Parser) parseTableReference() sqlast.TableExpr {
+	left := p.parseTableFactor()
 
 	for p.isJoinStart() {
-		left, err = p.parseJoin(left)
-		if err != nil {
-			return nil, err
-		}
+		left = p.parseJoin(left)
 	}
 
-	return left, nil
+	return left
 }
 
 func (p *Parser) isJoinStart() bool {
@@ -323,139 +185,105 @@ func (p *Parser) isJoinStart() bool {
 	}
 }
 
-func (p *Parser) parseJoin(left sqlast.TableExpr) (sqlast.TableExpr, error) {
-	joinType, err := p.parseJoinType()
-	if err != nil {
-		return nil, err
-	}
-
-	right, err := p.parseTableFactor()
-	if err != nil {
-		return nil, err
-	}
+func (p *Parser) parseJoin(left sqlast.TableExpr) sqlast.TableExpr {
+	joinType := p.parseJoinType()
+	right := p.parseTableFactor()
 
 	var cond *sqlast.JoinCondition
 
-	if ok, err := p.consume(ON); err != nil {
-		return nil, err
-	} else if ok {
-		e, err := p.parseExpr()
-		if err != nil {
-			return nil, err
-		}
-
-		cond = &sqlast.JoinCondition{On: e}
+	if p.consume(ON) {
+		cond = &sqlast.JoinCondition{On: p.parseExpr()}
 	}
 
-	return &sqlast.JoinTableExpr{LeftExpr: left, Join: joinType, RightExpr: right, Condition: cond}, nil
+	return &sqlast.JoinTableExpr{LeftExpr: left, Join: joinType, RightExpr: right, Condition: cond}
 }
 
-func (p *Parser) parseJoinType() (sqlast.JoinType, error) {
+func (p *Parser) parseJoinType() sqlast.JoinType {
 	switch p.tok.Type {
 	case StraightJoin:
-		return sqlast.StraightJoinType, p.advance()
+		p.advance()
+
+		return sqlast.StraightJoinType
 	case CROSS:
-		return sqlast.CrossJoinType, p.advanceThenExpect(JOIN)
+		p.advance()
+		p.expect(JOIN)
+
+		return sqlast.CrossJoinType
 	case NATURAL:
 		return p.parseNaturalJoinType()
 	case LEFT:
-		return sqlast.LeftJoinType, p.advanceOuterJoin()
+		p.advanceOuterJoin()
+
+		return sqlast.LeftJoinType
 	case RIGHT:
-		return sqlast.RightJoinType, p.advanceOuterJoin()
+		p.advanceOuterJoin()
+
+		return sqlast.RightJoinType
 	case INNER:
-		return sqlast.NormalJoinType, p.advanceThenExpect(JOIN)
+		p.advance()
+		p.expect(JOIN)
+
+		return sqlast.NormalJoinType
 	case JOIN:
-		return sqlast.NormalJoinType, p.advance()
+		p.advance()
+
+		return sqlast.NormalJoinType
 	default:
-		return 0, p.errorf("expected JOIN clause, got %s", p.tok.Type)
+		return failReturn[sqlast.JoinType](p, "expected JOIN clause, got %s", p.tok.Type)
 	}
-}
-
-// advanceThenExpect consumes the current token, then requires tt next.
-func (p *Parser) advanceThenExpect(tt TokenType) error {
-	if err := p.advance(); err != nil {
-		return err
-	}
-
-	return p.expect(tt)
 }
 
 // advanceOuterJoin consumes a LEFT/RIGHT token, an optional OUTER, and the
 // required trailing JOIN.
-func (p *Parser) advanceOuterJoin() error {
-	if err := p.advance(); err != nil {
-		return err
-	}
-
-	if _, err := p.consume(OUTER); err != nil {
-		return err
-	}
-
-	return p.expect(JOIN)
+func (p *Parser) advanceOuterJoin() {
+	p.advance()
+	p.consume(OUTER)
+	p.expect(JOIN)
 }
 
-func (p *Parser) parseNaturalJoinType() (sqlast.JoinType, error) {
-	if err := p.advance(); err != nil { // consume NATURAL
-		return 0, err
-	}
+func (p *Parser) parseNaturalJoinType() sqlast.JoinType {
+	p.advance() // consume NATURAL
 
 	switch p.tok.Type {
 	case LEFT:
-		return sqlast.NaturalLeftJoinType, p.advanceOuterJoin()
+		p.advanceOuterJoin()
+
+		return sqlast.NaturalLeftJoinType
 	case RIGHT:
-		return sqlast.NaturalRightJoinType, p.advanceOuterJoin()
+		p.advanceOuterJoin()
+
+		return sqlast.NaturalRightJoinType
 	default:
-		return sqlast.NaturalJoinType, p.expect(JOIN)
+		p.expect(JOIN)
+
+		return sqlast.NaturalJoinType
 	}
 }
 
-func (p *Parser) parseTableFactor() (sqlast.TableExpr, error) {
+func (p *Parser) parseTableFactor() sqlast.TableExpr {
 	if p.at(LPAREN) {
 		return p.parseParenTableExpr()
 	}
 
-	name, err := p.parseTableName()
-	if err != nil {
-		return nil, err
-	}
+	name := p.parseTableName()
+	alias := p.parseOptionalTableAlias()
+	hints := p.parseOptionalIndexHints()
 
-	alias, err := p.parseOptionalTableAlias()
-	if err != nil {
-		return nil, err
-	}
-
-	hints, err := p.parseOptionalIndexHints()
-	if err != nil {
-		return nil, err
-	}
-
-	return &sqlast.AliasedTableExpr{Expr: name, As: alias, Hints: hints}, nil
+	return &sqlast.AliasedTableExpr{Expr: name, As: alias, Hints: hints}
 }
 
-func (p *Parser) parseTableName() (sqlast.TableName, error) {
-	name, err := p.readIdent()
-	if err != nil {
-		return sqlast.TableName{}, err
+func (p *Parser) parseTableName() sqlast.TableName {
+	name := p.readIdent()
+
+	if p.consume(DOT) {
+		return sqlast.TableName{Qualifier: sqlast.TableIdent(name), Name: sqlast.TableIdent(p.readIdent())}
 	}
 
-	if ok, err := p.consume(DOT); err != nil {
-		return sqlast.TableName{}, err
-	} else if ok {
-		table, err := p.readIdent()
-		if err != nil {
-			return sqlast.TableName{}, err
-		}
-
-		return sqlast.TableName{Qualifier: sqlast.TableIdent(name), Name: sqlast.TableIdent(table)}, nil
-	}
-
-	return sqlast.TableName{Name: sqlast.TableIdent(name)}, nil
+	return sqlast.TableName{Name: sqlast.TableIdent(name)}
 }
 
-func (p *Parser) parseParenTableExpr() (sqlast.TableExpr, error) {
-	if err := p.advance(); err != nil { // consume '('
-		return nil, err
-	}
+func (p *Parser) parseParenTableExpr() sqlast.TableExpr {
+	p.advance() // consume '('
 
 	if p.at(SELECT) || p.at(WITH) {
 		return p.parseDerivedTable()
@@ -464,82 +292,48 @@ func (p *Parser) parseParenTableExpr() (sqlast.TableExpr, error) {
 	var tables []sqlast.TableExpr
 
 	for {
-		t, err := p.parseTableReference()
-		if err != nil {
-			return nil, err
-		}
+		tables = append(tables, p.parseTableReference())
 
-		tables = append(tables, t)
-
-		if ok, err := p.consume(COMMA); err != nil {
-			return nil, err
-		} else if !ok {
+		if !p.consume(COMMA) {
 			break
 		}
 	}
 
-	if err := p.expect(RPAREN); err != nil {
-		return nil, err
-	}
+	p.expect(RPAREN)
 
-	return &sqlast.ParenTableExpr{Exprs: tables}, nil
+	return &sqlast.ParenTableExpr{Exprs: tables}
 }
 
-func (p *Parser) parseDerivedTable() (sqlast.TableExpr, error) {
-	sel, err := p.parseSelectStatement()
-	if err != nil {
-		return nil, err
-	}
+func (p *Parser) parseDerivedTable() sqlast.TableExpr {
+	sel := p.parseSelectStatement()
 
-	if err := p.expect(RPAREN); err != nil {
-		return nil, err
-	}
+	p.expect(RPAREN)
 
-	alias, err := p.parseOptionalTableAlias()
-	if err != nil {
-		return nil, err
-	}
+	alias := p.parseOptionalTableAlias()
 
-	return &sqlast.AliasedTableExpr{Expr: &sqlast.DerivedTable{Select: sel}, As: alias}, nil
+	return &sqlast.AliasedTableExpr{Expr: &sqlast.DerivedTable{Select: sel}, As: alias}
 }
 
-func (p *Parser) parseOptionalTableAlias() (sqlast.TableIdent, error) {
-	if ok, err := p.consume(AS); err != nil {
-		return "", err
-	} else if ok {
-		name, err := p.readIdent()
-		if err != nil {
-			return "", err
-		}
-
-		return sqlast.TableIdent(name), nil
+func (p *Parser) parseOptionalTableAlias() sqlast.TableIdent {
+	if p.consume(AS) {
+		return sqlast.TableIdent(p.readIdent())
 	}
 
 	if p.at(IDENT) || p.at(QuotedIdent) {
-		name, err := p.readIdent()
-		if err != nil {
-			return "", err
-		}
-
-		return sqlast.TableIdent(name), nil
+		return sqlast.TableIdent(p.readIdent())
 	}
 
-	return "", nil
+	return ""
 }
 
-func (p *Parser) parseOptionalIndexHints() (sqlast.IndexHints, error) {
+func (p *Parser) parseOptionalIndexHints() sqlast.IndexHints {
 	var hints sqlast.IndexHints
 
 	for p.at(USE) || p.at(FORCE) || p.at(IGNORE) {
-		h, err := p.parseIndexHint()
-		if err != nil {
-			return nil, err
-		}
-
-		hints = append(hints, h)
+		hints = append(hints, p.parseIndexHint())
 	}
 
-	return hints, nil
+	return hints
 }
 
 var indexHintTypes = map[TokenType]sqlast.IndexHintType{
@@ -548,198 +342,141 @@ var indexHintTypes = map[TokenType]sqlast.IndexHintType{
 	IGNORE: sqlast.IgnoreOp,
 }
 
-func (p *Parser) parseIndexHint() (*sqlast.IndexHint, error) {
+func (p *Parser) parseIndexHint() *sqlast.IndexHint {
 	typ := indexHintTypes[p.tok.Type]
+	p.advance()
+	p.expect(INDEX)
 
-	if err := p.advance(); err != nil {
-		return nil, err
-	}
+	forType := p.parseOptionalIndexHintFor()
 
-	if err := p.expect(INDEX); err != nil {
-		return nil, err
-	}
+	p.expect(LPAREN)
 
-	forType, err := p.parseOptionalIndexHintFor()
-	if err != nil {
-		return nil, err
-	}
+	indexes := p.parseIdentList()
 
-	if err := p.expect(LPAREN); err != nil {
-		return nil, err
-	}
+	p.expect(RPAREN)
 
-	indexes, err := p.parseIdentList()
-	if err != nil {
-		return nil, err
-	}
-
-	if err := p.expect(RPAREN); err != nil {
-		return nil, err
-	}
-
-	return &sqlast.IndexHint{Type: typ, ForType: forType, Indexes: indexes}, nil
+	return &sqlast.IndexHint{Type: typ, ForType: forType, Indexes: indexes}
 }
 
-func (p *Parser) parseOptionalIndexHintFor() (sqlast.IndexHintForType, error) {
-	if ok, err := p.consume(FOR); err != nil {
-		return sqlast.NoForType, err
-	} else if !ok {
-		return sqlast.NoForType, nil
+func (p *Parser) parseOptionalIndexHintFor() sqlast.IndexHintForType {
+	if !p.consume(FOR) {
+		return sqlast.NoForType
 	}
 
 	switch p.tok.Type {
 	case JOIN:
-		return sqlast.JoinForType, p.advance()
+		p.advance()
+
+		return sqlast.JoinForType
 	case GROUP:
-		return sqlast.GroupByForType, p.advanceThenExpect(BY)
+		p.advance()
+		p.expect(BY)
+
+		return sqlast.GroupByForType
 	case ORDER:
-		return sqlast.OrderByForType, p.advanceThenExpect(BY)
+		p.advance()
+		p.expect(BY)
+
+		return sqlast.OrderByForType
 	default:
-		return sqlast.NoForType, p.errorf("expected JOIN, GROUP BY, or ORDER BY after FOR")
+		return failReturn[sqlast.IndexHintForType](p, "expected JOIN, GROUP BY, or ORDER BY after FOR")
 	}
 }
 
-func (p *Parser) parseOptionalWhereClause(kw TokenType) (*sqlast.Where, error) {
-	if ok, err := p.consume(kw); err != nil {
-		return nil, err
-	} else if !ok {
-		return nil, nil
+func (p *Parser) parseOptionalWhereClause(kw TokenType) *sqlast.Where {
+	if !p.consume(kw) {
+		return nil
 	}
 
-	e, err := p.parseExpr()
-	if err != nil {
-		return nil, err
-	}
-
-	return &sqlast.Where{Expr: e}, nil
+	return &sqlast.Where{Expr: p.parseExpr()}
 }
 
-func (p *Parser) parseOptionalGroupBy() (*sqlast.GroupBy, error) {
-	if ok, err := p.consume(GROUP); err != nil {
-		return nil, err
-	} else if !ok {
-		return nil, nil
+func (p *Parser) parseOptionalGroupBy() *sqlast.GroupBy {
+	if !p.consume(GROUP) {
+		return nil
 	}
 
-	if err := p.expect(BY); err != nil {
-		return nil, err
-	}
+	p.expect(BY)
 
-	exprs, err := p.parseExprList()
-	if err != nil {
-		return nil, err
-	}
-
-	return &sqlast.GroupBy{Exprs: exprs}, nil
+	return &sqlast.GroupBy{Exprs: p.parseExprList()}
 }
 
-func (p *Parser) parseOptionalOrderBy() (sqlast.OrderBy, error) {
+func (p *Parser) parseOptionalOrderBy() sqlast.OrderBy {
 	if !p.at(ORDER) {
-		return nil, nil
+		return nil
 	}
 
 	return p.parseOrderByClause()
 }
 
-func (p *Parser) parseOptionalOrderDirection() (sqlast.OrderDirection, error) {
-	if ok, err := p.consume(DESC); err != nil {
-		return sqlast.AscOrder, err
-	} else if ok {
-		return sqlast.DescOrder, nil
+func (p *Parser) parseOptionalOrderDirection() sqlast.OrderDirection {
+	if p.consume(DESC) {
+		return sqlast.DescOrder
 	}
 
-	_, err := p.consume(ASC)
+	p.consume(ASC)
 
-	return sqlast.AscOrder, err
+	return sqlast.AscOrder
 }
 
 // parseOrderByClause parses an ORDER BY clause; the current token must be
 // ORDER. Shared by top-level SELECT/UPDATE/DELETE and window specifications.
-func (p *Parser) parseOrderByClause() (sqlast.OrderBy, error) {
-	if err := p.advanceThenExpect(BY); err != nil {
-		return nil, err
-	}
+func (p *Parser) parseOrderByClause() sqlast.OrderBy {
+	p.advance() // consume ORDER
+	p.expect(BY)
 
 	var orders sqlast.OrderBy
 
 	for {
-		e, err := p.parseExpr()
-		if err != nil {
-			return nil, err
-		}
-
-		dir, err := p.parseOptionalOrderDirection()
-		if err != nil {
-			return nil, err
-		}
+		e := p.parseExpr()
+		dir := p.parseOptionalOrderDirection()
 
 		orders = append(orders, &sqlast.Order{Expr: e, Direction: dir})
 
-		if ok, err := p.consume(COMMA); err != nil {
-			return nil, err
-		} else if !ok {
-			return orders, nil
+		if !p.consume(COMMA) {
+			return orders
 		}
 	}
 }
 
-func (p *Parser) parseOptionalLimit() (*sqlast.Limit, error) {
-	if ok, err := p.consume(LIMIT); err != nil {
-		return nil, err
-	} else if !ok {
-		return nil, nil
+func (p *Parser) parseOptionalLimit() *sqlast.Limit {
+	if !p.consume(LIMIT) {
+		return nil
 	}
 
-	count, err := p.parseExpr()
-	if err != nil {
-		return nil, err
-	}
+	count := p.parseExpr()
 
 	var offset sqlast.Expr
 
-	if ok, err := p.consume(OFFSET); err != nil {
-		return nil, err
-	} else if ok {
-		offset, err = p.parseExpr()
-		if err != nil {
-			return nil, err
-		}
+	if p.consume(OFFSET) {
+		offset = p.parseExpr()
 	}
 
-	return &sqlast.Limit{Rowcount: count, Offset: offset}, nil
+	return &sqlast.Limit{Rowcount: count, Offset: offset}
 }
 
-func (p *Parser) parseOptionalLock() (sqlast.Lock, sqlast.LockWaitType, error) {
+func (p *Parser) parseOptionalLock() (sqlast.Lock, sqlast.LockWaitType) {
 	switch {
 	case p.at(FOR):
 		return p.parseForLock()
 	case p.at(LOCK):
-		return sqlast.ShareModeLock, sqlast.NoLockWait, p.parseLockInShareMode()
+		p.parseLockInShareMode()
+
+		return sqlast.ShareModeLock, sqlast.NoLockWait
 	default:
-		return sqlast.NoLock, sqlast.NoLockWait, nil
+		return sqlast.NoLock, sqlast.NoLockWait
 	}
 }
 
-func (p *Parser) parseLockInShareMode() error {
-	if err := p.advance(); err != nil { // consume LOCK
-		return err
-	}
-
-	if err := p.expect(IN); err != nil {
-		return err
-	}
-
-	if err := p.expect(SHARE); err != nil {
-		return err
-	}
-
-	return p.expect(MODE)
+func (p *Parser) parseLockInShareMode() {
+	p.advance() // consume LOCK
+	p.expect(IN)
+	p.expect(SHARE)
+	p.expect(MODE)
 }
 
-func (p *Parser) parseForLock() (sqlast.Lock, sqlast.LockWaitType, error) {
-	if err := p.advance(); err != nil { // consume FOR
-		return 0, 0, err
-	}
+func (p *Parser) parseForLock() (sqlast.Lock, sqlast.LockWaitType) {
+	p.advance() // consume FOR
 
 	var lock sqlast.Lock
 
@@ -749,28 +486,23 @@ func (p *Parser) parseForLock() (sqlast.Lock, sqlast.LockWaitType, error) {
 	case SHARE:
 		lock = sqlast.ForShareLock
 	default:
-		return 0, 0, p.errorf("expected UPDATE or SHARE after FOR")
+		p.failf("expected UPDATE or SHARE after FOR")
 	}
 
-	if err := p.advance(); err != nil {
-		return 0, 0, err
-	}
+	p.advance()
 
-	wait, err := p.parseOptionalLockWait()
-	if err != nil {
-		return 0, 0, err
-	}
-
-	return lock, wait, nil
+	return lock, p.parseOptionalLockWait()
 }
 
-func (p *Parser) parseOptionalLockWait() (sqlast.LockWaitType, error) {
+func (p *Parser) parseOptionalLockWait() sqlast.LockWaitType {
 	switch {
-	case p.at(NOWAIT):
-		return sqlast.NowaitType, p.advance()
-	case p.at(SKIP):
-		return sqlast.SkipLockedType, p.advanceThenExpect(LOCKED)
+	case p.consume(NOWAIT):
+		return sqlast.NowaitType
+	case p.consume(SKIP):
+		p.expect(LOCKED)
+
+		return sqlast.SkipLockedType
 	default:
-		return sqlast.NoLockWait, nil
+		return sqlast.NoLockWait
 	}
 }

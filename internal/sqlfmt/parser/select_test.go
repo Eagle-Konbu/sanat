@@ -67,6 +67,7 @@ func TestParseSelect_joins(t *testing.T) {
 		{"cross join", "SELECT * FROM a CROSS JOIN b", "SELECT * FROM a CROSS JOIN b"},
 		{"natural join", "SELECT * FROM a NATURAL JOIN b", "SELECT * FROM a NATURAL JOIN b"},
 		{"natural left join", "SELECT * FROM a NATURAL LEFT JOIN b", "SELECT * FROM a NATURAL LEFT JOIN b"},
+		{"natural right join", "SELECT * FROM a NATURAL RIGHT JOIN b", "SELECT * FROM a NATURAL RIGHT JOIN b"},
 		{"straight_join", "SELECT * FROM a STRAIGHT_JOIN b", "SELECT * FROM a STRAIGHT_JOIN b"},
 		{"chained joins", "SELECT * FROM a JOIN b ON a.id = b.id JOIN c ON b.id = c.id",
 			"SELECT * FROM a JOIN b ON a.id = b.id JOIN c ON b.id = c.id"},
@@ -228,6 +229,7 @@ func TestParseSelect_errors(t *testing.T) {
 		"SELECT a FROM t NATURAL LEFT OUTER 'unterminated",
 		"SELECT a FROM t CROSS 'unterminated",
 		"SELECT a FROM t INNER 'unterminated",
+		"SELECT * FROM t OUTER JOIN u",
 	}
 
 	for _, in := range tests {
