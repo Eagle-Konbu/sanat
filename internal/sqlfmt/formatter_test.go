@@ -1014,6 +1014,86 @@ func TestFormatSQL_WindowFrameClause(t *testing.T) {
 	assertSQL(t, got, want)
 }
 
+func TestFormatSQL_ParenTableExpr(t *testing.T) {
+	query := "select id from (users, orders) where users.id = orders.user_id"
+
+	got, ok := sqlfmt.FormatSQL(query, 2)
+	if !ok {
+		t.Fatal("expected ok")
+	}
+
+	want := join(
+		"SELECT",
+		"  id",
+		"FROM",
+		"  (",
+		"    users",
+		"    orders",
+		"  )",
+		"WHERE",
+		"  users.id = orders.user_id",
+	)
+
+	assertSQL(t, got, want)
+}
+
+func TestFormatSQL_WhereOr(t *testing.T) {
+	query := "select id from users where a = 1 or b = 2"
+
+	got, ok := sqlfmt.FormatSQL(query, 2)
+	if !ok {
+		t.Fatal("expected ok")
+	}
+
+	want := join(
+		"SELECT",
+		"  id",
+		"FROM",
+		"  users",
+		"WHERE",
+		"  a = 1",
+		"  OR b = 2",
+	)
+
+	assertSQL(t, got, want)
+}
+
+func TestFormatSQL_InsertUnionRows(t *testing.T) {
+	got, ok := sqlfmt.FormatSQL("INSERT INTO t SELECT a FROM x UNION SELECT b FROM y", 2)
+	if !ok {
+		t.Fatal("expected ok")
+	}
+
+	want := join(
+		"INSERT INTO",
+		"  t",
+		"select a from x union select b from y",
+	)
+
+	assertSQL(t, got, want)
+}
+
+func TestFormatSQL_JSONTableExpr(t *testing.T) {
+	query := "select id from JSON_TABLE(data, '$[*]' COLUMNS(id INT PATH '$.id')) AS jt"
+
+	got, ok := sqlfmt.FormatSQL(query, 2)
+	if !ok {
+		t.Fatal("expected ok")
+	}
+
+	want := join(
+		"SELECT",
+		"  id",
+		"FROM",
+		"  json_table(data, '$[*]' columns(",
+		"\tid INT path '$.id' ",
+		"\t)",
+		") as jt",
+	)
+
+	assertSQL(t, got, want)
+}
+
 func assertSQL(t *testing.T, got, want string) {
 	t.Helper()
 
