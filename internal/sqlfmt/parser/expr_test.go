@@ -243,11 +243,21 @@ func TestParseExpr_countCall(t *testing.T) {
 func TestParseExpr_distinctAggCall(t *testing.T) {
 	assertExpr(t, "SUM(DISTINCT a)", &sqlast.Sum{Arg: col("a"), Distinct: true})
 	assertExpr(t, "AVG(a)", &sqlast.Avg{Arg: col("a")})
+	assertExpr(t, "MIN(a)", &sqlast.Min{Arg: col("a")})
+	assertExpr(t, "MAX(a)", &sqlast.Max{Arg: col("a")})
 }
 
 func TestParseExpr_simpleAggCall(t *testing.T) {
 	assertExpr(t, "BIT_AND(a)", &sqlast.BitAnd{Arg: col("a")})
+	assertExpr(t, "BIT_OR(a)", &sqlast.BitOr{Arg: col("a")})
+	assertExpr(t, "BIT_XOR(a)", &sqlast.BitXor{Arg: col("a")})
+	assertExpr(t, "STD(a)", &sqlast.Std{Arg: col("a")})
+	assertExpr(t, "STDDEV(a)", &sqlast.StdDev{Arg: col("a")})
 	assertExpr(t, "STDDEV_POP(a)", &sqlast.StdPop{Arg: col("a")})
+	assertExpr(t, "STDDEV_SAMP(a)", &sqlast.StdSamp{Arg: col("a")})
+	assertExpr(t, "VARIANCE(a)", &sqlast.Variance{Arg: col("a")})
+	assertExpr(t, "VAR_POP(a)", &sqlast.VarPop{Arg: col("a")})
+	assertExpr(t, "VAR_SAMP(a)", &sqlast.VarSamp{Arg: col("a")})
 	assertExpr(t, "JSON_ARRAYAGG(a)", &sqlast.JSONArrayAgg{Expr: col("a")})
 }
 
