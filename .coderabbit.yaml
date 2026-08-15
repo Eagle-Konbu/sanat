@@ -6,6 +6,7 @@ early_access: false
 reviews:
   profile: chill
   request_changes_workflow: true
+  poem: true
 
   auto_review:
     enabled: true
