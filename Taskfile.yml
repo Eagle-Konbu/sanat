@@ -15,6 +15,11 @@ tasks:
       - go test -v -coverprofile=coverage.out ./...
       - go tool cover -html=coverage.out -o coverage.html
 
+  e2e:
+    desc: Run end-to-end tests against the built binary
+    cmds:
+      - bats e2e/
+
   lint:
     desc: Run linter (golangci-lint)
     cmds:
