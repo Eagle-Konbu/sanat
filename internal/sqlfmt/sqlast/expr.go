@@ -12,6 +12,7 @@ type ComparisonExpr struct {
 	Right    Expr
 }
 
+// String returns ComparisonExpr's SQL text.
 func (c *ComparisonExpr) String() string {
 	return fmt.Sprintf("%s %s %s", c.Left.String(), strings.ToUpper(c.Operator.ToString()), c.Right.String())
 }
@@ -24,6 +25,7 @@ type RangeCond struct {
 	To   Expr
 }
 
+// String returns RangeCond's SQL text.
 func (r *RangeCond) String() string {
 	not := ""
 	if r.Not {
@@ -39,6 +41,7 @@ type IsExpr struct {
 	Expr Expr
 }
 
+// String returns IsExpr's SQL text.
 func (i *IsExpr) String() string {
 	if i.Not {
 		return i.Expr.String() + " IS NOT NULL"
@@ -51,6 +54,7 @@ func (i *IsExpr) String() string {
 // list on the right-hand side of an IN predicate.
 type ValTuple []Expr
 
+// String returns ValTuple's SQL text.
 func (v ValTuple) String() string {
 	strs := make([]string, len(v))
 	for i, e := range v {
@@ -79,6 +83,7 @@ var arithmeticOpStrings = [...]string{
 	ModOp:   "%",
 }
 
+// ToString returns ArithmeticOperator's lower-case SQL keyword; String upper-cases the result.
 func (o ArithmeticOperator) ToString() string {
 	if int(o) < len(arithmeticOpStrings) {
 		return arithmeticOpStrings[o]
@@ -94,6 +99,7 @@ type ArithmeticExpr struct {
 	Right    Expr
 }
 
+// String returns ArithmeticExpr's SQL text.
 func (a *ArithmeticExpr) String() string {
 	return fmt.Sprintf("%s %s %s", a.Left.String(), a.Operator.ToString(), a.Right.String())
 }
@@ -106,6 +112,7 @@ const (
 	UMinusOp
 )
 
+// ToString returns UnaryOperator's lower-case SQL keyword; String upper-cases the result.
 func (u UnaryOperator) ToString() string {
 	if u == UMinusOp {
 		return "-"
@@ -120,6 +127,7 @@ type UnaryExpr struct {
 	Expr     Expr
 }
 
+// String returns UnaryExpr's SQL text.
 func (u *UnaryExpr) String() string {
 	return u.Operator.ToString() + u.Expr.String()
 }
@@ -130,6 +138,7 @@ type AndExpr struct {
 	Right Expr
 }
 
+// String returns AndExpr's SQL text.
 func (a *AndExpr) String() string {
 	return fmt.Sprintf("%s AND %s", a.Left.String(), a.Right.String())
 }
@@ -140,6 +149,7 @@ type OrExpr struct {
 	Right Expr
 }
 
+// String returns OrExpr's SQL text.
 func (o *OrExpr) String() string {
 	return fmt.Sprintf("%s OR %s", o.Left.String(), o.Right.String())
 }
@@ -149,6 +159,7 @@ type NotExpr struct {
 	Expr Expr
 }
 
+// String returns NotExpr's SQL text.
 func (n *NotExpr) String() string {
 	return "NOT " + n.Expr.String()
 }
@@ -166,6 +177,7 @@ type CaseExpr struct {
 	Else  Expr
 }
 
+// String returns CaseExpr's SQL text.
 func (c *CaseExpr) String() string {
 	var b strings.Builder
 
@@ -193,6 +205,7 @@ type ExistsExpr struct {
 	Subquery *Subquery
 }
 
+// String returns ExistsExpr's SQL text.
 func (e *ExistsExpr) String() string {
 	return "EXISTS (" + e.Subquery.Select.String() + ")"
 }
@@ -202,6 +215,7 @@ type Subquery struct {
 	Select Statement
 }
 
+// String returns Subquery's SQL text.
 func (s *Subquery) String() string {
 	return "(" + s.Select.String() + ")"
 }
@@ -212,6 +226,7 @@ type ColName struct {
 	Qualifier TableName
 }
 
+// String returns ColName's SQL text.
 func (c *ColName) String() string {
 	if c.Qualifier.IsEmpty() {
 		return c.Name.String()
@@ -225,6 +240,7 @@ type Literal struct {
 	Val string
 }
 
+// String returns Literal's SQL text.
 func (l *Literal) String() string {
 	return l.Val
 }
@@ -236,6 +252,7 @@ type FuncExpr struct {
 	Exprs     []Expr
 }
 
+// String returns FuncExpr's SQL text.
 func (f *FuncExpr) String() string {
 	name := f.Name.String()
 	if !f.Qualifier.IsEmpty() {
@@ -255,6 +272,7 @@ type ParenExpr struct {
 	Expr Expr
 }
 
+// String returns ParenExpr's SQL text.
 func (p *ParenExpr) String() string {
 	return "(" + p.Expr.String() + ")"
 }
@@ -299,6 +317,7 @@ type Count struct {
 	OverClause *OverClause
 }
 
+// String returns Count's SQL text.
 func (c *Count) String() string {
 	var b strings.Builder
 
@@ -324,6 +343,7 @@ type CountStar struct {
 	OverClause *OverClause
 }
 
+// String returns CountStar's SQL text.
 func (c *CountStar) String() string {
 	var b strings.Builder
 
@@ -340,6 +360,7 @@ type Sum struct {
 	OverClause *OverClause
 }
 
+// String returns Sum's SQL text.
 func (s *Sum) String() string { return formatDistinctAgg("SUM", s.Arg, s.Distinct, s.OverClause) }
 
 // Avg represents AVG([DISTINCT] expr).
@@ -349,6 +370,7 @@ type Avg struct {
 	OverClause *OverClause
 }
 
+// String returns Avg's SQL text.
 func (a *Avg) String() string { return formatDistinctAgg("AVG", a.Arg, a.Distinct, a.OverClause) }
 
 // Min represents MIN([DISTINCT] expr).
@@ -358,6 +380,7 @@ type Min struct {
 	OverClause *OverClause
 }
 
+// String returns Min's SQL text.
 func (m *Min) String() string { return formatDistinctAgg("MIN", m.Arg, m.Distinct, m.OverClause) }
 
 // Max represents MAX([DISTINCT] expr).
@@ -367,6 +390,7 @@ type Max struct {
 	OverClause *OverClause
 }
 
+// String returns Max's SQL text.
 func (m *Max) String() string { return formatDistinctAgg("MAX", m.Arg, m.Distinct, m.OverClause) }
 
 // BitAnd represents BIT_AND(expr).
@@ -375,6 +399,7 @@ type BitAnd struct {
 	OverClause *OverClause
 }
 
+// String returns BitAnd's SQL text.
 func (ba *BitAnd) String() string { return formatSimpleAgg("BIT_AND", ba.Arg, ba.OverClause) }
 
 // BitOr represents BIT_OR(expr).
@@ -383,6 +408,7 @@ type BitOr struct {
 	OverClause *OverClause
 }
 
+// String returns BitOr's SQL text.
 func (bo *BitOr) String() string { return formatSimpleAgg("BIT_OR", bo.Arg, bo.OverClause) }
 
 // BitXor represents BIT_XOR(expr).
@@ -391,6 +417,7 @@ type BitXor struct {
 	OverClause *OverClause
 }
 
+// String returns BitXor's SQL text.
 func (bx *BitXor) String() string { return formatSimpleAgg("BIT_XOR", bx.Arg, bx.OverClause) }
 
 // Std represents STD(expr).
@@ -399,6 +426,7 @@ type Std struct {
 	OverClause *OverClause
 }
 
+// String returns Std's SQL text.
 func (s *Std) String() string { return formatSimpleAgg("STD", s.Arg, s.OverClause) }
 
 // StdDev represents STDDEV(expr).
@@ -407,6 +435,7 @@ type StdDev struct {
 	OverClause *OverClause
 }
 
+// String returns StdDev's SQL text.
 func (s *StdDev) String() string { return formatSimpleAgg("STDDEV", s.Arg, s.OverClause) }
 
 // StdPop represents STDDEV_POP(expr).
@@ -415,6 +444,7 @@ type StdPop struct {
 	OverClause *OverClause
 }
 
+// String returns StdPop's SQL text.
 func (s *StdPop) String() string { return formatSimpleAgg("STDDEV_POP", s.Arg, s.OverClause) }
 
 // StdSamp represents STDDEV_SAMP(expr).
@@ -423,6 +453,7 @@ type StdSamp struct {
 	OverClause *OverClause
 }
 
+// String returns StdSamp's SQL text.
 func (s *StdSamp) String() string { return formatSimpleAgg("STDDEV_SAMP", s.Arg, s.OverClause) }
 
 // Variance represents VARIANCE(expr).
@@ -431,6 +462,7 @@ type Variance struct {
 	OverClause *OverClause
 }
 
+// String returns Variance's SQL text.
 func (v *Variance) String() string { return formatSimpleAgg("VARIANCE", v.Arg, v.OverClause) }
 
 // VarPop represents VAR_POP(expr).
@@ -439,6 +471,7 @@ type VarPop struct {
 	OverClause *OverClause
 }
 
+// String returns VarPop's SQL text.
 func (v *VarPop) String() string { return formatSimpleAgg("VAR_POP", v.Arg, v.OverClause) }
 
 // VarSamp represents VAR_SAMP(expr).
@@ -447,6 +480,7 @@ type VarSamp struct {
 	OverClause *OverClause
 }
 
+// String returns VarSamp's SQL text.
 func (v *VarSamp) String() string { return formatSimpleAgg("VAR_SAMP", v.Arg, v.OverClause) }
 
 // ArgumentLessWindowExpr represents window functions with no arguments (e.g., ROW_NUMBER()).
@@ -455,6 +489,7 @@ type ArgumentLessWindowExpr struct {
 	OverClause *OverClause
 }
 
+// String returns ArgumentLessWindowExpr's SQL text.
 func (a *ArgumentLessWindowExpr) String() string {
 	var b strings.Builder
 
@@ -472,6 +507,7 @@ type FirstOrLastValueExpr struct {
 	OverClause          *OverClause
 }
 
+// String returns FirstOrLastValueExpr's SQL text.
 func (f *FirstOrLastValueExpr) String() string {
 	var b strings.Builder
 
@@ -492,6 +528,7 @@ type NtileExpr struct {
 	OverClause *OverClause
 }
 
+// String returns NtileExpr's SQL text.
 func (n *NtileExpr) String() string {
 	var b strings.Builder
 
@@ -510,6 +547,7 @@ type NTHValueExpr struct {
 	OverClause          *OverClause
 }
 
+// String returns NTHValueExpr's SQL text.
 func (n *NTHValueExpr) String() string {
 	var b strings.Builder
 
@@ -538,6 +576,7 @@ type LagLeadExpr struct {
 	OverClause          *OverClause
 }
 
+// String returns LagLeadExpr's SQL text.
 func (l *LagLeadExpr) String() string {
 	var b strings.Builder
 
@@ -567,6 +606,7 @@ type JSONArrayAgg struct {
 	OverClause *OverClause
 }
 
+// String returns JSONArrayAgg's SQL text.
 func (j *JSONArrayAgg) String() string {
 	return formatSimpleAgg("JSON_ARRAYAGG", j.Expr, j.OverClause)
 }
@@ -578,6 +618,7 @@ type JSONObjectAgg struct {
 	OverClause *OverClause
 }
 
+// String returns JSONObjectAgg's SQL text.
 func (j *JSONObjectAgg) String() string {
 	var b strings.Builder
 

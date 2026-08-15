@@ -15,6 +15,7 @@ type LexError struct {
 	Msg string
 }
 
+// Error implements the error interface, formatting the error's position and message.
 func (e *LexError) Error() string {
 	return fmt.Sprintf("%d:%d: %s", e.Pos.Line, e.Pos.Column, e.Msg)
 }

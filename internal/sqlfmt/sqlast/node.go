@@ -44,14 +44,20 @@ type InsertRows interface {
 // ColIdent represents a column identifier.
 type ColIdent string
 
+// String returns ColIdent's SQL text.
 func (c ColIdent) String() string { return string(c) }
-func (c ColIdent) IsEmpty() bool  { return c == "" }
+
+// IsEmpty reports whether the ColIdent is empty.
+func (c ColIdent) IsEmpty() bool { return c == "" }
 
 // TableIdent represents a table identifier.
 type TableIdent string
 
+// String returns TableIdent's SQL text.
 func (t TableIdent) String() string { return string(t) }
-func (t TableIdent) IsEmpty() bool  { return t == "" }
+
+// IsEmpty reports whether the TableIdent is empty.
+func (t TableIdent) IsEmpty() bool { return t == "" }
 
 // TableName represents a possibly qualified table name.
 type TableName struct {
@@ -59,6 +65,7 @@ type TableName struct {
 	Qualifier TableIdent
 }
 
+// String returns TableName's SQL text.
 func (t TableName) String() string {
 	if t.Qualifier.IsEmpty() {
 		return t.Name.String()
@@ -67,4 +74,5 @@ func (t TableName) String() string {
 	return t.Qualifier.String() + "." + t.Name.String()
 }
 
+// IsEmpty reports whether the TableName is empty.
 func (t TableName) IsEmpty() bool { return t.Name.IsEmpty() }

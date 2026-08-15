@@ -10,6 +10,7 @@ type Where struct {
 	Expr Expr
 }
 
+// String returns Where's SQL text.
 func (w *Where) String() string {
 	if w == nil || w.Expr == nil {
 		return ""
@@ -23,6 +24,7 @@ type GroupBy struct {
 	Exprs []Expr
 }
 
+// String returns GroupBy's SQL text.
 func (g *GroupBy) String() string {
 	if g == nil || len(g.Exprs) == 0 {
 		return ""
@@ -42,6 +44,7 @@ type Order struct {
 	Direction OrderDirection
 }
 
+// String returns Order's SQL text.
 func (o *Order) String() string {
 	s := o.Expr.String()
 	if o.Direction == DescOrder {
@@ -54,6 +57,7 @@ func (o *Order) String() string {
 // OrderBy represents an ORDER BY clause.
 type OrderBy []*Order
 
+// String returns OrderBy's SQL text.
 func (o OrderBy) String() string {
 	if len(o) == 0 {
 		return ""
@@ -73,6 +77,7 @@ type Limit struct {
 	Rowcount Expr
 }
 
+// String returns Limit's SQL text.
 func (l *Limit) String() string {
 	if l == nil {
 		return ""
@@ -103,6 +108,7 @@ const (
 	ForShareLock
 )
 
+// ToString returns Lock's lower-case SQL keyword; String upper-cases the result.
 func (l Lock) ToString() string {
 	switch l {
 	case ForUpdateLock:
@@ -116,6 +122,7 @@ func (l Lock) ToString() string {
 	}
 }
 
+// String returns Lock's SQL text.
 func (l Lock) String() string {
 	return strings.ToUpper(l.ToString())
 }
@@ -130,6 +137,7 @@ const (
 	SkipLockedType
 )
 
+// String returns LockWaitType's SQL text.
 func (t LockWaitType) String() string {
 	switch t {
 	case NowaitType:
@@ -149,6 +157,7 @@ const (
 	ReplaceAct
 )
 
+// String returns InsertAction's SQL text.
 func (a InsertAction) String() string {
 	if a == ReplaceAct {
 		return "REPLACE"
@@ -184,6 +193,7 @@ var joinTypeStrings = [...]string{
 	CrossJoinType:        "cross join",
 }
 
+// ToString returns JoinType's lower-case SQL keyword; String upper-cases the result.
 func (jt JoinType) ToString() string {
 	if int(jt) < len(joinTypeStrings) {
 		return joinTypeStrings[jt]
@@ -232,6 +242,7 @@ var comparisonOpStrings = [...]string{
 	NotRegexpOp:     "not regexp",
 }
 
+// ToString returns ComparisonOperator's lower-case SQL keyword; String upper-cases the result.
 func (op ComparisonOperator) ToString() string {
 	if int(op) < len(comparisonOpStrings) {
 		return comparisonOpStrings[op]
@@ -249,6 +260,7 @@ const (
 	ForceOp
 )
 
+// ToString returns IndexHintType's lower-case SQL keyword; String upper-cases the result.
 func (t IndexHintType) ToString() string {
 	switch t {
 	case IgnoreOp:
@@ -270,6 +282,7 @@ const (
 	OrderByForType
 )
 
+// ToString returns IndexHintForType's lower-case SQL keyword; String upper-cases the result.
 func (t IndexHintForType) ToString() string {
 	switch t {
 	case JoinForType:
@@ -290,6 +303,7 @@ type IndexHint struct {
 	Indexes []ColIdent
 }
 
+// String returns IndexHint's SQL text.
 func (h *IndexHint) String() string {
 	idxs := make([]string, len(h.Indexes))
 	for i, idx := range h.Indexes {
@@ -313,6 +327,7 @@ type IndexHints []*IndexHint
 // Columns represents a list of column identifiers.
 type Columns []ColIdent
 
+// String returns Columns's SQL text.
 func (c Columns) String() string {
 	strs := make([]string, len(c))
 	for i, col := range c {
@@ -325,6 +340,7 @@ func (c Columns) String() string {
 // Values represents rows of values for INSERT.
 type Values [][]Expr
 
+// String returns Values's SQL text.
 func (v Values) String() string {
 	rows := make([]string, len(v))
 
@@ -346,6 +362,7 @@ type UpdateExpr struct {
 	Expr Expr
 }
 
+// String returns UpdateExpr's SQL text.
 func (u *UpdateExpr) String() string {
 	return u.Name.String() + " = " + u.Expr.String()
 }
@@ -353,6 +370,7 @@ func (u *UpdateExpr) String() string {
 // OnDup represents an ON DUPLICATE KEY UPDATE clause.
 type OnDup []*UpdateExpr
 
+// String returns OnDup's SQL text.
 func (o OnDup) String() string {
 	if len(o) == 0 {
 		return ""
@@ -372,6 +390,7 @@ type OverClause struct {
 	WindowSpec *WindowSpecification
 }
 
+// String returns OverClause's SQL text.
 func (o *OverClause) String() string {
 	if o == nil {
 		return ""
@@ -400,6 +419,7 @@ type WindowSpecification struct {
 	FrameClause     *FrameClause
 }
 
+// String returns WindowSpecification's SQL text.
 func (w *WindowSpecification) String() string {
 	if w == nil {
 		return ""
@@ -439,6 +459,7 @@ type FrameClause struct {
 	End   *FramePoint
 }
 
+// String returns FrameClause's SQL text.
 func (f *FrameClause) String() string {
 	if f == nil {
 		return ""
@@ -461,6 +482,7 @@ const (
 	FrameRangeType
 )
 
+// String returns FrameUnitType's SQL text.
 func (f FrameUnitType) String() string {
 	if f == FrameRangeType {
 		return "RANGE"
@@ -475,6 +497,7 @@ type FramePoint struct {
 	Expr Expr
 }
 
+// String returns FramePoint's SQL text.
 func (f *FramePoint) String() string {
 	switch f.Type {
 	case UnboundedPrecedingType:
@@ -520,6 +543,7 @@ var arglessWindowExprStrings = [...]string{
 	RowNumberExprType:   "ROW_NUMBER",
 }
 
+// String returns ArgumentLessWindowExprType's SQL text.
 func (t ArgumentLessWindowExprType) String() string {
 	if int(t) < len(arglessWindowExprStrings) {
 		return arglessWindowExprStrings[t]
@@ -536,6 +560,7 @@ const (
 	LastValueExprType
 )
 
+// String returns FirstOrLastValueExprType's SQL text.
 func (t FirstOrLastValueExprType) String() string {
 	if t == LastValueExprType {
 		return "LAST_VALUE"
@@ -552,6 +577,7 @@ const (
 	LeadExprType
 )
 
+// String returns LagLeadExprType's SQL text.
 func (t LagLeadExprType) String() string {
 	if t == LeadExprType {
 		return "LEAD"
@@ -568,6 +594,7 @@ const (
 	IgnoreNullsType
 )
 
+// String returns NullTreatmentType's SQL text.
 func (t NullTreatmentType) String() string {
 	if t == IgnoreNullsType {
 		return "IGNORE NULLS"
@@ -581,6 +608,7 @@ type NullTreatmentClause struct {
 	Type NullTreatmentType
 }
 
+// String returns NullTreatmentClause's SQL text.
 func (n *NullTreatmentClause) String() string {
 	if n == nil {
 		return ""
@@ -597,6 +625,7 @@ const (
 	FromLastType
 )
 
+// String returns FromFirstLastType's SQL text.
 func (t FromFirstLastType) String() string {
 	if t == FromLastType {
 		return "FROM LAST"
@@ -610,6 +639,7 @@ type FromFirstLastClause struct {
 	Type FromFirstLastType
 }
 
+// String returns FromFirstLastClause's SQL text.
 func (f *FromFirstLastClause) String() string {
 	if f == nil {
 		return ""
