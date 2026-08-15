@@ -17,6 +17,7 @@ type Select struct {
 	OrderBy     OrderBy
 	Limit       *Limit
 	Lock        Lock
+	LockWait    LockWaitType
 }
 
 func (s *Select) String() string {
@@ -37,7 +38,7 @@ func (s *Select) String() string {
 	writeWhereClause(&b, "HAVING", s.Having)
 	writeOrderBy(&b, s.OrderBy)
 	writeLimit(&b, s.Limit)
-	writeLock(&b, s.Lock)
+	writeLock(&b, s.Lock, s.LockWait)
 
 	return b.String()
 }
@@ -158,6 +159,7 @@ type Union struct {
 	OrderBy  OrderBy
 	Limit    *Limit
 	Lock     Lock
+	LockWait LockWaitType
 }
 
 func (u *Union) String() string {
@@ -176,7 +178,7 @@ func (u *Union) String() string {
 	b.WriteString(u.Right.String())
 	writeOrderBy(&b, u.OrderBy)
 	writeLimit(&b, u.Limit)
-	writeLock(&b, u.Lock)
+	writeLock(&b, u.Lock, u.LockWait)
 
 	return b.String()
 }
@@ -284,12 +286,16 @@ func writeLimit(b *strings.Builder, l *Limit) {
 	b.WriteString(" " + l.String())
 }
 
-func writeLock(b *strings.Builder, l Lock) {
+func writeLock(b *strings.Builder, l Lock, wait LockWaitType) {
 	if l == NoLock {
 		return
 	}
 
 	b.WriteString(" " + l.String())
+
+	if s := wait.String(); s != "" {
+		b.WriteString(" " + s)
+	}
 }
 
 func writeTargets(b *strings.Builder, targets []TableName) {

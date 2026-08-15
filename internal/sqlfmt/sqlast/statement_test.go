@@ -70,6 +70,16 @@ func TestSelect_String(t *testing.T) {
 			want: "SELECT * FROM t FOR UPDATE",
 		},
 		{
+			name: "with lock wait",
+			s: &sqlast.Select{
+				SelectExprs: []sqlast.SelectExpr{&sqlast.StarExpr{}},
+				From:        []sqlast.TableExpr{&sqlast.AliasedTableExpr{Expr: sqlast.TableName{Name: "t"}}},
+				Lock:        sqlast.ForShareLock,
+				LockWait:    sqlast.SkipLockedType,
+			},
+			want: "SELECT * FROM t FOR SHARE SKIP LOCKED",
+		},
+		{
 			name: "with CTE",
 			s: &sqlast.Select{
 				With: &sqlast.With{

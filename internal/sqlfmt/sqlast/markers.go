@@ -10,6 +10,11 @@ package sqlast
 // --- Expr ---
 
 func (*ComparisonExpr) iExpr()         {}
+func (*RangeCond) iExpr()              {}
+func (*IsExpr) iExpr()                 {}
+func (ValTuple) iExpr()                {}
+func (*ArithmeticExpr) iExpr()         {}
+func (*UnaryExpr) iExpr()              {}
 func (*AndExpr) iExpr()                {}
 func (*OrExpr) iExpr()                 {}
 func (*NotExpr) iExpr()                {}

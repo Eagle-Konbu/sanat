@@ -81,7 +81,15 @@ func TestLock(t *testing.T) {
 	assertEqual(t, "", sqlast.NoLock.ToString())
 	assertEqual(t, "for update", sqlast.ForUpdateLock.ToString())
 	assertEqual(t, "lock in share mode", sqlast.ShareModeLock.ToString())
+	assertEqual(t, "for share", sqlast.ForShareLock.ToString())
 	assertEqual(t, "FOR UPDATE", sqlast.ForUpdateLock.String())
+	assertEqual(t, "FOR SHARE", sqlast.ForShareLock.String())
+}
+
+func TestLockWaitType_String(t *testing.T) {
+	assertEqual(t, "", sqlast.NoLockWait.String())
+	assertEqual(t, "NOWAIT", sqlast.NowaitType.String())
+	assertEqual(t, "SKIP LOCKED", sqlast.SkipLockedType.String())
 }
 
 func TestInsertAction_String(t *testing.T) {
