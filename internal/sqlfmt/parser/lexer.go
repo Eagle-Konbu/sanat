@@ -231,12 +231,12 @@ func (l *Lexer) readString(startPos Position) (string, error) {
 
 			return sb.String(), nil
 		case l.ch == '\\':
-			r, err := l.readEscapedRune(startPos)
+			s, err := l.readEscapedString(startPos)
 			if err != nil {
 				return "", err
 			}
 
-			sb.WriteRune(r)
+			sb.WriteString(s)
 		default:
 			sb.WriteRune(l.ch)
 			l.readChar()
@@ -244,38 +244,42 @@ func (l *Lexer) readString(startPos Position) (string, error) {
 	}
 }
 
-func (l *Lexer) readEscapedRune(stringStart Position) (rune, error) {
+func (l *Lexer) readEscapedString(stringStart Position) (string, error) {
 	l.readChar() // consume backslash
 
 	if l.ch == eof {
-		return 0, &LexError{Pos: stringStart, Msg: "unterminated string literal"}
+		return "", &LexError{Pos: stringStart, Msg: "unterminated string literal"}
 	}
 
-	r := unescape(l.ch)
+	s := unescape(l.ch)
 	l.readChar()
 
-	return r, nil
+	return s, nil
 }
 
-// unescape maps a character following a backslash to the rune it represents,
-// per MySQL's escape sequence rules. Any character not in the recognized set
-// (e.g. \\, \', \%, \_) represents itself.
-func unescape(ch rune) rune {
+// unescape maps a character following a backslash to the string it represents,
+// per MySQL's escape sequence rules. \% and \_ retain the backslash: they are
+// only unescaped within LIKE pattern-matching, which this lexer does not
+// interpret. Any other character not in the recognized set represents itself
+// with the backslash dropped.
+func unescape(ch rune) string {
 	switch ch {
 	case '0':
-		return '\x00'
+		return "\x00"
 	case 'b':
-		return '\b'
+		return "\b"
 	case 'n':
-		return '\n'
+		return "\n"
 	case 'r':
-		return '\r'
+		return "\r"
 	case 't':
-		return '\t'
+		return "\t"
 	case 'Z':
-		return '\x1a'
+		return "\x1a"
+	case '%', '_':
+		return "\\" + string(ch)
 	default:
-		return ch
+		return string(ch)
 	}
 }
 

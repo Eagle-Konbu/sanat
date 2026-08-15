@@ -189,12 +189,14 @@ func TestLexer_StringLiterals(t *testing.T) {
 		{"backslash escape newline", `'a\nb'`, "a\nb"},
 		{"backslash escape quote", `'it\'s'`, "it's"},
 		{"backslash escape backslash", `'a\\b'`, `a\b`},
-		{"backslash escape percent", `'50\%'`, "50%"},
+		{"backslash escape percent retains backslash", `'50\%'`, `50\%`},
+		{"backslash escape underscore retains backslash", `'a\_b'`, `a\_b`},
 		{"backslash escape nul", `'a\0b'`, "a\x00b"},
 		{"backslash escape backspace", `'a\bb'`, "a\bb"},
 		{"backslash escape carriage return", `'a\rb'`, "a\rb"},
 		{"backslash escape tab", `'a\tb'`, "a\tb"},
 		{"backslash escape ctrl-z", `'a\Zb'`, "a\x1ab"},
+		{"backslash unrecognized escape drops backslash", `'a\xb'`, "axb"},
 	}
 
 	for _, tt := range tests {
