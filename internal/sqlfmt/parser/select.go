@@ -7,6 +7,18 @@ import "github.com/Eagle-Konbu/sanat/internal/sqlfmt/sqlast"
 func (p *Parser) parseSelectStatement() *sqlast.Select {
 	sel := &sqlast.Select{With: p.parseOptionalWith()}
 
+	p.parseSelectCore(sel)
+	p.parseSelectTail(sel)
+
+	return sel
+}
+
+// parseSelectCore parses a SELECT statement's body (the SELECT keyword
+// through the WHERE/GROUP BY/HAVING filters), leaving out the optional
+// leading WITH clause and the trailing ORDER BY/LIMIT/locking clauses.
+// Shared with the UNION parser, where each branch's tail belongs to the
+// union as a whole rather than to the individual branch.
+func (p *Parser) parseSelectCore(sel *sqlast.Select) {
 	p.expect(SELECT)
 	p.parseSelectModifiers(sel)
 
@@ -14,9 +26,6 @@ func (p *Parser) parseSelectStatement() *sqlast.Select {
 	sel.From = p.parseOptionalFromClause()
 
 	p.parseSelectFilters(sel)
-	p.parseSelectTail(sel)
-
-	return sel
 }
 
 // parseSelectModifiers parses the [DISTINCT|ALL] modifier following SELECT.
@@ -155,6 +164,13 @@ func (p *Parser) parseOptionalFromClause() []sqlast.TableExpr {
 		return nil
 	}
 
+	return p.parseTableReferenceList()
+}
+
+// parseTableReferenceList parses a comma-separated list of table references
+// (each possibly a chain of JOINs). Shared by the FROM clause and the
+// target-table list of multi-table UPDATE/DELETE statements.
+func (p *Parser) parseTableReferenceList() []sqlast.TableExpr {
 	var tables []sqlast.TableExpr
 
 	for {

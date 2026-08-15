@@ -110,6 +110,8 @@ const (
 	FIRST
 	LAST
 	MODE
+	REPLACE
+	USING
 	keywordEnd
 )
 
@@ -215,6 +217,8 @@ var tokenNames = map[TokenType]string{
 	FIRST:        "FIRST",
 	LAST:         "LAST",
 	MODE:         "MODE",
+	REPLACE:      "REPLACE",
+	USING:        "USING",
 }
 
 // String returns the token type's display name, used in error messages.
