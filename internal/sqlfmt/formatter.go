@@ -290,8 +290,20 @@ func (f *formatter) formatSelectExpr(expr sqlparser.SelectExpr, depth int) strin
 }
 
 func (f *formatter) formatTableExprs(b *strings.Builder, exprs []sqlparser.TableExpr, pi string, depth int) {
-	for _, expr := range exprs {
-		f.formatTableExpr(b, expr, pi, depth)
+	n := len(exprs)
+
+	for i, expr := range exprs {
+		var item strings.Builder
+
+		f.formatTableExpr(&item, expr, pi, depth)
+
+		lines := strings.Split(strings.TrimSuffix(item.String(), "\n"), "\n")
+		lines[0] = f.itemPrefix(pi, i) + strings.TrimPrefix(lines[0], pi)
+		lines[len(lines)-1] += f.itemSuffix(i, n)
+
+		for _, line := range lines {
+			b.WriteString(line + "\n")
+		}
 	}
 }
 
@@ -410,7 +422,7 @@ func (f *formatter) formatExpr(expr sqlparser.Expr, depth int) string {
 	case *sqlparser.ComparisonExpr:
 		right := f.formatExpr(e.Right, depth)
 
-		return f.formatExpr(e.Left, depth) + " " + e.Operator.ToString() + " " + right
+		return f.formatExpr(e.Left, depth) + " " + f.keyword(e.Operator.ToString()) + " " + right
 	case *sqlparser.NotExpr:
 		return f.keyword("NOT") + " " + f.formatExpr(e.Expr, depth)
 	case *sqlparser.CaseExpr:
@@ -678,7 +690,7 @@ func (f *formatter) formatOnDupUpdate(b *strings.Builder, onDup sqlparser.OnDup,
 
 	lines := make([]string, len(onDup))
 	for i, expr := range onDup {
-		lines[i] = sqlparser.String(expr)
+		lines[i] = f.applyKeywordCase(sqlparser.String(expr))
 	}
 
 	f.writeList(b, pi, lines)
@@ -866,11 +878,55 @@ var upperKeywordReplacer = strings.NewReplacer(
 // always emits these operator/predicate keywords in lowercase) according to
 // the configured keyword case.
 func (f *formatter) applyKeywordCase(s string) string {
-	if f.keywordCase == KeywordCaseUpper {
-		return upperKeywordReplacer.Replace(s)
+	if f.keywordCase != KeywordCaseUpper {
+		// The parser's own output is already lowercase, so KeywordCaseLower and
+		// KeywordCasePreserve both pass the text through unchanged.
+		return s
 	}
 
-	// The parser's own output is already lowercase, so KeywordCaseLower and
-	// KeywordCasePreserve both pass the text through unchanged.
-	return s
+	// Replace keyword substrings only outside of quoted regions, so that
+	// string/identifier literals containing e.g. " and " are left intact.
+	var b strings.Builder
+
+	b.Grow(len(s))
+
+	segStart := 0
+
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c != '\'' && c != '"' && c != '`' {
+			continue
+		}
+
+		b.WriteString(upperKeywordReplacer.Replace(s[segStart:i]))
+
+		end := quotedRegionEnd(s, i, c)
+		b.WriteString(s[i:end])
+		segStart = end
+		i = end - 1
+	}
+
+	b.WriteString(upperKeywordReplacer.Replace(s[segStart:]))
+
+	return b.String()
+}
+
+// quotedRegionEnd returns the index just past the closing quote of the
+// quoted region starting at s[start] (a c-quote character), treating
+// backslash as an escape for the following character.
+func quotedRegionEnd(s string, start int, c byte) int {
+	i := start + 1
+
+	for i < len(s) {
+		switch {
+		case s[i] == '\\' && i+1 < len(s):
+			i += 2
+		case s[i] == c:
+			return i + 1
+		default:
+			i++
+		}
+	}
+
+	return i
 }

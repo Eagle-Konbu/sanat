@@ -172,9 +172,14 @@ func validateCommaStyle(cfg Config) error {
 // only reports conditions that should not block loading the config.
 func warn(name string, data []byte, cfg Config) {
 	if cfg.Version == nil {
+		versionHint := fmt.Sprintf("version = %d", CurrentVersion)
+		if ext := filepath.Ext(name); ext == ".yml" || ext == ".yaml" {
+			versionHint = fmt.Sprintf("version: %d", CurrentVersion)
+		}
+
 		fmt.Fprintf(os.Stderr,
 			"sanat: warning: %s is missing \"version\"; treating as version 0 (pre-schema). "+
-				"Add \"version = %d\" to silence this warning.\n", name, CurrentVersion)
+				"Add \"%s\" to silence this warning.\n", name, versionHint)
 	}
 
 	for _, field := range unknownFields(name, data) {

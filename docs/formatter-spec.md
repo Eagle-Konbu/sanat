@@ -54,7 +54,7 @@ Since the SQL parser cannot handle `?` correctly, substitution and restoration a
 
 ### Common Rules
 
-- SQL keywords are converted to **UPPERCASE**
+- Clause keywords and aggregate/window function names are converted to **UPPERCASE**; operator/predicate keywords follow the [`keyword_case`](#keyword-casing) option instead
 - Each clause is placed on a **separate line**
 - Clause contents are **indented** (default: 2 spaces)
 - Backtick identifiers (MySQL style) are removed after formatting

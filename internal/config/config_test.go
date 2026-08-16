@@ -367,6 +367,13 @@ func captureStderr(t *testing.T, fn func()) string {
 
 	os.Stderr = w
 
+	t.Cleanup(func() {
+		os.Stderr = orig
+
+		w.Close()
+		r.Close()
+	})
+
 	fn()
 
 	if err := w.Close(); err != nil {
