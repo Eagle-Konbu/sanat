@@ -133,7 +133,7 @@ Strings that don't parse as valid SQL are left unchanged.
 1. Parses Go source files using `go/parser`
 2. Finds raw string literals (backtick strings)
 3. Detects SQL by checking for keywords (SELECT, INSERT, UPDATE, DELETE)
-4. Parses SQL using [Vitess](https://vitess.io/) SQL parser
+4. Parses SQL using an in-house SQL parser (`internal/sqlfmt/parser`)
 5. Reformats SQL with consistent indentation
 6. Outputs modified Go source
 

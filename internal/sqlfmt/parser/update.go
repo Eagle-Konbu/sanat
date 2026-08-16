@@ -22,7 +22,14 @@ func ParseUpdate(input string) (upd *sqlast.Update, err error) {
 // parseUpdateStatement parses an UPDATE statement, optionally preceded by a
 // WITH clause. The current token must be WITH or UPDATE.
 func (p *Parser) parseUpdateStatement() *sqlast.Update {
-	upd := &sqlast.Update{With: p.parseOptionalWith()}
+	return p.parseUpdateStatementAfterWith(p.parseOptionalWith())
+}
+
+// parseUpdateStatementAfterWith parses an UPDATE statement given an
+// already-parsed (possibly nil) leading WITH clause. The current token must
+// be UPDATE.
+func (p *Parser) parseUpdateStatementAfterWith(with *sqlast.With) *sqlast.Update {
+	upd := &sqlast.Update{With: with}
 
 	p.expect(UPDATE)
 

@@ -1,5 +1,5 @@
-// Package parser implements a lexer and (eventually) parser for MySQL SQL,
-// producing an AST equivalent to the vitess types currently used by the formatter.
+// Package parser implements a lexer and parser for MySQL SQL, producing the
+// sqlast AST that the formatter walks to render output.
 package parser
 
 import "strings"

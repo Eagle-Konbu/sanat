@@ -37,7 +37,14 @@ func ParseDelete(input string) (del *sqlast.Delete, err error) {
 // a following USING makes it Form C (those names become Targets), and
 // anything else makes it Form A (the list must hold exactly one name).
 func (p *Parser) parseDeleteStatement() *sqlast.Delete {
-	del := &sqlast.Delete{With: p.parseOptionalWith()}
+	return p.parseDeleteStatementAfterWith(p.parseOptionalWith())
+}
+
+// parseDeleteStatementAfterWith parses a DELETE statement given an
+// already-parsed (possibly nil) leading WITH clause. The current token must
+// be DELETE.
+func (p *Parser) parseDeleteStatementAfterWith(with *sqlast.With) *sqlast.Delete {
+	del := &sqlast.Delete{With: with}
 
 	p.expect(DELETE)
 

@@ -15,13 +15,12 @@ flowchart TD
     C --> D{MightBeSQL?}
     D -- No --> E[Skip]
     D -- Yes --> F[Placeholder substitution<br/>? → :_sqla_ph_N]
-    F --> G[Parse with Vitess SQL parser]
+    F --> G[Parse with in-house SQL parser]
     G --> H{Parse success?}
     H -- No --> I[Keep original string]
     H -- Yes --> J[Format according to SQL statement type]
     J --> K[Restore placeholders<br/>:_sqla_ph_N → ?]
-    K --> L[Remove backtick identifiers]
-    L --> M[Replace AST node with<br/>formatted string]
+    K --> M[Replace AST node with<br/>formatted string]
     M --> N[Output with go/format]
 ```
 
@@ -47,7 +46,7 @@ db.Exec("select id from users where id = ?", 1)
 Since the SQL parser cannot handle `?` correctly, substitution and restoration are performed before and after parsing.
 
 1. **Substitution**: `?` → `:_sqla_ph_0`, `:_sqla_ph_1`, ... (indexed in order of appearance)
-2. **Parsing**: Syntax analysis with the Vitess SQL parser
+2. **Parsing**: Syntax analysis with the in-house SQL parser (see [parser-spec.md](parser-spec.md))
 3. **Restoration**: `:_sqla_ph_N` → `?`
 
 ## Format Rules
@@ -57,7 +56,7 @@ Since the SQL parser cannot handle `?` correctly, substitution and restoration a
 - SQL keywords are converted to **UPPERCASE**
 - Each clause is placed on a **separate line**
 - Clause contents are **indented** (default: 2 spaces)
-- Backtick identifiers (MySQL style) are removed after formatting
+- Backtick-quoted identifiers (MySQL style) are parsed and re-rendered unquoted
 - If parsing fails, the **original string is returned as-is**
 
 ### Keyword Uppercasing
@@ -131,7 +130,7 @@ WHERE
 GROUP BY
   u.status
 HAVING
-  count(*) > 1
+  COUNT(*) > 1
 ORDER BY
   u.id DESC
 LIMIT
@@ -368,7 +367,7 @@ WHERE
 ```sql
   (
     SELECT
-      count(*)
+      COUNT(*)
     FROM
       orders
   )
@@ -426,7 +425,7 @@ Aggregate and window functions with OVER clauses are formatted with the window s
 
 ```sql
 SELECT
-  sum(amount) OVER (
+  SUM(amount) OVER (
     PARTITION BY user_id
     ORDER BY created_at
   )
@@ -438,12 +437,12 @@ FROM
 
 ```sql
 SELECT
-  sum(amount) OVER w
+  SUM(amount) OVER w
 FROM
   orders
 ```
 
-Supported function types: COUNT, COUNT(*), SUM, AVG, MIN, MAX, BIT_AND, BIT_OR, BIT_XOR, STD, STDDEV, STDDEV_POP, STDDEV_SAMP, VAR_POP, VAR_SAMP, VARIANCE, ROW_NUMBER, RANK, DENSE_RANK, PERCENT_RANK, CUME_DIST, FIRST_VALUE, LAST_VALUE, NTILE, NTH_VALUE, LAG, LEAD, JSON_ARRAYAGG, JSON_OBJECTAGG.
+Supported function types: COUNT, COUNT(*), SUM, AVG, MIN, MAX, BIT_AND, BIT_OR, BIT_XOR, STD, STDDEV, STDDEV_POP, STDDEV_SAMP, VAR_POP, VAR_SAMP, VARIANCE, ROW_NUMBER, RANK, DENSE_RANK, PERCENT_RANK, CUME_DIST, FIRST_VALUE, LAST_VALUE, NTILE, NTH_VALUE, LAG, LEAD, JSON_ARRAYAGG, JSON_OBJECTAGG. These aggregate/window names always render uppercase regardless of the source casing; a generic (non-aggregate) function call preserves whatever casing it was written with.
 
 ### SELECT Expressions
 
@@ -455,7 +454,7 @@ Supported function types: COUNT, COUNT(*), SUM, AVG, MIN, MAX, BIT_AND, BIT_OR, 
 SELECT
   u.id,
   u.name AS user_name,
-  count(*) AS cnt
+  COUNT(*) AS cnt
 ```
 
 ### Locking Clauses
@@ -659,7 +658,7 @@ FROM
 
 ## Parser
 
-The [Vitess](https://vitess.io/) SQL parser (`vitess.io/vitess/go/vt/sqlparser`) is used for SQL syntax analysis. It supports MySQL-compatible SQL syntax.
+SQL syntax analysis uses an in-house lexer/parser (`internal/sqlfmt/parser`, producing the `internal/sqlfmt/sqlast` AST) scoped to the MySQL DML this formatter supports. See [parser-spec.md](parser-spec.md) for the full grammar and node reference.
 
 ### Supported SQL Statements
 
@@ -671,4 +670,4 @@ The [Vitess](https://vitess.io/) SQL parser (`vitess.io/vitess/go/vt/sqlparser`)
 | UPDATE | o |
 | DELETE | o |
 | UNION / UNION ALL | o |
-| Other | Falls back to Vitess default output |
+| Other (DDL, transaction, admin, `JSON_TABLE`, ...) | Not recognized by the parser — `FormatSQL` returns the input unchanged |
