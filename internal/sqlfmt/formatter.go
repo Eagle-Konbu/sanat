@@ -182,9 +182,23 @@ func formatSelectExpr(expr sqlast.SelectExpr, indent, depth int) string {
 	}
 }
 
+// formatTableExprs renders a comma-separated table reference list (a FROM
+// clause, an UPDATE/DELETE target list, or a parenthesized table list). Each
+// element is rendered into its own builder first so a trailing comma can be
+// spliced in before the element's final newline, without threading "is this
+// the last element" through formatTableExpr's JOIN/paren recursion.
 func formatTableExprs(b *strings.Builder, exprs []sqlast.TableExpr, pi string, indent, depth int) {
-	for _, expr := range exprs {
-		formatTableExpr(b, expr, pi, indent, depth)
+	for i, expr := range exprs {
+		var elem strings.Builder
+
+		formatTableExpr(&elem, expr, pi, indent, depth)
+
+		s := elem.String()
+		if i < len(exprs)-1 {
+			s = strings.TrimSuffix(s, "\n") + ",\n"
+		}
+
+		b.WriteString(s)
 	}
 }
 

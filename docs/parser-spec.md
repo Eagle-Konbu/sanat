@@ -45,8 +45,11 @@ internal/sqlfmt/
 └── parser/   Lexer + recursive-descent parser producing sqlast nodes
 ```
 
-`sqlast` has no dependency on `parser`, so the formatter (`internal/sqlfmt`)
-can use the AST's `String()` methods directly without a parser dependency.
+`sqlast` has no dependency on `parser` — `parser` depends on `sqlast`, not
+the other way around, avoiding an import cycle. `internal/sqlfmt/formatter.go`
+does import `parser` (it calls `parser.ParseStatement` to turn SQL text into
+an AST); it's `sqlast` specifically, not the formatter, that has no parser
+dependency.
 
 ## AST (`sqlast`)
 
@@ -158,8 +161,10 @@ does too, but fails if the input turns out to be a single `SELECT` with no
 `UNION` (use `ParseSelect` for that case). `ParseStatement` is the
 formatter's entry point: it dispatches on the statement's leading keyword
 (after consuming an optional `WITH`) to whichever of `SELECT`/`INSERT`/
-`UPDATE`/`DELETE`/`UNION` parsing applies — `WITH` is not accepted before
-`INSERT`, matching MySQL.
+`REPLACE`/`UPDATE`/`DELETE`/`UNION` parsing applies — `REPLACE` routes
+through the same `parseInsertStatement` as `INSERT` (it becomes an
+`*sqlast.Insert` with `Action: ReplaceAct`), and `WITH` is not accepted
+before `INSERT`/`REPLACE`, matching MySQL.
 
 ### Error Handling Model
 

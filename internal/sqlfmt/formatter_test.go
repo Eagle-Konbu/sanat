@@ -680,7 +680,7 @@ func TestFormatSQL_WithCTE(t *testing.T) {
 				"SELECT",
 				"  *",
 				"FROM",
-				"  a",
+				"  a,",
 				"  b",
 			),
 		},
@@ -1023,7 +1023,7 @@ func TestFormatSQL_ParenTableExpr(t *testing.T) {
 		"  id",
 		"FROM",
 		"  (",
-		"    users",
+		"    users,",
 		"    orders",
 		"  )",
 		"WHERE",
@@ -1289,6 +1289,46 @@ func TestFormatSQL_InsertSelect(t *testing.T) {
 		"  b",
 		"FROM",
 		"  x",
+	)
+
+	assertSQL(t, got, want)
+}
+
+// TestFormatSQL_MultiTableFrom guards against dropping the comma between
+// top-level table references: without it, "FROM a, b" re-formats as
+// "FROM\n  a\n  b", which no longer parses as two tables (it reads as
+// "a" implicitly aliased "b").
+func TestFormatSQL_MultiTableFrom(t *testing.T) {
+	got, ok := sqlfmt.FormatSQL("SELECT id FROM a, b", 2)
+	if !ok {
+		t.Fatal("expected ok")
+	}
+
+	want := join(
+		"SELECT",
+		"  id",
+		"FROM",
+		"  a,",
+		"  b",
+	)
+
+	assertSQL(t, got, want)
+}
+
+func TestFormatSQL_UpdateMultiTable(t *testing.T) {
+	got, ok := sqlfmt.FormatSQL("UPDATE a, b SET a.x = 1 WHERE a.id = b.id", 2)
+	if !ok {
+		t.Fatal("expected ok")
+	}
+
+	want := join(
+		"UPDATE",
+		"  a,",
+		"  b",
+		"SET",
+		"  a.x = 1",
+		"WHERE",
+		"  a.id = b.id",
 	)
 
 	assertSQL(t, got, want)

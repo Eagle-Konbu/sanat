@@ -1,5 +1,9 @@
-// Package parser implements a lexer and parser for MySQL SQL, producing the
-// sqlast AST that the formatter walks to render output.
+// Package parser implements a lexer and parser for the supported subset of
+// MySQL DML (SELECT/INSERT/REPLACE/UPDATE/DELETE/UNION, see parser-spec.md
+// for the exact grammar), producing the sqlast AST that the formatter walks
+// to render output. Anything outside that subset — DDL, transaction/admin
+// statements, JSON_TABLE, and other constructs not in the grammar — fails
+// to parse rather than being partially or incorrectly accepted.
 package parser
 
 import "strings"
