@@ -2,13 +2,13 @@ coverage:
   status:
     project:
       default:
-        target: auto
+        target: 90%
         threshold: 0%
         paths:
           - "internal/"
     patch:
       default:
-        target: auto
+        target: 90%
         threshold: 0%
         paths:
           - "internal/"
