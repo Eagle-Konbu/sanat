@@ -259,13 +259,18 @@ func TestParseExpr_genericFuncCall(t *testing.T) {
 	assertExpr(t, "NOW()", &sqlast.FuncExpr{Name: "NOW"})
 }
 
-// TestParseExpr_valuesFuncCall covers the deprecated VALUES(col) reference
-// used in an ON DUPLICATE KEY UPDATE clause. VALUES is a keyword everywhere
-// else in the grammar (it starts an INSERT's VALUES row list), but must
-// still parse as a plain function call here.
-func TestParseExpr_valuesFuncCall(t *testing.T) {
-	assertExpr(t, "VALUES(name)", &sqlast.FuncExpr{Name: "VALUES", Exprs: []sqlast.Expr{col("name")}})
-	assertExpr(t, "values(name)", &sqlast.FuncExpr{Name: "values", Exprs: []sqlast.Expr{col("name")}})
+// TestParseExpr_valuesFuncCall_rejected covers the deprecated VALUES(col)
+// reference. It only parses as a plain function call inside an ON DUPLICATE
+// KEY UPDATE clause (see TestParseInsert_onDuplicateKeyUpdate); everywhere
+// else VALUES is a keyword (it starts an INSERT's VALUES row list), so a
+// bare expression must reject it rather than silently accepting SQL that
+// MySQL doesn't.
+func TestParseExpr_valuesFuncCall_rejected(t *testing.T) {
+	for _, in := range []string{"VALUES(name)", "values(name)"} {
+		if _, err := parser.ParseExpr(in); err == nil {
+			t.Errorf("ParseExpr(%q) expected error, got nil", in)
+		}
+	}
 }
 
 func TestParseExpr_countCall(t *testing.T) {

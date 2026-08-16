@@ -124,5 +124,9 @@ func (p *Parser) parseOptionalOnDup() sqlast.OnDup {
 	p.expect(KEY)
 	p.expect(UPDATE)
 
-	return sqlast.OnDup(p.parseSetExprList())
+	p.inOnDupUpdate = true
+	exprs := p.parseSetExprList()
+	p.inOnDupUpdate = false
+
+	return sqlast.OnDup(exprs)
 }

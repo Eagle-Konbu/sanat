@@ -263,11 +263,15 @@ func (p *Parser) parsePrimaryExpr() sqlast.Expr {
 // parseIdentOrValuesExpr parses a column reference or function call, or the
 // deprecated VALUES(col) reference used in an ON DUPLICATE KEY UPDATE clause
 // to read the value that would have been inserted for col. VALUES is a
-// keyword everywhere else, but MySQL still accepts it as a function name
-// here.
+// keyword everywhere else, and MySQL only accepts it as a function name
+// inside that clause, so it's rejected anywhere p.inOnDupUpdate is false.
 func (p *Parser) parseIdentOrValuesExpr() sqlast.Expr {
 	if !p.at(VALUES) {
 		return p.parseIdentExpr()
+	}
+
+	if !p.inOnDupUpdate {
+		return failReturn[sqlast.Expr](p, "VALUES() is only valid in an ON DUPLICATE KEY UPDATE clause")
 	}
 
 	name := p.tok.Literal

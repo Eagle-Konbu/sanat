@@ -460,12 +460,8 @@ func formatExprWithOver(expr sqlast.Expr, accessor overClauseAccessor, indent, d
 }
 
 func formatOverClause(oc *sqlast.OverClause, indent, depth int) string {
-	if !oc.WindowName.IsEmpty() && oc.WindowSpec == nil {
+	if !oc.WindowName.IsEmpty() {
 		return "OVER " + oc.WindowName.String()
-	}
-
-	if oc.WindowSpec == nil {
-		return "OVER ()"
 	}
 
 	parts := formatWindowSpecParts(oc.WindowSpec)

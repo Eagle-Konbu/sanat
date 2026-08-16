@@ -70,6 +70,8 @@ func TestParseStatement_errors(t *testing.T) {
 		"INSERT INTO t (a) VALUES (1) extra tokens",
 		"UPDATE t SET a = 1 extra tokens",
 		"DELETE FROM t extra tokens",
+		"SELECT VALUES(a)",
+		"UPDATE t SET a = VALUES(name)",
 	}
 
 	for _, in := range tests {
