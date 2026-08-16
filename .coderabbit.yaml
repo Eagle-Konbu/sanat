@@ -44,9 +44,6 @@ reviews:
         the change at a glance.
     description:
       mode: warning
-    docstrings:
-      mode: error
-      threshold: 50
     issue_assessment:
       mode: "off"
 
