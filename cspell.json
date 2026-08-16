@@ -55,9 +55,6 @@
   "ignorePaths": [
     ".git",
     "node_modules",
-    "coverage.out",
-    "coverage.html",
-    "coverage.txt",
     "go.sum",
     "completions",
     "testdata",
