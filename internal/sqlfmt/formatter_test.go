@@ -837,6 +837,8 @@ func TestFormatSQL_WindowFunction_AllTypes(t *testing.T) {
 		{"NTH_VALUE", "SELECT NTH_VALUE(x, 2) OVER (ORDER BY id) FROM t", "NTH_VALUE(x, 2)"},
 		{"LAG", "SELECT LAG(x) OVER (ORDER BY id) FROM t", "LAG(x)"},
 		{"LEAD", "SELECT LEAD(x) OVER (ORDER BY id) FROM t", "LEAD(x)"},
+		{"JSON_ARRAYAGG", "SELECT JSON_ARRAYAGG(x) OVER (ORDER BY id) FROM t", "JSON_ARRAYAGG(x)"},
+		{"JSON_OBJECTAGG", "SELECT JSON_OBJECTAGG(k, v) OVER (ORDER BY id) FROM t", "JSON_OBJECTAGG(k, v)"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1107,6 +1109,202 @@ func TestFormatSQL_GroupByWithRollup(t *testing.T) {
 		"GROUP BY",
 		"  status",
 		"WITH ROLLUP",
+	)
+
+	assertSQL(t, got, want)
+}
+
+func TestFormatSQL_SelectDistinct(t *testing.T) {
+	got, ok := sqlfmt.FormatSQL("SELECT DISTINCT id, name FROM users", 2)
+	if !ok {
+		t.Fatal("expected ok")
+	}
+
+	want := join(
+		"SELECT DISTINCT",
+		"  id,",
+		"  name",
+		"FROM",
+		"  users",
+	)
+
+	assertSQL(t, got, want)
+}
+
+func TestFormatSQL_MultiColumnGroupBy(t *testing.T) {
+	got, ok := sqlfmt.FormatSQL("SELECT status, dept FROM users GROUP BY status, dept", 2)
+	if !ok {
+		t.Fatal("expected ok")
+	}
+
+	want := join(
+		"SELECT",
+		"  status,",
+		"  dept",
+		"FROM",
+		"  users",
+		"GROUP BY",
+		"  status,",
+		"  dept",
+	)
+
+	assertSQL(t, got, want)
+}
+
+func TestFormatSQL_MultiColumnOrderBy(t *testing.T) {
+	got, ok := sqlfmt.FormatSQL("SELECT id FROM users ORDER BY status, id DESC", 2)
+	if !ok {
+		t.Fatal("expected ok")
+	}
+
+	want := join(
+		"SELECT",
+		"  id",
+		"FROM",
+		"  users",
+		"ORDER BY",
+		"  status,",
+		"  id DESC",
+	)
+
+	assertSQL(t, got, want)
+}
+
+func TestFormatSQL_InsertMultiRowValues(t *testing.T) {
+	got, ok := sqlfmt.FormatSQL("INSERT INTO t (a) VALUES (1), (2)", 2)
+	if !ok {
+		t.Fatal("expected ok")
+	}
+
+	want := join(
+		"INSERT INTO",
+		"  t",
+		"(",
+		"  a",
+		")",
+		"VALUES",
+		"  (1),",
+		"  (2)",
+	)
+
+	assertSQL(t, got, want)
+}
+
+func TestFormatSQL_UpdateOrderByLimit(t *testing.T) {
+	got, ok := sqlfmt.FormatSQL("UPDATE users SET name = ? WHERE id = ? ORDER BY id LIMIT 1", 2)
+	if !ok {
+		t.Fatal("expected ok")
+	}
+
+	want := join(
+		"UPDATE",
+		"  users",
+		"SET",
+		"  name = ?",
+		"WHERE",
+		"  id = ?",
+		"ORDER BY",
+		"  id",
+		"LIMIT",
+		"  1",
+	)
+
+	assertSQL(t, got, want)
+}
+
+func TestFormatSQL_DeleteOrderByLimit(t *testing.T) {
+	got, ok := sqlfmt.FormatSQL("DELETE FROM users WHERE id > ? ORDER BY id LIMIT 1", 2)
+	if !ok {
+		t.Fatal("expected ok")
+	}
+
+	want := join(
+		"DELETE FROM",
+		"  users",
+		"WHERE",
+		"  id > ?",
+		"ORDER BY",
+		"  id",
+		"LIMIT",
+		"  1",
+	)
+
+	assertSQL(t, got, want)
+}
+
+func TestFormatSQL_UnionLimit(t *testing.T) {
+	got, ok := sqlfmt.FormatSQL("SELECT id FROM a UNION SELECT id FROM b LIMIT 5", 2)
+	if !ok {
+		t.Fatal("expected ok")
+	}
+
+	want := join(
+		"SELECT",
+		"  id",
+		"FROM",
+		"  a",
+		"UNION",
+		"SELECT",
+		"  id",
+		"FROM",
+		"  b",
+		"LIMIT",
+		"  5",
+	)
+
+	assertSQL(t, got, want)
+}
+
+func TestFormatSQL_Replace(t *testing.T) {
+	got, ok := sqlfmt.FormatSQL("REPLACE INTO users (id, name) VALUES (?, ?)", 2)
+	if !ok {
+		t.Fatal("expected ok")
+	}
+
+	want := join(
+		"REPLACE INTO",
+		"  users",
+		"(",
+		"  id,",
+		"  name",
+		")",
+		"VALUES",
+		"  (?, ?)",
+	)
+
+	assertSQL(t, got, want)
+}
+
+func TestFormatSQL_InsertSelect(t *testing.T) {
+	got, ok := sqlfmt.FormatSQL("INSERT INTO t SELECT a, b FROM x", 2)
+	if !ok {
+		t.Fatal("expected ok")
+	}
+
+	want := join(
+		"INSERT INTO",
+		"  t",
+		"SELECT",
+		"  a,",
+		"  b",
+		"FROM",
+		"  x",
+	)
+
+	assertSQL(t, got, want)
+}
+
+func TestFormatSQL_WindowEmptyOver(t *testing.T) {
+	got, ok := sqlfmt.FormatSQL("SELECT SUM(amount) OVER () FROM orders", 2)
+	if !ok {
+		t.Fatal("expected ok")
+	}
+
+	want := join(
+		"SELECT",
+		"  SUM(amount) OVER ()",
+		"FROM",
+		"  orders",
 	)
 
 	assertSQL(t, got, want)

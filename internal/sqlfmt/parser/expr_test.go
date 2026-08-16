@@ -259,6 +259,15 @@ func TestParseExpr_genericFuncCall(t *testing.T) {
 	assertExpr(t, "NOW()", &sqlast.FuncExpr{Name: "NOW"})
 }
 
+// TestParseExpr_valuesFuncCall covers the deprecated VALUES(col) reference
+// used in an ON DUPLICATE KEY UPDATE clause. VALUES is a keyword everywhere
+// else in the grammar (it starts an INSERT's VALUES row list), but must
+// still parse as a plain function call here.
+func TestParseExpr_valuesFuncCall(t *testing.T) {
+	assertExpr(t, "VALUES(name)", &sqlast.FuncExpr{Name: "VALUES", Exprs: []sqlast.Expr{col("name")}})
+	assertExpr(t, "values(name)", &sqlast.FuncExpr{Name: "values", Exprs: []sqlast.Expr{col("name")}})
+}
+
 func TestParseExpr_countCall(t *testing.T) {
 	t.Run("star", func(t *testing.T) {
 		assertExpr(t, "COUNT(*)", &sqlast.CountStar{})
