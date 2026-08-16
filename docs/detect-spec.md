@@ -1,6 +1,6 @@
 # SQL Detection Specification (MightBeSQL)
 
-Heuristically determines whether a string extracted from a raw string literal is SQL. This is a lightweight pre-filter that runs before the Vitess SQL parser.
+Heuristically determines whether a string extracted from a raw string literal is SQL. This is a lightweight pre-filter that runs before the in-house SQL parser (see [parser-spec.md](parser-spec.md)).
 
 ## Scope
 
@@ -245,5 +245,5 @@ Inner content: `  SELECT id FROM users`
 ## Design Rationale
 
 - **Minimize false positives**: Avoid misdetecting strings that resemble SQL, such as fmt templates and URLs
-- **Lightweight pre-filter**: Reduce unnecessary input to the Vitess parser to maintain performance
+- **Lightweight pre-filter**: Reduce unnecessary input to the in-house parser to maintain performance
 - **Conservative detection**: Limit targets to 4 DML types (SELECT/INSERT/UPDATE/DELETE), excluding DDL and others
