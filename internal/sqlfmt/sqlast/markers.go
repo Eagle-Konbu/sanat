@@ -59,8 +59,9 @@ func (*Union) iStatement()  {}
 
 // --- InsertRows ---
 
-func (*Select) iInsertRows() {}
-func (Values) iInsertRows()  {}
+func (*Select) iInsertRows()  {}
+func (Values) iInsertRows()   {}
+func (SetExprs) iInsertRows() {}
 
 // --- TableExpr ---
 

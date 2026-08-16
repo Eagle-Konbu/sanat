@@ -145,6 +145,18 @@ func TestInsert_String(t *testing.T) {
 			want: "INSERT INTO t (a, b) VALUES (1, 2) ON DUPLICATE KEY UPDATE b = 3",
 		},
 		{
+			name: "set rows",
+			ins: &sqlast.Insert{
+				Action: sqlast.InsertAct,
+				Table:  sqlast.TableName{Name: "t"},
+				Rows: sqlast.SetExprs{
+					{Name: &sqlast.ColName{Name: "a"}, Expr: lit("1")},
+					{Name: &sqlast.ColName{Name: "b"}, Expr: lit("2")},
+				},
+			},
+			want: "INSERT INTO t SET a = 1, b = 2",
+		},
+		{
 			name: "insert select",
 			ins: &sqlast.Insert{
 				Action:  sqlast.InsertAct,
