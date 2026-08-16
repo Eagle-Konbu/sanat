@@ -62,9 +62,24 @@ func runInitWith(dir string, p Prompter, out io.Writer) error {
 		return err
 	}
 
+	keywordCase, err := p.PromptKeywordCase()
+	if err != nil {
+		return err
+	}
+
+	commaStyle, err := p.PromptCommaStyle()
+	if err != nil {
+		return err
+	}
+
+	version := config.CurrentVersion
+
 	cfg := config.Config{
-		Indent:  &indent,
-		Newline: &newline,
+		Version:     &version,
+		Indent:      &indent,
+		Newline:     &newline,
+		KeywordCase: &keywordCase,
+		CommaStyle:  &commaStyle,
 	}
 
 	return writeConfig(dir, cfg, format, existingFile, out)

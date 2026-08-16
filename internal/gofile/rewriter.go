@@ -11,8 +11,10 @@ import (
 )
 
 type Options struct {
-	Indent  int
-	Newline bool
+	Indent      int
+	Newline     bool
+	KeywordCase string
+	CommaStyle  string
 }
 
 func RewriteFile(fset *token.FileSet, file *ast.File, literals []SQLLiteral, opts Options) ([]byte, error) {
@@ -21,7 +23,11 @@ func RewriteFile(fset *token.FileSet, file *ast.File, literals []SQLLiteral, opt
 			continue
 		}
 
-		formatted, ok := sqlfmt.FormatSQL(lit.Original, opts.Indent)
+		formatted, ok := sqlfmt.FormatSQLWithOptions(lit.Original, sqlfmt.Options{
+			Indent:      opts.Indent,
+			KeywordCase: opts.KeywordCase,
+			CommaStyle:  opts.CommaStyle,
+		})
 		if !ok {
 			continue
 		}
