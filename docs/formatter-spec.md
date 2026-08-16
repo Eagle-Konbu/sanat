@@ -56,7 +56,14 @@ Since the SQL parser cannot handle `?` correctly, substitution and restoration a
 - SQL keywords are converted to **UPPERCASE**
 - Each clause is placed on a **separate line**
 - Clause contents are **indented** (default: 2 spaces)
-- Backtick-quoted identifiers (MySQL style) are parsed and re-rendered unquoted
+- Backtick-quoted identifiers (MySQL style) are parsed and re-rendered without
+  backticks when the identifier is safe to write bare; an identifier that is a
+  reserved keyword, doesn't match `[A-Za-z_$][A-Za-z0-9_$]*`, or contains a
+  backtick is re-quoted instead (backticks doubled to escape), since removing
+  the quoting would otherwise change what the SQL means. A `FuncExpr`'s
+  function name is never quoted just for being a reserved keyword — MySQL's
+  deprecated `VALUES(col)` pseudo-function is the only one this grammar
+  produces whose name collides with a keyword, and it must stay unquoted
 - If parsing fails, the **original string is returned as-is**
 
 ### Keyword Uppercasing
