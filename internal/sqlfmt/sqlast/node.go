@@ -44,9 +44,8 @@ type InsertRows interface {
 // ColIdent represents a column identifier.
 type ColIdent string
 
-// String returns ColIdent's SQL text, backtick-quoting it if it isn't valid
-// as a bare identifier (see quoteIdent).
-func (c ColIdent) String() string { return quoteIdent(string(c), true) }
+// String returns ColIdent's SQL text.
+func (c ColIdent) String() string { return string(c) }
 
 // IsEmpty reports whether the ColIdent is empty.
 func (c ColIdent) IsEmpty() bool { return c == "" }
@@ -54,9 +53,8 @@ func (c ColIdent) IsEmpty() bool { return c == "" }
 // TableIdent represents a table identifier.
 type TableIdent string
 
-// String returns TableIdent's SQL text, backtick-quoting it if it isn't
-// valid as a bare identifier (see quoteIdent).
-func (t TableIdent) String() string { return quoteIdent(string(t), true) }
+// String returns TableIdent's SQL text.
+func (t TableIdent) String() string { return string(t) }
 
 // IsEmpty reports whether the TableIdent is empty.
 func (t TableIdent) IsEmpty() bool { return t == "" }

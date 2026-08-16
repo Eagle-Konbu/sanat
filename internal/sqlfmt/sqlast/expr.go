@@ -254,13 +254,9 @@ type FuncExpr struct {
 	Exprs     []Expr
 }
 
-// String returns FuncExpr's SQL text. The function name is never quoted for
-// being a reserved word — MySQL's VALUES(col) pseudo-function is the only
-// one this grammar produces with a name that collides with a keyword, and it
-// must stay unquoted (see quoteIdent) — but is still quoted if its
-// characters wouldn't otherwise form a valid bare identifier.
+// String returns FuncExpr's SQL text.
 func (f *FuncExpr) String() string {
-	name := quoteIdent(string(f.Name), false)
+	name := f.Name.String()
 	if !f.Qualifier.IsEmpty() {
 		name = f.Qualifier.String() + "." + name
 	}

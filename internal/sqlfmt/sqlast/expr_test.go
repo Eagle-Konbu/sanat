@@ -183,16 +183,6 @@ func TestFuncExpr_String(t *testing.T) {
 		f := &sqlast.FuncExpr{Qualifier: "mydb", Name: "func1", Exprs: exprs("x")}
 		assertEqual(t, "mydb.func1(x)", f.String())
 	})
-
-	t.Run("VALUES pseudo-function name stays unquoted", func(t *testing.T) {
-		f := &sqlast.FuncExpr{Name: "VALUES", Exprs: exprs("a")}
-		assertEqual(t, "VALUES(a)", f.String())
-	})
-
-	t.Run("name with unsafe characters is still quoted", func(t *testing.T) {
-		f := &sqlast.FuncExpr{Name: "my func", Exprs: exprs("x")}
-		assertEqual(t, "`my func`(x)", f.String())
-	})
 }
 
 func TestParenExpr_String(t *testing.T) {
