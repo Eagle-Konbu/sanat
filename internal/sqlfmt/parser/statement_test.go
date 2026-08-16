@@ -51,6 +51,12 @@ func TestParseStatement_dispatch(t *testing.T) {
 		{"delete", "DELETE FROM t", "DELETE FROM t", &sqlast.Delete{}},
 		{"with delete", "WITH c AS (SELECT 1) DELETE FROM t WHERE id IN (SELECT 1 FROM c)",
 			"WITH c AS (SELECT 1) DELETE FROM t WHERE id IN (SELECT 1 FROM c)", &sqlast.Delete{}},
+		{"create table", "CREATE TABLE t (id INT)", "CREATE TABLE t (id INT)", &sqlast.CreateTable{}},
+		{"create index", "CREATE INDEX idx ON t (a)", "CREATE INDEX idx ON t (a)", &sqlast.CreateIndex{}},
+		{"alter table", "ALTER TABLE t ADD COLUMN a INT", "ALTER TABLE t ADD COLUMN a INT", &sqlast.AlterTable{}},
+		{"drop table", "DROP TABLE t", "DROP TABLE t", &sqlast.DropTable{}},
+		{"drop index", "DROP INDEX idx ON t", "DROP INDEX idx ON t", &sqlast.DropIndex{}},
+		{"truncate table", "TRUNCATE TABLE t", "TRUNCATE TABLE t", &sqlast.TruncateTable{}},
 	}
 
 	for _, tt := range tests {
@@ -64,12 +70,20 @@ func TestParseStatement_errors(t *testing.T) {
 	tests := []string{
 		"",
 		"WITH c AS (SELECT 1) INSERT INTO t (a) VALUES (1)",
-		"CREATE TABLE t (id INT)",
+		"WITH c AS (SELECT 1) CREATE TABLE t (id INT)",
+		"WITH c AS (SELECT 1) ALTER TABLE t ADD COLUMN a INT",
+		"WITH c AS (SELECT 1) DROP TABLE t",
+		"WITH c AS (SELECT 1) TRUNCATE TABLE t",
+		"SHOW TABLES",
 		"SELECT 1 extra tokens",
 		"SELECT 1 UNION SELECT 2 extra tokens",
 		"INSERT INTO t (a) VALUES (1) extra tokens",
 		"UPDATE t SET a = 1 extra tokens",
 		"DELETE FROM t extra tokens",
+		"CREATE TABLE t (id INT) 1",
+		"ALTER TABLE t ADD COLUMN a INT extra tokens",
+		"DROP TABLE t extra tokens",
+		"TRUNCATE TABLE t extra tokens",
 		"SELECT VALUES(a)",
 		"UPDATE t SET a = VALUES(name)",
 	}
@@ -85,7 +99,7 @@ func TestParseStatement_errors(t *testing.T) {
 // *parser.ParseError specifically, matching the other entry points' error
 // model.
 func TestParseStatement_errorType(t *testing.T) {
-	_, err := parser.ParseStatement("CREATE TABLE t (id INT)")
+	_, err := parser.ParseStatement("SHOW TABLES")
 	if err == nil {
 		t.Fatal("ParseStatement(...) expected error, got nil")
 	}

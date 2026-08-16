@@ -50,7 +50,15 @@
     "NOWAIT",
     "Ttbcdo",
     "manifoldco",
-    "promptui"
+    "promptui",
+    "TINYINT",
+    "VARCHAR",
+    "varchar",
+    "ZEROFILL",
+    "Zerofill",
+    "zerofill",
+    "InnoDB",
+    "mydb"
   ],
   "ignorePaths": [
     ".git",

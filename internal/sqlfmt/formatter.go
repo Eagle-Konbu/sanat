@@ -129,8 +129,35 @@ func (f *formatter) formatStatement(b *strings.Builder, stmt sqlast.Statement, d
 	case *sqlast.Union:
 		f.formatUnion(b, s, depth)
 	default:
-		panic(fmt.Sprintf("sqlfmt: unhandled statement type %T", stmt))
+		if !f.formatDDLStatement(b, stmt, depth) {
+			panic(fmt.Sprintf("sqlfmt: unhandled statement type %T", stmt))
+		}
 	}
+}
+
+// formatDDLStatement handles the DDL statement types (CREATE/ALTER/DROP
+// TABLE, CREATE/DROP INDEX, TRUNCATE TABLE), split out of formatStatement to
+// keep that switch's cyclomatic complexity down. It reports whether stmt was
+// a recognized DDL statement.
+func (f *formatter) formatDDLStatement(b *strings.Builder, stmt sqlast.Statement, depth int) bool {
+	switch s := stmt.(type) {
+	case *sqlast.CreateTable:
+		f.formatCreateTable(b, s, depth)
+	case *sqlast.AlterTable:
+		f.formatAlterTable(b, s, depth)
+	case *sqlast.CreateIndex:
+		f.formatCreateIndex(b, s, depth)
+	case *sqlast.DropIndex:
+		f.formatDropIndex(b, s, depth)
+	case *sqlast.DropTable:
+		f.formatDropTable(b, s, depth)
+	case *sqlast.TruncateTable:
+		f.formatTruncateTable(b, s, depth)
+	default:
+		return false
+	}
+
+	return true
 }
 
 func (f *formatter) pad(depth int) string {
@@ -1005,4 +1032,125 @@ func (f *formatter) formatLimit(b *strings.Builder, limit *sqlast.Limit, p strin
 		b.WriteString(f.formatExpr(limit.Rowcount, depth))
 		b.WriteString("\n")
 	}
+}
+
+// formatCreateTable renders a CREATE TABLE statement, exploding its column
+// list one element per line like every other bracketed list in this
+// formatter (see formatInsertColumns), with trailing options on the closing
+// paren's line.
+func (f *formatter) formatCreateTable(b *strings.Builder, s *sqlast.CreateTable, depth int) {
+	p := f.pad(depth)
+	pi := f.pad(depth + 1)
+
+	b.WriteString(p)
+	b.WriteString("CREATE TABLE ")
+
+	if s.IfNotExists {
+		b.WriteString("IF NOT EXISTS ")
+	}
+
+	b.WriteString(s.Table.String())
+	b.WriteString(" (\n")
+
+	lines := make([]string, len(s.Elements))
+	for i, e := range s.Elements {
+		lines[i] = f.applyKeywordCase(e.String())
+	}
+
+	f.writeList(b, pi, lines)
+
+	b.WriteString(p)
+	b.WriteString(")")
+
+	for _, opt := range s.Options {
+		b.WriteString(" ")
+		b.WriteString(f.applyKeywordCase(opt.String()))
+	}
+
+	b.WriteString("\n")
+}
+
+// formatAlterTable renders an ALTER TABLE statement, exploding its action
+// list one action per line even when there's only one, matching how this
+// formatter always breaks out UPDATE's SET list (see formatSetExprs).
+func (f *formatter) formatAlterTable(b *strings.Builder, s *sqlast.AlterTable, depth int) {
+	p := f.pad(depth)
+	pi := f.pad(depth + 1)
+
+	b.WriteString(p)
+	b.WriteString("ALTER TABLE ")
+	b.WriteString(s.Table.String())
+	b.WriteString("\n")
+
+	lines := make([]string, len(s.Actions))
+	for i, a := range s.Actions {
+		lines[i] = f.applyKeywordCase(a.String())
+	}
+
+	f.writeList(b, pi, lines)
+}
+
+// formatCreateIndex renders a CREATE [UNIQUE] INDEX statement, exploding its
+// column list like formatCreateTable does.
+func (f *formatter) formatCreateIndex(b *strings.Builder, s *sqlast.CreateIndex, depth int) {
+	p := f.pad(depth)
+	pi := f.pad(depth + 1)
+
+	b.WriteString(p)
+	b.WriteString("CREATE ")
+
+	if s.Unique {
+		b.WriteString("UNIQUE ")
+	}
+
+	b.WriteString("INDEX ")
+	b.WriteString(s.Name.String())
+	b.WriteString(" ON ")
+	b.WriteString(s.Table.String())
+	b.WriteString("\n")
+	b.WriteString(p)
+	b.WriteString("(\n")
+
+	lines := make([]string, len(s.Columns))
+	for i, c := range s.Columns {
+		lines[i] = f.applyKeywordCase(c.String())
+	}
+
+	f.writeList(b, pi, lines)
+
+	b.WriteString(p)
+	b.WriteString(")\n")
+}
+
+func (f *formatter) formatDropIndex(b *strings.Builder, s *sqlast.DropIndex, depth int) {
+	b.WriteString(f.pad(depth))
+	b.WriteString("DROP INDEX ")
+	b.WriteString(s.Name.String())
+	b.WriteString(" ON ")
+	b.WriteString(s.Table.String())
+	b.WriteString("\n")
+}
+
+func (f *formatter) formatDropTable(b *strings.Builder, s *sqlast.DropTable, depth int) {
+	b.WriteString(f.pad(depth))
+	b.WriteString("DROP TABLE ")
+
+	if s.IfExists {
+		b.WriteString("IF EXISTS ")
+	}
+
+	names := make([]string, len(s.Tables))
+	for i, t := range s.Tables {
+		names[i] = t.String()
+	}
+
+	b.WriteString(strings.Join(names, ", "))
+	b.WriteString("\n")
+}
+
+func (f *formatter) formatTruncateTable(b *strings.Builder, s *sqlast.TruncateTable, depth int) {
+	b.WriteString(f.pad(depth))
+	b.WriteString("TRUNCATE TABLE ")
+	b.WriteString(s.Table.String())
+	b.WriteString("\n")
 }

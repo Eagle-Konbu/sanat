@@ -28,14 +28,18 @@ removed from `go.mod`.
 | UNION statement parser | `internal/sqlfmt/parser/union.go` | #28 | Done |
 | Migrate formatter to custom AST | `internal/sqlfmt/formatter.go` | #29 | Done |
 | Remove Vitess dependency | `go.mod` | #30 | Done |
+| DDL statement parsing (CREATE/ALTER/DROP TABLE, CREATE/DROP INDEX, TRUNCATE TABLE) | `internal/sqlfmt/sqlast/ddl.go`, `internal/sqlfmt/parser/ddl.go` | #32 | Done |
 
 Scope is MySQL DML (SELECT/INSERT/UPDATE/DELETE/UNION) plus the expression
-features above; DDL, transaction, and admin statements are out of scope here
-and tracked separately in [#38](https://github.com/Eagle-Konbu/sanat/issues/38).
-A set of minor/advanced expression and query-modifier features (e.g.
-`SOUNDS LIKE`, `COLLATE`, `INTERVAL`, `MATCH ... AGAINST`, `BINARY` cast,
-`ANY`/`SOME`/`ALL` subquery modifiers, `SQL_CALC_FOUND_ROWS`) is deliberately
-deferred; see [#14](https://github.com/Eagle-Konbu/sanat/issues/14).
+features above, and the DDL statement kinds in
+[#32](https://github.com/Eagle-Konbu/sanat/issues/32) (see
+[DDL Statement Grammar](#ddl-statement-grammar) below); transaction and admin
+statements remain out of scope, tracked separately in
+[#38](https://github.com/Eagle-Konbu/sanat/issues/38)'s remaining sub-issues
+(#33, #34). A set of minor/advanced expression and query-modifier features
+(e.g. `SOUNDS LIKE`, `COLLATE` on expressions, `INTERVAL`, `MATCH ... AGAINST`,
+`BINARY` cast, `ANY`/`SOME`/`ALL` subquery modifiers, `SQL_CALC_FOUND_ROWS`)
+is deliberately deferred; see [#14](https://github.com/Eagle-Konbu/sanat/issues/14).
 
 ## Package Layout
 
@@ -61,16 +65,22 @@ their marker methods (`iExpr()`, `iStatement()`, ...) are gathered in
 
 | Category | Types |
 |----------|-------|
-| Statements | `Select`, `Insert`, `Update`, `Delete`, `Union`, `With`, `CommonTableExpr` |
+| Statements | `Select`, `Insert`, `Update`, `Delete`, `Union`, `With`, `CommonTableExpr`, `CreateTable`, `AlterTable`, `CreateIndex`, `DropIndex`, `DropTable`, `TruncateTable` |
 | Table expressions | `AliasedTableExpr`, `JoinTableExpr`, `ParenTableExpr`, `DerivedTable` |
 | Select expressions | `AliasedExpr`, `StarExpr` |
 | Expressions | `ComparisonExpr`, `RangeCond`, `IsExpr`, `ArithmeticExpr`, `UnaryExpr`, `AndExpr`, `OrExpr`, `NotExpr`, `CaseExpr`, `ExistsExpr`, `Subquery`, `ColName`, `Literal`, `FuncExpr`, `ParenExpr`, `ValTuple` |
 | Clauses | `Where`, `GroupBy`, `Order`/`OrderBy`, `Limit`, `JoinCondition`, `IndexHint`(s), `UpdateExpr`, `OverClause`, `WindowSpecification`, `FrameClause`, `FramePoint`, `NullTreatmentClause`, `FromFirstLastClause` |
 | Aggregate/window functions | `Count`, `CountStar`, `Sum`, `Avg`, `Min`, `Max`, `BitAnd`, `BitOr`, `BitXor`, `Std`, `StdDev`, `StdPop`, `StdSamp`, `Variance`, `VarPop`, `VarSamp`, `ArgumentLessWindowExpr` (ROW_NUMBER/RANK/DENSE_RANK/PERCENT_RANK/CUME_DIST), `FirstOrLastValueExpr`, `NtileExpr`, `NTHValueExpr`, `LagLeadExpr`, `JSONArrayAgg`, `JSONObjectAgg` |
+| DDL: table elements | `ColumnDef`, `DataType`, `PrimaryKeyConstraint`, `UniqueConstraint`, `IndexConstraint`, `ForeignKeyConstraint`, `IndexColumn`, `ReferenceAction`, `TableOption` |
+| DDL: ALTER actions | `AddColumnAction`, `AddConstraintAction`, `DropColumnAction`, `DropIndexAction`, `ModifyColumnAction`, `RenameTableAction` |
 | Identifiers | `ColIdent`, `TableIdent`, `TableName`, `Columns` |
 
 Each type only carries the fields the formatter reads — it is not a
-general-purpose SQL AST.
+general-purpose SQL AST. `DataType` and `TableOption` are notable exceptions
+to "one dedicated node type per construct": MySQL has dozens of column types
+and table options, so both are modeled generically (name + parameters, or
+name + value) rather than as an enum — see
+[DDL Statement Grammar](#ddl-statement-grammar).
 
 ## Lexer (`parser.Lexer`)
 
@@ -113,8 +123,12 @@ predicate keywords (`AND`, `OR`, `NOT`, `IN`, `BETWEEN`, `LIKE`, `REGEXP`,
 `LIMIT`, `OFFSET`, `ASC`, `DESC`), locking (`FOR`, `LOCK`, `SHARE`, `NOWAIT`,
 `SKIP`, `LOCKED`, `MODE`), CTEs (`WITH`, `RECURSIVE`), window functions
 (`OVER`, `PARTITION`, `ROWS`, `RANGE`, `UNBOUNDED`, `PRECEDING`, `FOLLOWING`,
-`CURRENT`, `ROW`, `RESPECT`, `NULLS`, `FIRST`, `LAST`), and index hints
-(`USE`, `FORCE`, `IGNORE`, `INDEX`).
+`CURRENT`, `ROW`, `RESPECT`, `NULLS`, `FIRST`, `LAST`), index hints
+(`USE`, `FORCE`, `IGNORE`, `INDEX`), and DDL keywords (`CREATE`, `ALTER`,
+`DROP`, `TRUNCATE`, `TABLE`, `COLUMN`, `CONSTRAINT`, `PRIMARY`, `FOREIGN`,
+`REFERENCES`, `UNIQUE`, `DEFAULT`, `COMMENT`, `ENGINE`, `CHARACTER`,
+`CHARSET`, `COLLATE`, `UNSIGNED`, `ZEROFILL`, `RENAME`, `TO`, `ADD`,
+`MODIFY`, `CASCADE`, `RESTRICT`, `NO`, `ACTION`, `IF`, `AUTO_INCREMENT`).
 
 ### Literal Handling
 
@@ -151,6 +165,12 @@ func ParseInsert(input string) (*sqlast.Insert, error)
 func ParseUpdate(input string) (*sqlast.Update, error)
 func ParseDelete(input string) (*sqlast.Delete, error)
 func ParseUnion(input string) (*sqlast.Union, error)
+func ParseCreateTable(input string) (*sqlast.CreateTable, error)
+func ParseAlterTable(input string) (*sqlast.AlterTable, error)
+func ParseCreateIndex(input string) (*sqlast.CreateIndex, error)
+func ParseDropIndex(input string) (*sqlast.DropIndex, error)
+func ParseDropTable(input string) (*sqlast.DropTable, error)
+func ParseTruncateTable(input string) (*sqlast.TruncateTable, error)
 func ParseStatement(input string) (sqlast.Statement, error)
 ```
 
@@ -158,10 +178,12 @@ All fully consume `input`, failing with `*ParseError` if trailing tokens
 remain after the expression/statement. `ParseSelect`, `ParseUpdate`, and
 `ParseDelete` each accept an optional leading `WITH` clause; `ParseUnion`
 does too, but fails if the input turns out to be a single `SELECT` with no
-`UNION` (use `ParseSelect` for that case). `ParseStatement` is the
-formatter's entry point: it dispatches on the statement's leading keyword
-(after consuming an optional `WITH`) to whichever of `SELECT`/`INSERT`/
-`REPLACE`/`UPDATE`/`DELETE`/`UNION` parsing applies — `REPLACE` routes
+`UNION` (use `ParseSelect` for that case). None of the DDL entry points
+accept a `WITH` clause — MySQL doesn't allow one before any DDL statement.
+`ParseStatement` is the formatter's entry point: it dispatches on the
+statement's leading keyword (after consuming an optional `WITH`) to
+whichever of `SELECT`/`INSERT`/`REPLACE`/`UPDATE`/`DELETE`/`UNION`/`CREATE`/
+`ALTER`/`DROP`/`TRUNCATE` parsing applies — `REPLACE` routes
 through the same `parseInsertStatement` as `INSERT` (it becomes an
 `*sqlast.Insert` with `Action: ReplaceAct`), and `WITH` is not accepted
 before `INSERT`/`REPLACE`, matching MySQL.
@@ -309,12 +331,139 @@ or entirely out of scope): `SQL_CALC_FOUND_ROWS`/`SQL_NO_CACHE`/
 `HIGH_PRIORITY`/`STRAIGHT_JOIN` SELECT modifiers, `ANY`/`SOME`/`ALL`
 subquery predicates (tracked in #14).
 
+## DDL Statement Grammar
+
+Six statement kinds, implemented in `internal/sqlfmt/parser/ddl.go`:
+`CREATE TABLE`, `ALTER TABLE`, `CREATE [UNIQUE] INDEX`, `DROP INDEX`,
+`DROP TABLE`, and `TRUNCATE [TABLE]`. `ParseStatement` dispatches to these
+the same way it dispatches DML: on the leading keyword, via
+`parseCreateStatement`/`parseDropStatement` sub-dispatching CREATE/DROP's
+second keyword (`TABLE` vs. `INDEX`/`UNIQUE`) with one token of lookahead
+(`peekAt`).
+
+### CREATE TABLE
+
+```mermaid
+flowchart TD
+    A[CREATE TABLE] --> B{IF NOT EXISTS?}
+    B --> C[table_name] --> D["( table_element, ... )"]
+    D --> E{table option?}
+    E -- Yes --> F["name [=] value, ..."]
+    E -- No --> G[End]
+    F --> G
+```
+
+Each `table_element` is either a column definition or a table-level
+constraint, disambiguated by `isTableConstraintStart` peeking at the leading
+token (`CONSTRAINT`/`PRIMARY`/`UNIQUE`/`INDEX`/`KEY`/`FOREIGN` start a
+constraint; anything else starts a column).
+
+**Column definitions** (`ColumnDef`): `name data_type [constraints...]`,
+constraints accepted in any order via a loop
+(`parseColumnConstraints`) until none match — `[NOT] NULL`,
+`DEFAULT <expr>`, `AUTO_INCREMENT`, `ON UPDATE <expr>` (for
+`TIMESTAMP`/`DATETIME` auto-update), inline `[PRIMARY] KEY`/`UNIQUE [KEY]`,
+and `COMMENT <expr>`. `DEFAULT`'s and `COMMENT`'s values reuse the full
+expression grammar (`parseExpr`) rather than a bespoke literal-only parser —
+this also means MySQL 8.0.13+'s `DEFAULT (expr)` expression-default form
+parses for free, since `(expr)` is already a valid primary expression.
+
+**Data types** (`DataType`) are parsed generically — `parseDataType` reads a
+name (`readTypeName`, which special-cases MySQL's `SET` type since it
+collides lexically with the `SET` keyword), an optional parenthesized
+parameter list (`parseTypeParams`, accepting `INT`/`STRING` tokens — covers
+`VARCHAR(255)`, `DECIMAL(10, 2)`, and `ENUM('a', 'b')` alike), then loops
+over `UNSIGNED`/`ZEROFILL`/`CHARACTER SET name`/`CHARSET name`/
+`COLLATE name` modifiers in any order. There's no enum of recognized type
+names — any identifier is accepted, so new MySQL types don't need parser
+changes. Unlike clause keywords, a type name's source casing is preserved
+verbatim (not canonicalized), the same treatment `parseGenericFuncCall`
+already gives an unrecognized function name.
+
+**Table-level constraints** (`parseTableConstraint`): a plain
+`INDEX`/`KEY name (cols)` is checked first, since MySQL doesn't allow a
+`CONSTRAINT` symbol on it; everything else optionally starts with
+`CONSTRAINT [symbol]` and must then be `PRIMARY KEY (cols)`,
+`UNIQUE [INDEX|KEY] [name] (cols)`, or
+`FOREIGN KEY [name] (cols) REFERENCES table (cols) [ON DELETE action] [ON UPDATE action]`.
+Referential actions (`ReferenceAction`) are `CASCADE`, `RESTRICT`,
+`SET NULL`, `SET DEFAULT`, `NO ACTION`. `PRIMARY KEY`/`UNIQUE`/`INDEX`'s
+column lists use the richer `IndexColumn` shape (`parseIndexColumnList`) —
+each column accepts an optional prefix length (`col(20)`, required for
+indexing `TEXT`/`BLOB` columns) and `ASC`/`DESC` (canonicalized to omitting
+`ASC`, MySQL's default); `FOREIGN KEY`'s local and referenced column lists
+are plain `Columns` instead, since MySQL doesn't accept prefix/direction
+there.
+
+**Table options** (`TableOption{Name, Value}`) are parsed generically too:
+`parseTableOptionName` recognizes the common names explicitly (`ENGINE`,
+`DEFAULT CHARACTER SET`/`CHARSET`/`COLLATE`, bare `CHARACTER SET`/`CHARSET`/
+`COLLATE`, `COMMENT`, `AUTO_INCREMENT`) and falls back to a single bare
+identifier for anything else (`ROW_FORMAT`, `MAX_ROWS`, ...), so uncommon
+options round-trip without the parser needing to know about them by name.
+The `=` between name and value is always optional on input and always
+rendered on output. `parseTableOptions` loops until `EOF`, since table
+options are always the last thing in a `CREATE TABLE` statement — this
+means trailing garbage after a valid `CREATE TABLE` is often absorbed as a
+(malformed) option and fails inside `parseTableOption` rather than at
+`ParseStatement`'s trailing-token check.
+
+### ALTER TABLE
+
+```mermaid
+flowchart TD
+    A[ALTER TABLE table_name] --> B[action] --> C{more actions?}
+    C -- ", " --> B
+    C -- No --> D[End]
+```
+
+Exactly seven action forms are supported (`parseAlterAction`/
+`parseAddAction`/`parseDropAction`), matching MySQL's comma-separated
+multi-action grammar:
+
+| Action | AST type |
+|--------|----------|
+| `ADD [COLUMN] col_def` | `AddColumnAction` |
+| `DROP [COLUMN] col_name` | `DropColumnAction` |
+| `MODIFY [COLUMN] col_def` | `ModifyColumnAction` |
+| `ADD INDEX/CONSTRAINT/PRIMARY KEY/UNIQUE/FOREIGN KEY ...` | `AddConstraintAction` (wraps a `TableConstraint`) |
+| `DROP INDEX`/`DROP KEY name` | `DropIndexAction` |
+| `RENAME TO new_name` | `RenameTableAction` |
+
+`ADD`'s constraint-adding forms all reuse `parseTableConstraint` (the same
+production `CREATE TABLE` uses), wrapped in a single `AddConstraintAction`
+— there's no separate AST type per constraint kind, since `TableConstraint`
+already models that variation. Not yet implemented: `CHANGE COLUMN`,
+`RENAME COLUMN`, `DROP PRIMARY KEY`, `DROP FOREIGN KEY` — these fail to
+parse like any other unsupported construct (see below), deferred in the
+same spirit as #14's deferred SELECT features.
+
+### CREATE INDEX / DROP INDEX / DROP TABLE / TRUNCATE TABLE
+
+- `CREATE [UNIQUE] INDEX name ON table (index_columns)` — the same
+  `IndexColumn` list as a table-level `INDEX` constraint.
+- `DROP INDEX name ON table`.
+- `DROP TABLE [IF EXISTS] table, ...` — accepts multiple comma-separated
+  tables, matching MySQL's grammar.
+- `TRUNCATE [TABLE] table`.
+
+### Error Handling
+
+DDL parsing follows the same whole-statement model as every other
+statement type in this package: there is no partial or best-effort
+recognition inside a `CREATE TABLE`/`ALTER TABLE` statement. A column
+constraint, table option, or `ALTER` action outside the grammar above is a
+`*ParseError`, which propagates up through `ParseStatement` and causes the
+formatter to leave the original source string unchanged (see
+[formatter-spec.md](formatter-spec.md)) — the same fallback every DML parse
+failure already gets.
+
 ## Testing
 
 `sqlast` has 100% test coverage; `parser` is table-driven per token
 category (lexer) and per grammar production (parser), including error
 paths (`*LexError`/`*ParseError` propagation) — see `lexer_test.go`,
-`expr_test.go`, and `select_test.go`. `codecov.yml` excludes
+`expr_test.go`, `select_test.go`, and `ddl_test.go`. `codecov.yml` excludes
 `sqlast/markers.go`, whose marker methods are intentionally empty (see the
 comment at the top of that file).
 

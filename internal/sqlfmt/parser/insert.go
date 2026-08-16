@@ -54,9 +54,17 @@ func (p *Parser) parseInsertAction() sqlast.InsertAction {
 // parseOptionalColumnList parses an optional parenthesized column list
 // following the target table name.
 func (p *Parser) parseOptionalColumnList() sqlast.Columns {
-	if !p.consume(LPAREN) {
+	if !p.at(LPAREN) {
 		return nil
 	}
+
+	return p.parseColumnList()
+}
+
+// parseColumnList parses a required parenthesized, comma-separated column
+// list, e.g. the (col, ...) in a FOREIGN KEY definition.
+func (p *Parser) parseColumnList() sqlast.Columns {
+	p.expect(LPAREN)
 
 	cols := p.parseIdentList()
 
