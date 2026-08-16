@@ -64,6 +64,9 @@ func TestLexer_Keywords(t *testing.T) {
 		{"group", "GROUP", parser.GROUP},
 		{"recursive", "recursive", parser.RECURSIVE},
 		{"index", "INDEX", parser.INDEX},
+		{"regexp", "REGEXP", parser.REGEXP},
+		{"rlike", "rlike", parser.RLIKE},
+		{"rollup", "ROLLUP", parser.ROLLUP},
 	}
 
 	for _, tt := range tests {
@@ -177,6 +180,74 @@ func TestLexer_NumberLiterals(t *testing.T) {
 	})
 }
 
+func TestLexer_PrefixedIntLiterals(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+	}{
+		{"hex lowercase x", "0x1a"},
+		{"hex mixed digits", "0xDEADbeef"},
+		{"binary lowercase b", "0b101"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assertTokens(t, tt.in, []wantToken{
+				{parser.INT, tt.in},
+				{parser.EOF, ""},
+			})
+		})
+	}
+
+	t.Run("bare zero is not treated as a prefix", func(t *testing.T) {
+		assertTokens(t, "0", []wantToken{
+			{parser.INT, "0"},
+			{parser.EOF, ""},
+		})
+	})
+
+	t.Run("0x without hex digits falls back to plain 0 then ident", func(t *testing.T) {
+		assertTokens(t, "0xy", []wantToken{
+			{parser.INT, "0"},
+			{parser.IDENT, "xy"},
+			{parser.EOF, ""},
+		})
+	})
+
+	t.Run("0b without binary digits falls back to plain 0 then ident", func(t *testing.T) {
+		assertTokens(t, "0b2", []wantToken{
+			{parser.INT, "0"},
+			{parser.IDENT, "b2"},
+			{parser.EOF, ""},
+		})
+	})
+
+	t.Run("0x followed by dot identifier stops at non-hex-digit", func(t *testing.T) {
+		assertTokens(t, "0x1a.col", []wantToken{
+			{parser.INT, "0x1a"},
+			{parser.DOT, "."},
+			{parser.IDENT, "col"},
+			{parser.EOF, ""},
+		})
+	})
+
+	t.Run("uppercase 0X prefix is not recognized, unlike lowercase 0x", func(t *testing.T) {
+		assertTokens(t, "0X1A", []wantToken{
+			{parser.INT, "0"},
+			{parser.IDENT, "X1A"},
+			{parser.EOF, ""},
+		})
+	})
+
+	t.Run("uppercase 0B prefix is not recognized, unlike lowercase 0b", func(t *testing.T) {
+		assertTokens(t, "0B110", []wantToken{
+			{parser.INT, "0"},
+			{parser.IDENT, "B110"},
+			{parser.EOF, ""},
+		})
+	})
+}
+
 func TestLexer_StringLiterals(t *testing.T) {
 	tests := []struct {
 		name string
@@ -223,6 +294,88 @@ func TestLexer_StringLiterals(t *testing.T) {
 	})
 }
 
+func TestLexer_PrefixedStringLiterals(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		typ  parser.TokenType
+	}{
+		{"hex lowercase x", "x'1A'", parser.HexStr},
+		{"hex uppercase X", "X'1a'", parser.HexStr},
+		{"hex empty", "x''", parser.HexStr},
+		{"bit lowercase b", "b'101'", parser.BitStr},
+		{"bit uppercase B", "B'110'", parser.BitStr},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assertTokens(t, tt.in, []wantToken{
+				{tt.typ, tt.in},
+				{parser.EOF, ""},
+			})
+		})
+	}
+
+	t.Run("x identifier followed by separate string is not a hex literal", func(t *testing.T) {
+		assertTokens(t, "x = '1A'", []wantToken{
+			{parser.IDENT, "x"},
+			{parser.EQ, "="},
+			{parser.STRING, "1A"},
+			{parser.EOF, ""},
+		})
+	})
+
+	t.Run("b identifier not immediately followed by quote stays an identifier", func(t *testing.T) {
+		assertTokens(t, "boat", []wantToken{
+			{parser.IDENT, "boat"},
+			{parser.EOF, ""},
+		})
+	})
+
+	t.Run("other identifier immediately followed by quote is not a prefixed literal", func(t *testing.T) {
+		assertTokens(t, "n'x'", []wantToken{
+			{parser.IDENT, "n"},
+			{parser.STRING, "x"},
+			{parser.EOF, ""},
+		})
+	})
+
+	t.Run("unterminated hex string", func(t *testing.T) {
+		l := parser.New("x'1A")
+		if _, err := l.Next(); err == nil {
+			t.Fatal("expected error for unterminated hex string literal")
+		}
+	})
+
+	t.Run("unterminated bit string", func(t *testing.T) {
+		l := parser.New("b'101")
+		if _, err := l.Next(); err == nil {
+			t.Fatal("expected error for unterminated bit string literal")
+		}
+	})
+
+	t.Run("hex string with invalid digit", func(t *testing.T) {
+		l := parser.New("x'0G'")
+		if _, err := l.Next(); err == nil {
+			t.Fatal("expected error for non-hex digit in hex string literal")
+		}
+	})
+
+	t.Run("bit string with invalid digit", func(t *testing.T) {
+		l := parser.New("b'102'")
+		if _, err := l.Next(); err == nil {
+			t.Fatal("expected error for non-binary digit in bit string literal")
+		}
+	})
+
+	t.Run("hex string with odd number of digits", func(t *testing.T) {
+		l := parser.New("x'F'")
+		if _, err := l.Next(); err == nil {
+			t.Fatal("expected error for odd number of digits in hex string literal")
+		}
+	})
+}
+
 func TestLexer_Operators(t *testing.T) {
 	tests := []struct {
 		name string
@@ -236,6 +389,7 @@ func TestLexer_Operators(t *testing.T) {
 		{"gt", ">", parser.GT},
 		{"le", "<=", parser.LE},
 		{"ge", ">=", parser.GE},
+		{"null-safe equal", "<=>", parser.NSE},
 		{"plus", "+", parser.PLUS},
 		{"minus", "-", parser.MINUS},
 		{"star", "*", parser.STAR},

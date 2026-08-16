@@ -34,6 +34,8 @@ func TestGroupBy_String(t *testing.T) {
 		{"empty", &sqlast.GroupBy{}, ""},
 		{"single", &sqlast.GroupBy{Exprs: exprs("a")}, "GROUP BY a"},
 		{"multiple", &sqlast.GroupBy{Exprs: exprs("a", "b")}, "GROUP BY a, b"},
+		{"with rollup", &sqlast.GroupBy{Exprs: exprs("a"), WithRollup: true}, "GROUP BY a WITH ROLLUP"},
+		{"empty with rollup renders nothing", &sqlast.GroupBy{WithRollup: true}, ""},
 	}
 
 	for _, tt := range tests {

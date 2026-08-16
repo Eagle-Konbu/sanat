@@ -70,6 +70,29 @@ func TestParseUpdate_multiTableJoin(t *testing.T) {
 	}
 }
 
+// TestParseUpdate_multiTableOrderByLimitRejected verifies that ORDER BY and
+// LIMIT, which MySQL only allows on the single-table form of UPDATE, are
+// rejected (as trailing unconsumed tokens) when the target is a comma list
+// or a JOIN -- mirroring the same restriction already enforced for DELETE's
+// multi-table forms (see TestParseDelete_errors).
+func TestParseUpdate_multiTableOrderByLimitRejected(t *testing.T) {
+	tests := []string{
+		"UPDATE a, b SET a.x = 1 ORDER BY a.id",
+		"UPDATE a, b SET a.x = 1 LIMIT 10",
+		"UPDATE a JOIN b ON a.id = b.id SET a.x = 1 ORDER BY a.id",
+		"UPDATE a JOIN b ON a.id = b.id SET a.x = 1 LIMIT 10",
+	}
+
+	for _, in := range tests {
+		t.Run(in, func(t *testing.T) {
+			upd, err := parser.ParseUpdate(in)
+			if err == nil {
+				t.Fatalf("ParseUpdate(%q) expected error, got nil (result: %v)", in, upd)
+			}
+		})
+	}
+}
+
 func TestParseUpdate_cte(t *testing.T) {
 	tests := []struct {
 		name, in, want string

@@ -9,6 +9,8 @@ import (
 
 const eof = rune(-1)
 
+const unterminatedStringMsg = "unterminated string literal"
+
 // LexError describes malformed input encountered while lexing.
 type LexError struct {
 	Pos Position
@@ -51,9 +53,7 @@ func (l *Lexer) Next() (Token, error) {
 	case l.ch == eof:
 		return Token{Type: EOF, Pos: pos}, nil
 	case isIdentStart(l.ch):
-		lit := l.readIdentifier()
-
-		return Token{Type: lookupIdent(lit), Literal: lit, Pos: pos}, nil
+		return l.readIdentifierOrPrefixedLiteral(pos)
 	case l.ch == '`':
 		lit, err := l.readQuotedIdent(pos)
 		if err != nil {
@@ -75,6 +75,19 @@ func (l *Lexer) Next() (Token, error) {
 	default:
 		return l.readOperator(pos)
 	}
+}
+
+// readIdentifierOrPrefixedLiteral reads an unquoted identifier/keyword, or a
+// x'..'/b'..' prefixed hex/bit string literal if l.ch starts one. l.ch must
+// satisfy isIdentStart.
+func (l *Lexer) readIdentifierOrPrefixedLiteral(pos Position) (Token, error) {
+	if tok, ok, err := l.tryReadPrefixedStringLiteral(pos); err != nil || ok {
+		return tok, err
+	}
+
+	lit := l.readIdentifier()
+
+	return Token{Type: lookupIdent(lit), Literal: lit, Pos: pos}, nil
 }
 
 func (l *Lexer) currentPos() Position {
@@ -176,6 +189,75 @@ func (l *Lexer) skipBlockComment() error {
 	}
 }
 
+// tryReadPrefixedStringLiteral reads MySQL's x'..'/b'..' hex- and
+// bit-string literal forms. These are only recognized when the quote
+// immediately follows the x/b letter with no space, which is also how they
+// are distinguished from a plain identifier named x/b (always followed by
+// whitespace or an operator before any string literal, in valid SQL). l.ch
+// must satisfy isIdentStart; if it isn't 'x'/'X'/'b'/'B' immediately
+// followed by a quote, this consumes nothing and reports ok=false.
+func (l *Lexer) tryReadPrefixedStringLiteral(startPos Position) (Token, bool, error) {
+	if l.peek() != '\'' {
+		return Token{}, false, nil
+	}
+
+	var tt TokenType
+
+	switch l.ch {
+	case 'x', 'X':
+		tt = HexStr
+	case 'b', 'B':
+		tt = BitStr
+	default:
+		return Token{}, false, nil
+	}
+
+	prefix := l.ch
+
+	l.readChar()
+	l.readChar()
+
+	content, err := l.readPrefixedStringContent(startPos, tt)
+	if err != nil {
+		return Token{}, false, err
+	}
+
+	if tt == HexStr && len(content)%2 != 0 {
+		return Token{}, false, &LexError{Pos: startPos, Msg: "hex literal must have an even number of digits"}
+	}
+
+	l.readChar() // consume closing '
+
+	return Token{Type: tt, Literal: string(prefix) + "'" + content + "'", Pos: startPos}, true, nil
+}
+
+// readPrefixedStringContent reads the digit content of an x'..'/b'..'
+// literal up to (not including) the closing quote, validating that every
+// character is a legal digit for tt: hex digits for HexStr, 0/1 for BitStr.
+// l.ch must be positioned just after the opening quote.
+func (l *Lexer) readPrefixedStringContent(startPos Position, tt TokenType) (string, error) {
+	start := l.pos
+
+	isValidDigit := isHexDigit
+	if tt == BitStr {
+		isValidDigit = isBinDigit
+	}
+
+	for l.ch != '\'' {
+		if l.ch == eof {
+			return "", &LexError{Pos: startPos, Msg: unterminatedStringMsg}
+		}
+
+		if !isValidDigit(l.ch) {
+			return "", &LexError{Pos: startPos, Msg: fmt.Sprintf("invalid digit %q in string literal", l.ch)}
+		}
+
+		l.readChar()
+	}
+
+	return l.input[start:l.pos], nil
+}
+
 func (l *Lexer) readIdentifier() string {
 	start := l.pos
 
@@ -222,7 +304,7 @@ func (l *Lexer) readString(startPos Position) (string, error) {
 	for {
 		switch {
 		case l.ch == eof:
-			return "", &LexError{Pos: startPos, Msg: "unterminated string literal"}
+			return "", &LexError{Pos: startPos, Msg: unterminatedStringMsg}
 		case l.ch == '\'' && l.peek() == '\'':
 			sb.WriteRune('\'')
 			l.readChar()
@@ -249,7 +331,7 @@ func (l *Lexer) readEscapedString(stringStart Position) (string, error) {
 	l.readChar() // consume backslash
 
 	if l.ch == eof {
-		return "", &LexError{Pos: stringStart, Msg: "unterminated string literal"}
+		return "", &LexError{Pos: stringStart, Msg: unterminatedStringMsg}
 	}
 
 	s := unescape(l.ch)
@@ -285,6 +367,12 @@ func unescape(ch rune) string {
 }
 
 func (l *Lexer) readNumber() (TokenType, string) {
+	if l.ch == '0' {
+		if lit, ok := l.tryReadPrefixedNumber(); ok {
+			return INT, lit
+		}
+	}
+
 	start := l.pos
 
 	l.readDigits()
@@ -299,6 +387,37 @@ func (l *Lexer) readNumber() (TokenType, string) {
 	}
 
 	return tt, l.input[start:l.pos]
+}
+
+// tryReadPrefixedNumber reads a 0x.../0b... hex or binary integer literal.
+// l.ch must be '0'. Per MySQL, the x/b letter must be lowercase in this
+// notation (0X.../0B... is not a valid integer literal, unlike the X'..'/B'..'
+// string forms, which accept either case).
+func (l *Lexer) tryReadPrefixedNumber() (string, bool) {
+	start := l.pos
+
+	switch {
+	case l.peek() == 'x' && isHexDigit(l.peekAt(2)):
+		l.readChar() // consume '0'
+		l.readChar() // consume 'x'
+
+		for isHexDigit(l.ch) {
+			l.readChar()
+		}
+
+		return l.input[start:l.pos], true
+	case l.peek() == 'b' && isBinDigit(l.peekAt(2)):
+		l.readChar() // consume '0'
+		l.readChar() // consume 'b'
+
+		for isBinDigit(l.ch) {
+			l.readChar()
+		}
+
+		return l.input[start:l.pos], true
+	default:
+		return "", false
+	}
 }
 
 func (l *Lexer) readDigits() {
@@ -366,6 +485,12 @@ func (l *Lexer) readLess(pos Position) Token {
 		return Token{Type: NE, Literal: "<>", Pos: pos}
 	case '=':
 		l.readChar()
+
+		if l.ch == '>' {
+			l.readChar()
+
+			return Token{Type: NSE, Literal: "<=>", Pos: pos}
+		}
 
 		return Token{Type: LE, Literal: "<=", Pos: pos}
 	default:
@@ -439,6 +564,14 @@ func isCommentBoundary(ch rune) bool {
 
 func isDigit(ch rune) bool {
 	return ch >= '0' && ch <= '9'
+}
+
+func isHexDigit(ch rune) bool {
+	return isDigit(ch) || (ch >= 'a' && ch <= 'f') || (ch >= 'A' && ch <= 'F')
+}
+
+func isBinDigit(ch rune) bool {
+	return ch == '0' || ch == '1'
 }
 
 func isIdentStart(ch rune) bool {

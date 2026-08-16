@@ -94,8 +94,8 @@ flowchart TD
 
 | Category | Tokens |
 |----------|--------|
-| Identifiers/literals | `IDENT`, `QuotedIdent`, `INT`, `FLOAT`, `STRING` |
-| Comparison operators | `EQ` (`=`), `NE` (`<>` or `!=`), `LT`, `GT`, `LE`, `GE` |
+| Identifiers/literals | `IDENT`, `QuotedIdent`, `INT` (also `0x1A`/`0b101` forms), `FLOAT`, `STRING`, `HexStr` (`x'1A'`), `BitStr` (`b'101'`) |
+| Comparison operators | `EQ` (`=`), `NE` (`<>` or `!=`), `NSE` (`<=>`), `LT`, `GT`, `LE`, `GE` |
 | Arithmetic operators | `PLUS`, `MINUS`, `STAR`, `SLASH`, `PERCENT` |
 | Punctuation | `LPAREN`, `RPAREN`, `COMMA`, `DOT`, `COLON`, `QUESTION` |
 | Keywords | See below |
@@ -104,26 +104,36 @@ Keywords are matched case-insensitively (`lookupIdent` upper-cases before
 lookup) and cover clause/statement keywords (`SELECT`, `FROM`, `WHERE`,
 `INSERT`, `UPDATE`, `DELETE`, `UNION`, ...), join keywords (`JOIN`, `LEFT`,
 `RIGHT`, `INNER`, `OUTER`, `CROSS`, `NATURAL`, `STRAIGHT_JOIN`), logical/
-predicate keywords (`AND`, `OR`, `NOT`, `IN`, `BETWEEN`, `LIKE`, `IS`,
-`NULL`, `TRUE`, `FALSE`, `EXISTS`), `CASE`/`WHEN`/`THEN`/`ELSE`/`END`,
-ordering/grouping (`ORDER`, `BY`, `GROUP`, `HAVING`, `LIMIT`, `OFFSET`,
-`ASC`, `DESC`), locking (`FOR`, `LOCK`, `SHARE`, `NOWAIT`, `SKIP`, `LOCKED`,
-`MODE`), CTEs (`WITH`, `RECURSIVE`), window functions (`OVER`, `PARTITION`,
-`ROWS`, `RANGE`, `UNBOUNDED`, `PRECEDING`, `FOLLOWING`, `CURRENT`, `ROW`,
-`RESPECT`, `NULLS`, `FIRST`, `LAST`), and index hints (`USE`, `FORCE`,
-`IGNORE`, `INDEX`).
+predicate keywords (`AND`, `OR`, `NOT`, `IN`, `BETWEEN`, `LIKE`, `REGEXP`,
+`RLIKE`, `IS`, `NULL`, `TRUE`, `FALSE`, `EXISTS`), `CASE`/`WHEN`/`THEN`/
+`ELSE`/`END`, ordering/grouping (`ORDER`, `BY`, `GROUP`, `ROLLUP`, `HAVING`,
+`LIMIT`, `OFFSET`, `ASC`, `DESC`), locking (`FOR`, `LOCK`, `SHARE`, `NOWAIT`,
+`SKIP`, `LOCKED`, `MODE`), CTEs (`WITH`, `RECURSIVE`), window functions
+(`OVER`, `PARTITION`, `ROWS`, `RANGE`, `UNBOUNDED`, `PRECEDING`, `FOLLOWING`,
+`CURRENT`, `ROW`, `RESPECT`, `NULLS`, `FIRST`, `LAST`), and index hints
+(`USE`, `FORCE`, `IGNORE`, `INDEX`).
 
 ### Literal Handling
 
 - **Identifiers**: unquoted (`users`, `id`) or backtick-quoted
   (`` `users` ``, with doubled-backtick `` `` `` escaping for a literal
   backtick).
-- **Numbers**: integers and floats, including exponents (`1.5e10`).
+- **Numbers**: integers and floats, including exponents (`1.5e10`), plus
+  MySQL's `0x1A` hex and `0b101` binary integer forms. Per MySQL, the `x`/`b`
+  must be lowercase in this notation — `0X1A`/`0B101` are not recognized as
+  prefixed literals (the leading `0` is lexed as a plain `INT` and the rest
+  as a separate identifier).
 - **Strings**: single-quoted, with backslash escapes (`\n`, `\r`, `\0`,
   `\Z`, `\\`, `\'`) and MySQL's doubled-quote (`''`) escaping. `\%` and
   `\_` are left un-decoded by the lexer (and re-escaped as-is by the
   parser's `escapeStringLiteral`) since they are only meaningful inside a
-  `LIKE` pattern.
+  `LIKE` pattern. `x'1A'`/`X'1A'` (hex) and `b'101'`/`B'101'` (bit) string
+  literals are also recognized; the quote must immediately follow the
+  `x`/`b` letter with no space, which is how the lexer tells them apart
+  from a plain identifier named `x`/`b`. Unlike the `0x`/`0b` integer forms,
+  the letter's case doesn't matter here. Hex string content must consist of
+  hex digits with an even number of digits (`x''` is valid); bit string
+  content must consist of only `0`/`1` digits.
 - **Comments**: `--` and `#` line comments and `/* ... */` block comments
   are skipped like whitespace.
 
@@ -167,23 +177,27 @@ binding:
 flowchart TD
     OR[OR] --> AND[AND]
     AND --> NOT["NOT (prefix)"]
-    NOT --> CMP["Comparison / IN / BETWEEN / LIKE / IS NULL"]
+    NOT --> CMP["Comparison / IN / BETWEEN / LIKE / REGEXP / IS NULL"]
     CMP --> ADD["+ / -"]
     ADD --> MUL["* / / / %"]
     MUL --> UNARY["Unary + / -"]
     UNARY --> PRIMARY[Primary expression]
 ```
 
-Primary expressions: literals (`INT`, `FLOAT`, `STRING`, `NULL`, `TRUE`,
-`FALSE`), `?` placeholders, `:name`/`:1` colon placeholders, parenthesized
-expressions and scalar subqueries `(SELECT ...)`, `CASE` (searched and
-simple forms), `EXISTS (SELECT ...)`, column references (`col`,
-`table.col`), and function calls.
+Primary expressions: literals (`INT` (also `0x1A`/`0b101`), `FLOAT`,
+`STRING`, `HexStr` (`x'1A'`), `BitStr` (`b'101'`), `NULL`, `TRUE`, `FALSE`),
+`?` placeholders, `:name`/`:1` colon placeholders, parenthesized expressions
+and scalar subqueries `(SELECT ...)`, `CASE` (searched and simple forms),
+`EXISTS (SELECT ...)`, column references (`col`, `table.col`), and function
+calls.
 
 `[NOT] IN (...)` accepts either a subquery or a value list (`ValTuple`).
-`BETWEEN ... AND ...` and `[NOT] LIKE` bind at the same predicate level as
-comparison operators. A `NOT` immediately followed by `IN`/`BETWEEN`/`LIKE`
-is treated as negating that predicate rather than as a prefix logical NOT.
+`BETWEEN ... AND ...`, `[NOT] LIKE`, and `[NOT] REGEXP`/`[NOT] RLIKE`
+(`RLIKE` is a synonym parsed to the same `RegexpOp`/`NotRegexpOp` node) bind
+at the same predicate level as comparison operators, alongside the
+null-safe `<=>` operator. A `NOT` immediately followed by
+`IN`/`BETWEEN`/`LIKE`/`REGEXP`/`RLIKE` is treated as negating that predicate
+rather than as a prefix logical NOT.
 
 ### Function Calls
 
@@ -229,7 +243,7 @@ flowchart TD
     WH -- Yes --> WE[WHERE expr]
     WH -- No --> G
     WE --> G{GROUP BY?}
-    G -- Yes --> GE[GROUP BY expr, ...]
+    G -- Yes --> GE["GROUP BY expr, ... [WITH ROLLUP]"]
     G -- No --> H
     GE --> H{HAVING?}
     H -- Yes --> HE[HAVING expr]
@@ -238,7 +252,7 @@ flowchart TD
     O -- Yes --> OE[ORDER BY expr [ASC|DESC], ...]
     O -- No --> L
     OE --> L{LIMIT?}
-    L -- Yes --> LE["LIMIT count [OFFSET n]"]
+    L -- Yes --> LE["LIMIT count [OFFSET n] | LIMIT n, count"]
     L -- No --> LK
     LE --> LK{Lock?}
     LK -- Yes --> LKE["FOR UPDATE/SHARE [NOWAIT|SKIP LOCKED] or LOCK IN SHARE MODE"]
@@ -252,6 +266,19 @@ flowchart TD
 `ON` condition, parenthesized table lists, derived tables
 (`(SELECT ...) alias`), and index hints (`USE`/`FORCE`/`IGNORE INDEX`, each
 with an optional `FOR JOIN|GROUP BY|ORDER BY`).
+
+`LIMIT` accepts either `LIMIT row_count [OFFSET offset]` or the older
+`LIMIT offset, row_count` comma form; both are normalized into the same
+`sqlast.Limit{Rowcount, Offset}` shape, so `String()` always renders the
+`OFFSET` form regardless of which syntax was parsed.
+
+`UPDATE`/`DELETE` share `parseTableReferenceList`/`parseOptionalOrderBy`/
+`parseOptionalLimit` with `SELECT`, but MySQL only allows a trailing
+`ORDER BY`/`LIMIT` on the single-table form of each (exactly one table
+reference with no `JOIN`); both `parseUpdateStatement` and
+`parseDeleteStatement` gate those clauses on that check so the multi-table
+forms reject them as trailing tokens instead of silently accepting invalid
+SQL.
 
 Not yet implemented (grammar recognized by `sqlast` but no parser support,
 or entirely out of scope): `SQL_CALC_FOUND_ROWS`/`SQL_NO_CACHE`/

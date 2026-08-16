@@ -51,6 +51,15 @@ func TestParseExpr_literals(t *testing.T) {
 	assertExpr(t, ":1", &sqlast.Literal{Val: ":1"})
 }
 
+func TestParseExpr_prefixedLiterals(t *testing.T) {
+	assertExpr(t, "0x1A", num("0x1A"))
+	assertExpr(t, "0b101", num("0b101"))
+	assertExpr(t, "x'1A'", num("x'1A'"))
+	assertExpr(t, "X'1a'", num("X'1a'"))
+	assertExpr(t, "b'101'", num("b'101'"))
+	assertExpr(t, "B'110'", num("B'110'"))
+}
+
 func TestParseExpr_stringLiteral(t *testing.T) {
 	tests := []struct {
 		name, in, want string
@@ -139,6 +148,7 @@ func TestParseExpr_comparisonOperators(t *testing.T) {
 		{"a > b", sqlast.GreaterThanOp},
 		{"a <= b", sqlast.LessEqualOp},
 		{"a >= b", sqlast.GreaterEqualOp},
+		{"a <=> b", sqlast.NullSafeEqualOp},
 	}
 
 	for _, tt := range tests {
@@ -154,6 +164,25 @@ func TestParseExpr_likeExpr(t *testing.T) {
 
 	assertExpr(t, "a NOT LIKE '%x%'", &sqlast.ComparisonExpr{
 		Left: col("a"), Operator: sqlast.NotLikeOp, Right: &sqlast.Literal{Val: "'%x%'"},
+	})
+}
+
+func TestParseExpr_regexpExpr(t *testing.T) {
+	assertExpr(t, "a REGEXP '^x'", &sqlast.ComparisonExpr{
+		Left: col("a"), Operator: sqlast.RegexpOp, Right: &sqlast.Literal{Val: "'^x'"},
+	})
+
+	assertExpr(t, "a NOT REGEXP '^x'", &sqlast.ComparisonExpr{
+		Left: col("a"), Operator: sqlast.NotRegexpOp, Right: &sqlast.Literal{Val: "'^x'"},
+	})
+
+	// RLIKE is a synonym for REGEXP; it parses to the same operator.
+	assertExpr(t, "a RLIKE '^x'", &sqlast.ComparisonExpr{
+		Left: col("a"), Operator: sqlast.RegexpOp, Right: &sqlast.Literal{Val: "'^x'"},
+	})
+
+	assertExpr(t, "a NOT RLIKE '^x'", &sqlast.ComparisonExpr{
+		Left: col("a"), Operator: sqlast.NotRegexpOp, Right: &sqlast.Literal{Val: "'^x'"},
 	})
 }
 
@@ -407,6 +436,8 @@ func TestParseExpr_errors(t *testing.T) {
 		"CASE WHEN a THEN 1",
 		"NOT",
 		"1 2",
+		"0X1A",
+		"0B110",
 		":",
 		":+",
 		"COUNT(",
@@ -431,6 +462,15 @@ func TestParseExpr_errors(t *testing.T) {
 		"a = 'unterminated",
 		"a LIKE 'unterminated",
 		"a NOT LIKE 'unterminated",
+		"a REGEXP 'unterminated",
+		"a NOT REGEXP 'unterminated",
+		"a RLIKE 'unterminated",
+		"a <=> 'unterminated",
+		"x'unterminated",
+		"b'unterminated",
+		"x'0G'",
+		"b'102'",
+		"x'F'",
 		"a IN (1, 2, 'unterminated)",
 		"a NOT IN (1, 'unterminated)",
 		"a BETWEEN 1 AND 'unterminated",

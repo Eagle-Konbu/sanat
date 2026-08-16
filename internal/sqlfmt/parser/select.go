@@ -414,7 +414,15 @@ func (p *Parser) parseOptionalGroupBy() *sqlast.GroupBy {
 
 	p.expect(BY)
 
-	return &sqlast.GroupBy{Exprs: p.parseExprList()}
+	gb := &sqlast.GroupBy{Exprs: p.parseExprList()}
+
+	if p.consume(WITH) {
+		p.expect(ROLLUP)
+
+		gb.WithRollup = true
+	}
+
+	return gb
 }
 
 func (p *Parser) parseOptionalOrderBy() sqlast.OrderBy {
@@ -455,12 +463,19 @@ func (p *Parser) parseOrderByClause() sqlast.OrderBy {
 	}
 }
 
+// parseOptionalLimit parses an optional LIMIT clause, accepting either
+// `LIMIT row_count [OFFSET offset]` or the older `LIMIT offset, row_count`
+// comma form; both are normalized into the same Rowcount/Offset shape.
 func (p *Parser) parseOptionalLimit() *sqlast.Limit {
 	if !p.consume(LIMIT) {
 		return nil
 	}
 
-	count := p.parseExpr()
+	first := p.parseExpr()
+
+	if p.consume(COMMA) {
+		return &sqlast.Limit{Rowcount: p.parseExpr(), Offset: first}
+	}
 
 	var offset sqlast.Expr
 
@@ -468,7 +483,7 @@ func (p *Parser) parseOptionalLimit() *sqlast.Limit {
 		offset = p.parseExpr()
 	}
 
-	return &sqlast.Limit{Rowcount: count, Offset: offset}
+	return &sqlast.Limit{Rowcount: first, Offset: offset}
 }
 
 func (p *Parser) parseOptionalLock() (sqlast.Lock, sqlast.LockWaitType) {

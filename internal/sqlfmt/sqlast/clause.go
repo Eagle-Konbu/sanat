@@ -21,7 +21,8 @@ func (w *Where) String() string {
 
 // GroupBy represents a GROUP BY clause.
 type GroupBy struct {
-	Exprs []Expr
+	Exprs      []Expr
+	WithRollup bool
 }
 
 // String returns GroupBy's SQL text.
@@ -35,7 +36,12 @@ func (g *GroupBy) String() string {
 		strs[i] = e.String()
 	}
 
-	return "GROUP BY " + strings.Join(strs, ", ")
+	s := "GROUP BY " + strings.Join(strs, ", ")
+	if g.WithRollup {
+		s += " WITH ROLLUP"
+	}
+
+	return s
 }
 
 // Order represents a single ORDER BY item.
