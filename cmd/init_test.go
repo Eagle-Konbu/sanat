@@ -18,10 +18,12 @@ const sanatYML = ".sanat.yml"
 var errNoMoreAnswers = errors.New("no more answers")
 
 type fakePrompter struct {
-	format  config.Format
-	indent  int
-	answers []bool
-	idx     int
+	format      config.Format
+	indent      int
+	keywordCase string
+	commaStyle  string
+	answers     []bool
+	idx         int
 }
 
 func (f *fakePrompter) SelectFormat() (config.Format, error) {
@@ -43,8 +45,28 @@ func (f *fakePrompter) PromptYesNo(_ string, _ bool) (bool, error) {
 	return ans, nil
 }
 
+func (f *fakePrompter) PromptKeywordCase() (string, error) {
+	if f.keywordCase == "" {
+		return config.KeywordCaseUpper, nil
+	}
+
+	return f.keywordCase, nil
+}
+
+func (f *fakePrompter) PromptCommaStyle() (string, error) {
+	if f.commaStyle == "" {
+		return config.CommaStyleTrailing, nil
+	}
+
+	return f.commaStyle, nil
+}
+
 func assertConfig(t *testing.T, cfg config.Config, indent int, newline bool) {
 	t.Helper()
+
+	if cfg.Version == nil || *cfg.Version != config.CurrentVersion {
+		t.Errorf("version: got %v, want %d", cfg.Version, config.CurrentVersion)
+	}
 
 	if cfg.Indent == nil || *cfg.Indent != indent {
 		t.Errorf("indent: got %v, want %d", cfg.Indent, indent)
@@ -113,6 +135,37 @@ func TestInit_CreateConfig(t *testing.T) {
 				t.Errorf("expected %q in output, got %q", tt.wantMsg, out.String())
 			}
 		})
+	}
+}
+
+func TestInit_CreateConfig_KeywordCaseAndCommaStyle(t *testing.T) {
+	dir := t.TempDir()
+
+	p := &fakePrompter{
+		format:      config.FormatYAML,
+		indent:      2,
+		keywordCase: config.KeywordCaseLower,
+		commaStyle:  config.CommaStyleLeading,
+		answers:     []bool{true},
+	}
+
+	var out bytes.Buffer
+
+	if err := cmd.RunInitWith(dir, p, &out); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := config.LoadFile(filepath.Join(dir, sanatYML))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if cfg.KeywordCase == nil || *cfg.KeywordCase != config.KeywordCaseLower {
+		t.Errorf("keyword_case: got %v, want %q", cfg.KeywordCase, config.KeywordCaseLower)
+	}
+
+	if cfg.CommaStyle == nil || *cfg.CommaStyle != config.CommaStyleLeading {
+		t.Errorf("comma_style: got %v, want %q", cfg.CommaStyle, config.CommaStyleLeading)
 	}
 }
 

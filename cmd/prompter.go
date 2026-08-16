@@ -17,6 +17,8 @@ type Prompter interface {
 	SelectFormat() (config.Format, error)
 	PromptIndent() (int, error)
 	PromptYesNo(question string, defaultYes bool) (bool, error)
+	PromptKeywordCase() (string, error)
+	PromptCommaStyle() (string, error)
 }
 
 type interactivePrompter struct{}
@@ -84,4 +86,32 @@ func (interactivePrompter) PromptYesNo(question string, defaultYes bool) (bool, 
 	}
 
 	return idx == 0, nil
+}
+
+func (interactivePrompter) PromptKeywordCase() (string, error) {
+	sel := promptui.Select{
+		Label: "Keyword case (AS, AND, OR, IN, IS, LIKE, ...)",
+		Items: []string{config.KeywordCaseUpper, config.KeywordCaseLower, config.KeywordCasePreserve},
+	}
+
+	_, result, err := sel.Run()
+	if err != nil {
+		return "", err
+	}
+
+	return result, nil
+}
+
+func (interactivePrompter) PromptCommaStyle() (string, error) {
+	sel := promptui.Select{
+		Label: "Comma style",
+		Items: []string{config.CommaStyleTrailing, config.CommaStyleLeading},
+	}
+
+	_, result, err := sel.Run()
+	if err != nil {
+		return "", err
+	}
+
+	return result, nil
 }
