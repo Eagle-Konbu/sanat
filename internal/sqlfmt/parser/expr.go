@@ -119,7 +119,7 @@ func (p *Parser) parseInExpr(left sqlast.Expr, not bool) sqlast.Expr {
 	}
 
 	if p.at(SELECT) || p.at(WITH) {
-		sel := p.parseSelectStatement()
+		sel := p.parseSubqueryStatement()
 		p.expect(RPAREN)
 
 		return &sqlast.ComparisonExpr{Left: left, Operator: op, Right: &sqlast.Subquery{Select: sel}}
@@ -253,11 +253,32 @@ func (p *Parser) parsePrimaryExpr() sqlast.Expr {
 		return p.parseCaseExpr()
 	case EXISTS:
 		return p.parseExistsExpr()
-	case IDENT, QuotedIdent:
-		return p.parseIdentExpr()
+	case IDENT, QuotedIdent, VALUES:
+		return p.parseIdentOrValuesExpr()
 	default:
 		return failReturn[sqlast.Expr](p, "unexpected token %s in expression", p.tok.Type)
 	}
+}
+
+// parseIdentOrValuesExpr parses a column reference or function call, or the
+// deprecated VALUES(col) reference used in an ON DUPLICATE KEY UPDATE clause
+// to read the value that would have been inserted for col. VALUES is a
+// keyword everywhere else, and MySQL only accepts it as a function name
+// inside that clause, so it's rejected anywhere p.inOnDupUpdate is false.
+func (p *Parser) parseIdentOrValuesExpr() sqlast.Expr {
+	if !p.at(VALUES) {
+		return p.parseIdentExpr()
+	}
+
+	if !p.inOnDupUpdate {
+		return failReturn[sqlast.Expr](p, "VALUES() is only valid in an ON DUPLICATE KEY UPDATE clause")
+	}
+
+	name := p.tok.Literal
+	p.advance() // consume VALUES
+	p.expect(LPAREN)
+
+	return p.parseGenericFuncCall(name)
 }
 
 func (p *Parser) parseLiteralToken() sqlast.Expr {
@@ -351,7 +372,7 @@ func (p *Parser) parseParenExprOrSubquery() sqlast.Expr {
 	p.advance() // consume '('
 
 	if p.at(SELECT) || p.at(WITH) {
-		sel := p.parseSelectStatement()
+		sel := p.parseSubqueryStatement()
 		p.expect(RPAREN)
 
 		return &sqlast.Subquery{Select: sel}
@@ -422,7 +443,7 @@ func (p *Parser) parseExistsExpr() sqlast.Expr {
 	p.advance() // consume EXISTS
 	p.expect(LPAREN)
 
-	sel := p.parseSelectStatement()
+	sel := p.parseSubqueryStatement()
 
 	p.expect(RPAREN)
 

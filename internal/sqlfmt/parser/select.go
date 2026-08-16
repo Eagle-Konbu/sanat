@@ -51,6 +51,40 @@ func (p *Parser) parseSelectTail(sel *sqlast.Select) {
 	sel.Lock, sel.LockWait = p.parseOptionalLock()
 }
 
+// parseSelectOrUnionAfterWith parses a SELECT statement, or a UNION of two or
+// more SELECT branches, given an already-parsed (possibly nil) leading WITH
+// clause. The current token must be SELECT. Shared by the top-level
+// statement dispatcher and INSERT's SELECT/UNION row source, both of which
+// need to look past the first SELECT branch to see whether a UNION follows
+// before committing to which statement type they're building.
+func (p *Parser) parseSelectOrUnionAfterWith(with *sqlast.With) sqlast.Statement {
+	sel := &sqlast.Select{}
+	p.parseSelectCore(sel)
+
+	if !p.at(UNION) {
+		sel.With = with
+		p.parseSelectTail(sel)
+
+		return sel
+	}
+
+	u := p.parseUnionTail(sel)
+	u.With = with
+	u.OrderBy = p.parseOptionalOrderBy()
+	u.Limit = p.parseOptionalLimit()
+	u.Lock, u.LockWait = p.parseOptionalLock()
+
+	return u
+}
+
+// parseSubqueryStatement parses the body of a parenthesized subquery — a
+// SELECT statement, or a UNION of SELECT branches, optionally preceded by a
+// WITH clause. The current token must be WITH or SELECT. Used wherever a
+// subquery appears: CTEs, derived tables, scalar/IN subqueries, and EXISTS.
+func (p *Parser) parseSubqueryStatement() sqlast.Statement {
+	return p.parseSelectOrUnionAfterWith(p.parseOptionalWith())
+}
+
 func (p *Parser) parseOptionalWith() *sqlast.With {
 	if !p.consume(WITH) {
 		return nil
@@ -84,7 +118,7 @@ func (p *Parser) parseCTE() *sqlast.CommonTableExpr {
 	p.expect(AS)
 	p.expect(LPAREN)
 
-	sel := p.parseSelectStatement()
+	sel := p.parseSubqueryStatement()
 
 	p.expect(RPAREN)
 
@@ -321,7 +355,7 @@ func (p *Parser) parseParenTableExpr() sqlast.TableExpr {
 }
 
 func (p *Parser) parseDerivedTable() sqlast.TableExpr {
-	sel := p.parseSelectStatement()
+	sel := p.parseSubqueryStatement()
 
 	p.expect(RPAREN)
 

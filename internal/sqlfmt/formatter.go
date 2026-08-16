@@ -5,13 +5,13 @@ import (
 	"regexp"
 	"strings"
 
-	"vitess.io/vitess/go/vt/sqlparser"
+	"github.com/Eagle-Konbu/sanat/internal/sqlfmt/parser"
+	"github.com/Eagle-Konbu/sanat/internal/sqlfmt/sqlast"
 )
 
 const descDir = " DESC"
 
 var (
-	parser        = sqlparser.NewTestParser()
 	sentinelRe    = regexp.MustCompile(`:_sqla_ph_(\d+)`)
 	placeholderRe = regexp.MustCompile(`\?`)
 )
@@ -19,7 +19,7 @@ var (
 func FormatSQL(sql string, indent int) (string, bool) {
 	replaced, count := replacePlaceholders(sql)
 
-	stmt, err := parser.Parse(replaced)
+	stmt, err := parser.ParseStatement(replaced)
 	if err != nil {
 		return sql, false
 	}
@@ -28,13 +28,8 @@ func FormatSQL(sql string, indent int) (string, bool) {
 
 	formatStatement(&b, stmt, 0, indent)
 	result := restorePlaceholders(b.String(), count)
-	result = stripIdentifierBackticks(result)
 
 	return result, true
-}
-
-func stripIdentifierBackticks(s string) string {
-	return strings.ReplaceAll(s, "`", "")
 }
 
 func replacePlaceholders(sql string) (string, int) {
@@ -53,20 +48,20 @@ func restorePlaceholders(sql string, _ int) string {
 	return sentinelRe.ReplaceAllString(sql, "?")
 }
 
-func formatStatement(b *strings.Builder, stmt sqlparser.Statement, depth, indent int) {
+func formatStatement(b *strings.Builder, stmt sqlast.Statement, depth, indent int) {
 	switch s := stmt.(type) {
-	case *sqlparser.Select:
+	case *sqlast.Select:
 		formatSelect(b, s, depth, indent)
-	case *sqlparser.Insert:
+	case *sqlast.Insert:
 		formatInsert(b, s, depth, indent)
-	case *sqlparser.Update:
+	case *sqlast.Update:
 		formatUpdate(b, s, depth, indent)
-	case *sqlparser.Delete:
+	case *sqlast.Delete:
 		formatDelete(b, s, depth, indent)
-	case *sqlparser.Union:
+	case *sqlast.Union:
 		formatUnion(b, s, depth, indent)
 	default:
-		b.WriteString(sqlparser.String(stmt))
+		panic(fmt.Sprintf("sqlfmt: unhandled statement type %T", stmt))
 	}
 }
 
@@ -74,7 +69,7 @@ func pad(depth, indent int) string {
 	return strings.Repeat(" ", depth*indent)
 }
 
-func formatWith(b *strings.Builder, with *sqlparser.With, depth, indent int) {
+func formatWith(b *strings.Builder, with *sqlast.With, depth, indent int) {
 	if with == nil {
 		return
 	}
@@ -95,12 +90,7 @@ func formatWith(b *strings.Builder, with *sqlparser.With, depth, indent int) {
 		name := cte.ID.String()
 
 		if len(cte.Columns) > 0 {
-			cols := make([]string, len(cte.Columns))
-			for j, col := range cte.Columns {
-				cols[j] = col.String()
-			}
-
-			name += " (" + strings.Join(cols, ", ") + ")"
+			name += " (" + cte.Columns.String() + ")"
 		}
 
 		b.WriteString(pi)
@@ -118,7 +108,7 @@ func formatWith(b *strings.Builder, with *sqlparser.With, depth, indent int) {
 	}
 }
 
-func formatSelect(b *strings.Builder, s *sqlparser.Select, depth, indent int) {
+func formatSelect(b *strings.Builder, s *sqlast.Select, depth, indent int) {
 	p := pad(depth, indent)
 	pi := pad(depth+1, indent)
 
@@ -160,19 +150,15 @@ func formatSelect(b *strings.Builder, s *sqlparser.Select, depth, indent int) {
 		formatLimit(b, s.Limit, p, indent, depth)
 	}
 
-	formatLock(b, s.Lock, p)
+	formatLock(b, s.Lock, s.LockWait, p)
 }
 
-func formatSelectExprs(b *strings.Builder, exprs *sqlparser.SelectExprs, pi string, indent, depth int) {
-	if exprs == nil {
-		return
-	}
-
-	for i, expr := range exprs.Exprs {
+func formatSelectExprs(b *strings.Builder, exprs []sqlast.SelectExpr, pi string, indent, depth int) {
+	for i, expr := range exprs {
 		b.WriteString(pi)
 		b.WriteString(formatSelectExpr(expr, indent, depth))
 
-		if i < len(exprs.Exprs)-1 {
+		if i < len(exprs)-1 {
 			b.WriteString(",")
 		}
 
@@ -180,53 +166,61 @@ func formatSelectExprs(b *strings.Builder, exprs *sqlparser.SelectExprs, pi stri
 	}
 }
 
-func formatSelectExpr(expr sqlparser.SelectExpr, indent, depth int) string {
+func formatSelectExpr(expr sqlast.SelectExpr, indent, depth int) string {
 	switch e := expr.(type) {
-	case *sqlparser.AliasedExpr:
+	case *sqlast.AliasedExpr:
 		s := formatExpr(e.Expr, indent, depth+1)
 		if !e.As.IsEmpty() {
 			s += " AS " + e.As.String()
 		}
 
 		return s
-	case *sqlparser.StarExpr:
-		if e.TableName.Name.IsEmpty() {
-			return "*"
+	case *sqlast.StarExpr:
+		return e.String()
+	default:
+		panic(fmt.Sprintf("sqlfmt: unhandled select expr type %T", expr))
+	}
+}
+
+// formatTableExprs renders a comma-separated table reference list (a FROM
+// clause, an UPDATE/DELETE target list, or a parenthesized table list). Each
+// element is rendered into its own builder first so a trailing comma can be
+// spliced in before the element's final newline, without threading "is this
+// the last element" through formatTableExpr's JOIN/paren recursion.
+func formatTableExprs(b *strings.Builder, exprs []sqlast.TableExpr, pi string, indent, depth int) {
+	for i, expr := range exprs {
+		var elem strings.Builder
+
+		formatTableExpr(&elem, expr, pi, indent, depth)
+
+		s := elem.String()
+		if i < len(exprs)-1 {
+			s = strings.TrimSuffix(s, "\n") + ",\n"
 		}
 
-		return e.TableName.Name.String() + ".*"
-	default:
-		return sqlparser.String(expr)
+		b.WriteString(s)
 	}
 }
 
-func formatTableExprs(b *strings.Builder, exprs []sqlparser.TableExpr, pi string, indent, depth int) {
-	for i, expr := range exprs {
-		formatTableExpr(b, expr, pi, indent, depth, i > 0)
-	}
-}
-
-func formatTableExpr(b *strings.Builder, expr sqlparser.TableExpr, pi string, indent, depth int, _ bool) {
+func formatTableExpr(b *strings.Builder, expr sqlast.TableExpr, pi string, indent, depth int) {
 	switch e := expr.(type) {
-	case *sqlparser.AliasedTableExpr:
+	case *sqlast.AliasedTableExpr:
 		formatAliasedTableExpr(b, e, pi, indent, depth)
-	case *sqlparser.JoinTableExpr:
+	case *sqlast.JoinTableExpr:
 		formatJoinTableExpr(b, e, pi, indent, depth)
-	case *sqlparser.ParenTableExpr:
+	case *sqlast.ParenTableExpr:
 		b.WriteString(pi)
 		b.WriteString("(\n")
 		formatTableExprs(b, e.Exprs, pad(depth+2, indent), indent, depth+1)
 		b.WriteString(pi)
 		b.WriteString(")\n")
 	default:
-		b.WriteString(pi)
-		b.WriteString(sqlparser.String(expr))
-		b.WriteString("\n")
+		panic(fmt.Sprintf("sqlfmt: unhandled table expr type %T", expr))
 	}
 }
 
-func formatAliasedTableExpr(b *strings.Builder, e *sqlparser.AliasedTableExpr, pi string, indent, depth int) {
-	if sub, ok := e.Expr.(*sqlparser.DerivedTable); ok {
+func formatAliasedTableExpr(b *strings.Builder, e *sqlast.AliasedTableExpr, pi string, indent, depth int) {
+	if sub, ok := e.Expr.(*sqlast.DerivedTable); ok {
 		b.WriteString(pi)
 		b.WriteString("(\n")
 		formatStatement(b, sub.Select, depth+1, indent)
@@ -234,7 +228,7 @@ func formatAliasedTableExpr(b *strings.Builder, e *sqlparser.AliasedTableExpr, p
 		b.WriteString(")")
 	} else {
 		b.WriteString(pi)
-		b.WriteString(sqlparser.String(e.Expr))
+		b.WriteString(e.Expr.String())
 	}
 
 	if !e.As.IsEmpty() {
@@ -246,42 +240,27 @@ func formatAliasedTableExpr(b *strings.Builder, e *sqlparser.AliasedTableExpr, p
 	b.WriteString("\n")
 }
 
-func formatIndexHints(hints sqlparser.IndexHints) string {
+func formatIndexHints(hints sqlast.IndexHints) string {
 	if len(hints) == 0 {
 		return ""
 	}
 
 	parts := make([]string, len(hints))
-
 	for i, hint := range hints {
-		hintType := strings.ToUpper(hint.Type.ToString())
-
-		indexes := make([]string, len(hint.Indexes))
-		for j, idx := range hint.Indexes {
-			indexes[j] = idx.String()
-		}
-
-		s := hintType + " (" + strings.Join(indexes, ", ") + ")"
-
-		forStr := hint.ForType.ToString()
-		if forStr != "" {
-			s = hintType + " FOR " + strings.ToUpper(forStr) + " (" + strings.Join(indexes, ", ") + ")"
-		}
-
-		parts[i] = s
+		parts[i] = hint.String()
 	}
 
 	return " " + strings.Join(parts, " ")
 }
 
-func formatJoinTableExpr(b *strings.Builder, e *sqlparser.JoinTableExpr, pi string, indent, depth int) {
-	formatTableExpr(b, e.LeftExpr, pi, indent, depth, false)
+func formatJoinTableExpr(b *strings.Builder, e *sqlast.JoinTableExpr, pi string, indent, depth int) {
+	formatTableExpr(b, e.LeftExpr, pi, indent, depth)
 	joinStr := strings.ToUpper(e.Join.ToString())
 
 	b.WriteString(pi)
 	b.WriteString(joinStr)
 	b.WriteString("\n")
-	formatTableExpr(b, e.RightExpr, pi, indent, depth, false)
+	formatTableExpr(b, e.RightExpr, pi, indent, depth)
 
 	if e.Condition != nil && e.Condition.On != nil {
 		b.WriteString(pad(depth+2, indent))
@@ -291,18 +270,18 @@ func formatJoinTableExpr(b *strings.Builder, e *sqlparser.JoinTableExpr, pi stri
 	}
 }
 
-func formatWhere(b *strings.Builder, expr sqlparser.Expr, pi string, indent, depth int) {
+func formatWhere(b *strings.Builder, expr sqlast.Expr, pi string, indent, depth int) {
 	formatWhereExpr(b, expr, pi, indent, depth, true)
 }
 
-func formatWhereExpr(b *strings.Builder, expr sqlparser.Expr, pi string, indent, depth int, first bool) {
+func formatWhereExpr(b *strings.Builder, expr sqlast.Expr, pi string, indent, depth int, first bool) {
 	exprDepth := depth + 1
 
 	switch e := expr.(type) {
-	case *sqlparser.AndExpr:
+	case *sqlast.AndExpr:
 		formatWhereExpr(b, e.Left, pi, indent, depth, first)
 		formatWhereExpr(b, e.Right, pi, indent, depth, false)
-	case *sqlparser.OrExpr:
+	case *sqlast.OrExpr:
 		formatWhereExpr(b, e.Left, pi, indent, depth, first)
 		b.WriteString(pi)
 		b.WriteString("OR ")
@@ -322,9 +301,9 @@ func formatWhereExpr(b *strings.Builder, expr sqlparser.Expr, pi string, indent,
 	}
 }
 
-func formatExpr(expr sqlparser.Expr, indent, depth int) string {
+func formatExpr(expr sqlast.Expr, indent, depth int) string {
 	switch e := expr.(type) {
-	case *sqlparser.ExistsExpr:
+	case *sqlast.ExistsExpr:
 		var b strings.Builder
 
 		b.WriteString("EXISTS (\n")
@@ -333,7 +312,7 @@ func formatExpr(expr sqlparser.Expr, indent, depth int) string {
 		b.WriteString(")")
 
 		return b.String()
-	case *sqlparser.Subquery:
+	case *sqlast.Subquery:
 		var b strings.Builder
 
 		b.WriteString("(\n")
@@ -342,13 +321,13 @@ func formatExpr(expr sqlparser.Expr, indent, depth int) string {
 		b.WriteString(")")
 
 		return b.String()
-	case *sqlparser.ComparisonExpr:
+	case *sqlast.ComparisonExpr:
 		right := formatExpr(e.Right, indent, depth)
 
 		return formatExpr(e.Left, indent, depth) + " " + e.Operator.ToString() + " " + right
-	case *sqlparser.NotExpr:
+	case *sqlast.NotExpr:
 		return "NOT " + formatExpr(e.Expr, indent, depth)
-	case *sqlparser.CaseExpr:
+	case *sqlast.CaseExpr:
 		return formatCaseExpr(e, indent, depth)
 	default:
 		if accessor := getOverAccessor(expr); accessor != nil {
@@ -357,11 +336,11 @@ func formatExpr(expr sqlparser.Expr, indent, depth int) string {
 			}
 		}
 
-		return upperKeywords(sqlparser.String(expr))
+		return expr.String()
 	}
 }
 
-func formatCaseExpr(e *sqlparser.CaseExpr, indent, depth int) string {
+func formatCaseExpr(e *sqlast.CaseExpr, indent, depth int) string {
 	var b strings.Builder
 
 	pi := pad(depth+1, indent)
@@ -402,91 +381,87 @@ func formatCaseExpr(e *sqlparser.CaseExpr, indent, depth int) string {
 }
 
 type overClauseAccessor interface {
-	getOverClause() *sqlparser.OverClause
-	setOverClause(oc *sqlparser.OverClause)
+	getOverClause() *sqlast.OverClause
+	setOverClause(oc *sqlast.OverClause)
 }
 
 type overClauseField struct {
-	field **sqlparser.OverClause
+	field **sqlast.OverClause
 }
 
-func (o overClauseField) getOverClause() *sqlparser.OverClause   { return *o.field }
-func (o overClauseField) setOverClause(oc *sqlparser.OverClause) { *o.field = oc }
+func (o overClauseField) getOverClause() *sqlast.OverClause   { return *o.field }
+func (o overClauseField) setOverClause(oc *sqlast.OverClause) { *o.field = oc }
 
 // Each case is trivially the same — complexity comes from the number of AST types, not logic.
-func getOverAccessor(expr sqlparser.Expr) overClauseAccessor { //nolint:cyclop,funlen,ireturn
+func getOverAccessor(expr sqlast.Expr) overClauseAccessor { //nolint:cyclop,funlen,ireturn
 	switch e := expr.(type) {
-	case *sqlparser.Count:
+	case *sqlast.Count:
 		return overClauseField{&e.OverClause}
-	case *sqlparser.CountStar:
+	case *sqlast.CountStar:
 		return overClauseField{&e.OverClause}
-	case *sqlparser.Sum:
+	case *sqlast.Sum:
 		return overClauseField{&e.OverClause}
-	case *sqlparser.Avg:
+	case *sqlast.Avg:
 		return overClauseField{&e.OverClause}
-	case *sqlparser.Min:
+	case *sqlast.Min:
 		return overClauseField{&e.OverClause}
-	case *sqlparser.Max:
+	case *sqlast.Max:
 		return overClauseField{&e.OverClause}
-	case *sqlparser.BitAnd:
+	case *sqlast.BitAnd:
 		return overClauseField{&e.OverClause}
-	case *sqlparser.BitOr:
+	case *sqlast.BitOr:
 		return overClauseField{&e.OverClause}
-	case *sqlparser.BitXor:
+	case *sqlast.BitXor:
 		return overClauseField{&e.OverClause}
-	case *sqlparser.Std:
+	case *sqlast.Std:
 		return overClauseField{&e.OverClause}
-	case *sqlparser.StdDev:
+	case *sqlast.StdDev:
 		return overClauseField{&e.OverClause}
-	case *sqlparser.StdPop:
+	case *sqlast.StdPop:
 		return overClauseField{&e.OverClause}
-	case *sqlparser.StdSamp:
+	case *sqlast.StdSamp:
 		return overClauseField{&e.OverClause}
-	case *sqlparser.VarPop:
+	case *sqlast.VarPop:
 		return overClauseField{&e.OverClause}
-	case *sqlparser.VarSamp:
+	case *sqlast.VarSamp:
 		return overClauseField{&e.OverClause}
-	case *sqlparser.Variance:
+	case *sqlast.Variance:
 		return overClauseField{&e.OverClause}
-	case *sqlparser.ArgumentLessWindowExpr:
+	case *sqlast.ArgumentLessWindowExpr:
 		return overClauseField{&e.OverClause}
-	case *sqlparser.FirstOrLastValueExpr:
+	case *sqlast.FirstOrLastValueExpr:
 		return overClauseField{&e.OverClause}
-	case *sqlparser.NtileExpr:
+	case *sqlast.NtileExpr:
 		return overClauseField{&e.OverClause}
-	case *sqlparser.NTHValueExpr:
+	case *sqlast.NTHValueExpr:
 		return overClauseField{&e.OverClause}
-	case *sqlparser.LagLeadExpr:
+	case *sqlast.LagLeadExpr:
 		return overClauseField{&e.OverClause}
-	case *sqlparser.JSONArrayAgg:
+	case *sqlast.JSONArrayAgg:
 		return overClauseField{&e.OverClause}
-	case *sqlparser.JSONObjectAgg:
+	case *sqlast.JSONObjectAgg:
 		return overClauseField{&e.OverClause}
 	default:
 		return nil
 	}
 }
 
-func formatExprWithOver(expr sqlparser.Expr, accessor overClauseAccessor, indent, depth int) string {
+func formatExprWithOver(expr sqlast.Expr, accessor overClauseAccessor, indent, depth int) string {
 	oc := accessor.getOverClause()
 
 	// Temporarily remove the OverClause to get the base function string
 	accessor.setOverClause(nil)
 
-	base := upperKeywords(sqlparser.String(expr))
+	base := expr.String()
 
 	accessor.setOverClause(oc)
 
 	return base + " " + formatOverClause(oc, indent, depth)
 }
 
-func formatOverClause(oc *sqlparser.OverClause, indent, depth int) string {
-	if !oc.WindowName.IsEmpty() && oc.WindowSpec == nil {
+func formatOverClause(oc *sqlast.OverClause, indent, depth int) string {
+	if !oc.WindowName.IsEmpty() {
 		return "OVER " + oc.WindowName.String()
-	}
-
-	if oc.WindowSpec == nil {
-		return "OVER ()"
 	}
 
 	parts := formatWindowSpecParts(oc.WindowSpec)
@@ -513,50 +488,35 @@ func formatOverClause(oc *sqlparser.OverClause, indent, depth int) string {
 	return b.String()
 }
 
-func formatWindowSpecParts(spec *sqlparser.WindowSpecification) []string {
+func formatWindowSpecParts(spec *sqlast.WindowSpecification) []string {
 	var parts []string
 
 	if len(spec.PartitionClause) > 0 {
 		exprs := make([]string, len(spec.PartitionClause))
 		for i, e := range spec.PartitionClause {
-			exprs[i] = upperKeywords(sqlparser.String(e))
+			exprs[i] = e.String()
 		}
 
 		parts = append(parts, "PARTITION BY "+strings.Join(exprs, ", "))
 	}
 
 	if len(spec.OrderClause) > 0 {
-		parts = append(parts, "ORDER BY "+formatOrderExprs(spec.OrderClause))
+		parts = append(parts, spec.OrderClause.String())
 	}
 
 	if spec.FrameClause != nil {
-		parts = append(parts, strings.ToUpper(strings.TrimSpace(sqlparser.String(spec.FrameClause))))
+		parts = append(parts, spec.FrameClause.String())
 	}
 
 	return parts
 }
 
-func formatOrderExprs(orders sqlparser.OrderBy) string {
-	strs := make([]string, len(orders))
-
-	for i, o := range orders {
-		dir := ""
-		if o.Direction == sqlparser.DescOrder {
-			dir = descDir
-		}
-
-		strs[i] = upperKeywords(sqlparser.String(o.Expr)) + dir
-	}
-
-	return strings.Join(strs, ", ")
-}
-
-func formatInsert(b *strings.Builder, s *sqlparser.Insert, depth, indent int) {
+func formatInsert(b *strings.Builder, s *sqlast.Insert, depth, indent int) {
 	p := pad(depth, indent)
 	pi := pad(depth+1, indent)
 
 	action := "INSERT"
-	if s.Action == sqlparser.ReplaceAct {
+	if s.Action == sqlast.ReplaceAct {
 		action = "REPLACE"
 	}
 
@@ -568,7 +528,7 @@ func formatInsert(b *strings.Builder, s *sqlparser.Insert, depth, indent int) {
 	b.WriteString(action)
 	b.WriteString(" INTO\n")
 	b.WriteString(pi)
-	b.WriteString(sqlparser.String(s.Table))
+	b.WriteString(s.Table.String())
 	b.WriteString("\n")
 
 	formatInsertColumns(b, s.Columns, p, pi)
@@ -576,7 +536,7 @@ func formatInsert(b *strings.Builder, s *sqlparser.Insert, depth, indent int) {
 	formatOnDupUpdate(b, s.OnDup, p, pi)
 }
 
-func formatInsertColumns(b *strings.Builder, cols sqlparser.Columns, p, pi string) {
+func formatInsertColumns(b *strings.Builder, cols sqlast.Columns, p, pi string) {
 	if len(cols) == 0 {
 		return
 	}
@@ -599,39 +559,61 @@ func formatInsertColumns(b *strings.Builder, cols sqlparser.Columns, p, pi strin
 	b.WriteString(")\n")
 }
 
-func formatInsertRows(b *strings.Builder, rows sqlparser.InsertRows, p, pi string, indent, depth int) {
+func formatInsertRows(b *strings.Builder, rows sqlast.InsertRows, p, pi string, indent, depth int) {
 	switch r := rows.(type) {
-	case sqlparser.Values:
-		b.WriteString(p)
-		b.WriteString("VALUES\n")
-
-		for i, row := range r {
-			vals := make([]string, len(row))
-			for j, v := range row {
-				vals[j] = formatExpr(v, indent, depth)
-			}
-
-			b.WriteString(pi)
-			b.WriteString("(")
-			b.WriteString(strings.Join(vals, ", "))
-			b.WriteString(")")
-
-			if i < len(r)-1 {
-				b.WriteString(",")
-			}
-
-			b.WriteString("\n")
-		}
-	case *sqlparser.Select:
+	case sqlast.Values:
+		formatValuesRows(b, r, p, pi, indent, depth)
+	case *sqlast.Select:
 		formatSelect(b, r, depth, indent)
+	case *sqlast.Union:
+		formatUnion(b, r, depth, indent)
+	case sqlast.SetExprs:
+		formatSetExprs(b, r, p, pi)
 	default:
-		b.WriteString(p)
-		b.WriteString(sqlparser.String(rows))
+		panic(fmt.Sprintf("sqlfmt: unhandled insert rows type %T", rows))
+	}
+}
+
+func formatValuesRows(b *strings.Builder, rows sqlast.Values, p, pi string, indent, depth int) {
+	b.WriteString(p)
+	b.WriteString("VALUES\n")
+
+	for i, row := range rows {
+		vals := make([]string, len(row))
+		for j, v := range row {
+			vals[j] = formatExpr(v, indent, depth)
+		}
+
+		b.WriteString(pi)
+		b.WriteString("(")
+		b.WriteString(strings.Join(vals, ", "))
+		b.WriteString(")")
+
+		if i < len(rows)-1 {
+			b.WriteString(",")
+		}
+
 		b.WriteString("\n")
 	}
 }
 
-func formatOnDupUpdate(b *strings.Builder, onDup sqlparser.OnDup, p, pi string) {
+func formatSetExprs(b *strings.Builder, exprs sqlast.SetExprs, p, pi string) {
+	b.WriteString(p)
+	b.WriteString("SET\n")
+
+	for i, expr := range exprs {
+		b.WriteString(pi)
+		b.WriteString(expr.String())
+
+		if i < len(exprs)-1 {
+			b.WriteString(",")
+		}
+
+		b.WriteString("\n")
+	}
+}
+
+func formatOnDupUpdate(b *strings.Builder, onDup sqlast.OnDup, p, pi string) {
 	if len(onDup) == 0 {
 		return
 	}
@@ -641,7 +623,7 @@ func formatOnDupUpdate(b *strings.Builder, onDup sqlparser.OnDup, p, pi string) 
 
 	for i, expr := range onDup {
 		b.WriteString(pi)
-		b.WriteString(sqlparser.String(expr))
+		b.WriteString(expr.String())
 
 		if i < len(onDup)-1 {
 			b.WriteString(",")
@@ -651,7 +633,7 @@ func formatOnDupUpdate(b *strings.Builder, onDup sqlparser.OnDup, p, pi string) 
 	}
 }
 
-func formatUpdate(b *strings.Builder, s *sqlparser.Update, depth, indent int) {
+func formatUpdate(b *strings.Builder, s *sqlast.Update, depth, indent int) {
 	p := pad(depth, indent)
 	pi := pad(depth+1, indent)
 
@@ -672,7 +654,7 @@ func formatUpdate(b *strings.Builder, s *sqlparser.Update, depth, indent int) {
 
 	for i, expr := range s.Exprs {
 		b.WriteString(pi)
-		b.WriteString(upperKeywords(sqlparser.String(expr)))
+		b.WriteString(expr.String())
 
 		if i < len(s.Exprs)-1 {
 			b.WriteString(",")
@@ -694,7 +676,7 @@ func formatUpdate(b *strings.Builder, s *sqlparser.Update, depth, indent int) {
 	}
 }
 
-func formatDelete(b *strings.Builder, s *sqlparser.Delete, depth, indent int) {
+func formatDelete(b *strings.Builder, s *sqlast.Delete, depth, indent int) {
 	p := pad(depth, indent)
 	pi := pad(depth+1, indent)
 
@@ -712,7 +694,7 @@ func formatDelete(b *strings.Builder, s *sqlparser.Delete, depth, indent int) {
 
 		for i, target := range s.Targets {
 			b.WriteString(pi)
-			b.WriteString(sqlparser.String(target))
+			b.WriteString(target.String())
 
 			if i < len(s.Targets)-1 {
 				b.WriteString(",")
@@ -744,7 +726,7 @@ func formatDelete(b *strings.Builder, s *sqlparser.Delete, depth, indent int) {
 	}
 }
 
-func formatUnion(b *strings.Builder, s *sqlparser.Union, depth, indent int) {
+func formatUnion(b *strings.Builder, s *sqlast.Union, depth, indent int) {
 	p := pad(depth, indent)
 
 	formatWith(b, s.With, depth, indent)
@@ -768,22 +750,25 @@ func formatUnion(b *strings.Builder, s *sqlparser.Union, depth, indent int) {
 		formatLimit(b, s.Limit, p, indent, depth)
 	}
 
-	formatLock(b, s.Lock, p)
+	formatLock(b, s.Lock, s.LockWait, p)
 }
 
-func formatLock(b *strings.Builder, lock sqlparser.Lock, p string) {
-	if lock == sqlparser.NoLock {
+func formatLock(b *strings.Builder, lock sqlast.Lock, wait sqlast.LockWaitType, p string) {
+	if lock == sqlast.NoLock {
 		return
 	}
 
-	lockStr := strings.ToUpper(strings.TrimSpace(lock.ToString()))
+	lockStr := lock.String()
+	if w := wait.String(); w != "" {
+		lockStr += " " + w
+	}
 
 	b.WriteString(p)
 	b.WriteString(lockStr)
 	b.WriteString("\n")
 }
 
-func formatGroupBy(b *strings.Builder, groupBy *sqlparser.GroupBy, p, pi string, indent, depth int) {
+func formatGroupBy(b *strings.Builder, groupBy *sqlast.GroupBy, p, pi string, indent, depth int) {
 	if groupBy == nil || len(groupBy.Exprs) == 0 {
 		return
 	}
@@ -801,9 +786,14 @@ func formatGroupBy(b *strings.Builder, groupBy *sqlparser.GroupBy, p, pi string,
 
 		b.WriteString("\n")
 	}
+
+	if groupBy.WithRollup {
+		b.WriteString(p)
+		b.WriteString("WITH ROLLUP\n")
+	}
 }
 
-func formatOrderBy(b *strings.Builder, orders sqlparser.OrderBy, p, pi string, indent, depth int) {
+func formatOrderBy(b *strings.Builder, orders sqlast.OrderBy, p, pi string, indent, depth int) {
 	if len(orders) == 0 {
 		return
 	}
@@ -813,7 +803,7 @@ func formatOrderBy(b *strings.Builder, orders sqlparser.OrderBy, p, pi string, i
 
 	for i, order := range orders {
 		dir := ""
-		if order.Direction == sqlparser.DescOrder {
+		if order.Direction == sqlast.DescOrder {
 			dir = descDir
 		}
 
@@ -829,7 +819,7 @@ func formatOrderBy(b *strings.Builder, orders sqlparser.OrderBy, p, pi string, i
 	}
 }
 
-func formatLimit(b *strings.Builder, limit *sqlparser.Limit, p string, indent, depth int) {
+func formatLimit(b *strings.Builder, limit *sqlast.Limit, p string, indent, depth int) {
 	pi := pad(depth+1, indent)
 
 	if limit.Offset != nil {
@@ -850,27 +840,4 @@ func formatLimit(b *strings.Builder, limit *sqlparser.Limit, p string, indent, d
 		b.WriteString(formatExpr(limit.Rowcount, indent, depth))
 		b.WriteString("\n")
 	}
-}
-
-var keywordReplacer = strings.NewReplacer(
-	" as ", " AS ",
-	" asc", " ASC",
-	" desc", " DESC",
-	" and ", " AND ",
-	" or ", " OR ",
-	" not ", " NOT ",
-	" in ", " IN ",
-	" is ", " IS ",
-	" like ", " LIKE ",
-	" between ", " BETWEEN ",
-	" exists ", " EXISTS ",
-	" null", " NULL",
-	" true", " TRUE",
-	" false", " FALSE",
-	" on ", " ON ",
-	" using ", " USING ",
-)
-
-func upperKeywords(s string) string {
-	return keywordReplacer.Replace(s)
 }

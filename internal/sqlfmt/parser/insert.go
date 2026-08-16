@@ -66,7 +66,9 @@ func (p *Parser) parseOptionalColumnList() sqlast.Columns {
 }
 
 // parseInsertRows parses the VALUES/SET/SELECT form of an INSERT statement's
-// row source.
+// row source. The SELECT form also accepts a UNION of SELECT branches (with
+// an optional leading WITH clause), since INSERT INTO ... SELECT ... UNION
+// SELECT ... is valid MySQL.
 func (p *Parser) parseInsertRows() sqlast.InsertRows {
 	switch {
 	case p.at(VALUES):
@@ -74,7 +76,10 @@ func (p *Parser) parseInsertRows() sqlast.InsertRows {
 	case p.at(SET):
 		return p.parseSetRows()
 	case p.at(SELECT) || p.at(WITH):
-		return p.parseSelectStatement()
+		with := p.parseOptionalWith()
+		stmt := p.parseSelectOrUnionAfterWith(with)
+
+		return stmt.(sqlast.InsertRows) //nolint:forcetypeassert // *sqlast.Select/*sqlast.Union both implement InsertRows
 	default:
 		return failReturn[sqlast.InsertRows](p, "expected VALUES, SET, or SELECT, got %s", p.tok.Type)
 	}
@@ -119,5 +124,9 @@ func (p *Parser) parseOptionalOnDup() sqlast.OnDup {
 	p.expect(KEY)
 	p.expect(UPDATE)
 
-	return sqlast.OnDup(p.parseSetExprList())
+	p.inOnDupUpdate = true
+	exprs := p.parseSetExprList()
+	p.inOnDupUpdate = false
+
+	return sqlast.OnDup(exprs)
 }

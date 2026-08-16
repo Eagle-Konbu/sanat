@@ -5,16 +5,16 @@ Defines the specification for the custom MySQL lexer/parser being built in
 
 ## Motivation and Status
 
-The formatter currently parses SQL with the [Vitess](https://vitess.io/) SQL
-parser (`vitess.io/vitess/go/vt/sqlparser`), which pulls in 223 transitive
+The formatter used to parse SQL with the [Vitess](https://vitess.io/) SQL
+parser (`vitess.io/vitess/go/vt/sqlparser`), which pulled in 223 transitive
 dependencies for a narrow surface area (parse + ~61 AST node types +
 `String()` fallback). [Issue #20](https://github.com/Eagle-Konbu/sanat/issues/20)
-tracks replacing it with a lexer/parser scoped to the MySQL features the
+tracked replacing it with a lexer/parser scoped to the MySQL features the
 formatter actually needs.
 
-**Current status**: the AST types, lexer, and expression/SELECT parser exist
-and are fully tested, but `internal/sqlfmt/formatter.go` and `detect.go` are
-still Vitess-based — this package is not yet wired into the formatter.
+**Current status**: complete. `internal/sqlfmt/formatter.go` now parses and
+formats exclusively through this package, and the Vitess dependency has been
+removed from `go.mod`.
 
 | Stage | Package/File | Issue | Status |
 |-------|-------------|-------|--------|
@@ -22,12 +22,12 @@ still Vitess-based — this package is not yet wired into the formatter.
 | Lexer (tokenizer) | `internal/sqlfmt/parser/lexer.go`, `token.go` | #22 | Done |
 | Expression parser | `internal/sqlfmt/parser/expr.go`, `funcs.go` | #23 | Done |
 | SELECT statement parser | `internal/sqlfmt/parser/select.go` | #24 | Done |
-| INSERT statement parser | — | #25 | Not started |
-| UPDATE statement parser | — | #26 | Not started |
-| DELETE statement parser | — | #27 | Not started |
-| UNION statement parser | — | #28 | Not started |
-| Migrate formatter to custom AST | `internal/sqlfmt/formatter.go` | #29 | Not started |
-| Remove Vitess dependency | `go.mod` | #30 | Not started |
+| INSERT statement parser | `internal/sqlfmt/parser/insert.go` | #25 | Done |
+| UPDATE statement parser | `internal/sqlfmt/parser/update.go` | #26 | Done |
+| DELETE statement parser | `internal/sqlfmt/parser/delete.go` | #27 | Done |
+| UNION statement parser | `internal/sqlfmt/parser/union.go` | #28 | Done |
+| Migrate formatter to custom AST | `internal/sqlfmt/formatter.go` | #29 | Done |
+| Remove Vitess dependency | `go.mod` | #30 | Done |
 
 Scope is MySQL DML (SELECT/INSERT/UPDATE/DELETE/UNION) plus the expression
 features above; DDL, transaction, and admin statements are out of scope here
@@ -45,8 +45,11 @@ internal/sqlfmt/
 └── parser/   Lexer + recursive-descent parser producing sqlast nodes
 ```
 
-`sqlast` has no dependency on `parser`, so it can also be produced by the
-formatter migration work in #29 without a parser dependency.
+`sqlast` has no dependency on `parser` — `parser` depends on `sqlast`, not
+the other way around, avoiding an import cycle. `internal/sqlfmt/formatter.go`
+does import `parser` (it calls `parser.ParseStatement` to turn SQL text into
+an AST); it's `sqlast` specifically, not the formatter, that has no parser
+dependency.
 
 ## AST (`sqlast`)
 
@@ -144,11 +147,24 @@ predicate keywords (`AND`, `OR`, `NOT`, `IN`, `BETWEEN`, `LIKE`, `REGEXP`,
 ```go
 func ParseExpr(input string) (sqlast.Expr, error)
 func ParseSelect(input string) (*sqlast.Select, error)
+func ParseInsert(input string) (*sqlast.Insert, error)
+func ParseUpdate(input string) (*sqlast.Update, error)
+func ParseDelete(input string) (*sqlast.Delete, error)
+func ParseUnion(input string) (*sqlast.Union, error)
+func ParseStatement(input string) (sqlast.Statement, error)
 ```
 
-Both fully consume `input`, failing with `*ParseError` if trailing tokens
-remain after the expression/statement (`ParseSelect` also accepts a leading
-`WITH` clause).
+All fully consume `input`, failing with `*ParseError` if trailing tokens
+remain after the expression/statement. `ParseSelect`, `ParseUpdate`, and
+`ParseDelete` each accept an optional leading `WITH` clause; `ParseUnion`
+does too, but fails if the input turns out to be a single `SELECT` with no
+`UNION` (use `ParseSelect` for that case). `ParseStatement` is the
+formatter's entry point: it dispatches on the statement's leading keyword
+(after consuming an optional `WITH`) to whichever of `SELECT`/`INSERT`/
+`REPLACE`/`UPDATE`/`DELETE`/`UNION` parsing applies — `REPLACE` routes
+through the same `parseInsertStatement` as `INSERT` (it becomes an
+`*sqlast.Insert` with `Action: ReplaceAct`), and `WITH` is not accepted
+before `INSERT`/`REPLACE`, matching MySQL.
 
 ### Error Handling Model
 
@@ -189,7 +205,10 @@ Primary expressions: literals (`INT` (also `0x1A`/`0b101`), `FLOAT`,
 `?` placeholders, `:name`/`:1` colon placeholders, parenthesized expressions
 and scalar subqueries `(SELECT ...)`, `CASE` (searched and simple forms),
 `EXISTS (SELECT ...)`, column references (`col`, `table.col`), and function
-calls.
+calls. Every parenthesized subquery position — scalar/`IN` subqueries,
+`EXISTS`, derived tables, and CTE bodies — accepts a `UNION` of `SELECT`
+branches, not just a single `SELECT`, via the shared
+`parseSubqueryStatement` helper.
 
 `[NOT] IN (...)` accepts either a subquery or a value list (`ValTuple`).
 `BETWEEN ... AND ...`, `[NOT] LIKE`, and `[NOT] REGEXP`/`[NOT] RLIKE`
@@ -218,6 +237,11 @@ rather than as a prefix logical NOT.
   `[RESPECT|IGNORE] NULLS` clause (and `NTH_VALUE` an optional
   `FROM FIRST|LAST`).
 - **`JSON_OBJECTAGG`**: `(key, value)` pair.
+- **`VALUES`**: the deprecated `VALUES(col)` form used inside an `INSERT ...
+  ON DUPLICATE KEY UPDATE` clause to reference the value that would have
+  been inserted. `VALUES` is a keyword everywhere else in the grammar
+  (it starts the `INSERT ... VALUES (...)` row list), but is accepted as a
+  function name here and parsed like a generic `FuncExpr`.
 - Anything else falls back to a generic `FuncExpr(name, args...)`.
 
 All aggregate/window forms accept a trailing `OVER (window_spec)` or
@@ -296,10 +320,11 @@ comment at the top of that file).
 
 ## Relationship to the Formatter
 
-`internal/sqlfmt/formatter.go` and `detect.go` do not import `sqlast` or
-`parser` yet — they still parse with Vitess. See
-[formatter-spec.md](formatter-spec.md) for the current (Vitess-based)
-formatting behavior. Migrating the formatter onto this package is tracked
-in [#29](https://github.com/Eagle-Konbu/sanat/issues/29); removing the
-Vitess dependency once migration is complete is tracked in
-[#30](https://github.com/Eagle-Konbu/sanat/issues/30).
+`internal/sqlfmt/formatter.go` parses via `parser.ParseStatement` and walks
+the resulting `sqlast.Statement` directly — there is no intermediate or
+fallback representation, and no Vitess dependency remains in the module.
+`detect.go`'s `MightBeSQL` heuristic is unrelated to this package: it is a
+cheap prefix/keyword check used to decide whether a string is worth handing
+to the parser at all, not a parser itself. See
+[formatter-spec.md](formatter-spec.md) for how the formatter renders each
+AST node.

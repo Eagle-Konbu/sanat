@@ -31,6 +31,11 @@ type Parser struct {
 	tok      Token
 	peekTok  Token
 	peek2Tok Token
+
+	// inOnDupUpdate is true while parsing the assignment list of an ON
+	// DUPLICATE KEY UPDATE clause, the only place MySQL accepts VALUES(col)
+	// as a function call rather than treating VALUES as a keyword.
+	inOnDupUpdate bool
 }
 
 // NewParser creates a Parser over input, priming its three-token lookahead

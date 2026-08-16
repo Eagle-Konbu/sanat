@@ -116,6 +116,16 @@ func TestParseInsert_select(t *testing.T) {
 			"INSERT INTO t (a) WITH c AS (SELECT 1) SELECT * FROM c",
 			"INSERT INTO t (a) WITH c AS (SELECT 1) SELECT * FROM c",
 		},
+		{
+			"union rows",
+			"INSERT INTO t SELECT a FROM x UNION SELECT b FROM y",
+			"INSERT INTO t SELECT a FROM x UNION SELECT b FROM y",
+		},
+		{
+			"union rows with leading with",
+			"INSERT INTO t WITH c AS (SELECT 1) SELECT a FROM c UNION SELECT b FROM y",
+			"INSERT INTO t WITH c AS (SELECT 1) SELECT a FROM c UNION SELECT b FROM y",
+		},
 	}
 
 	for _, tt := range tests {
@@ -143,6 +153,11 @@ func TestParseInsert_onDuplicateKeyUpdate(t *testing.T) {
 			"after select",
 			"INSERT INTO t (a) SELECT x FROM u ON DUPLICATE KEY UPDATE a = 1",
 			"INSERT INTO t (a) SELECT x FROM u ON DUPLICATE KEY UPDATE a = 1",
+		},
+		{
+			"deprecated VALUES() function reference",
+			"INSERT INTO t (a, b) VALUES (1, 2) ON DUPLICATE KEY UPDATE a = VALUES(a), b = VALUES(b)",
+			"INSERT INTO t (a, b) VALUES (1, 2) ON DUPLICATE KEY UPDATE a = VALUES(a), b = VALUES(b)",
 		},
 	}
 

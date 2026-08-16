@@ -60,6 +60,7 @@ func (*Union) iStatement()  {}
 // --- InsertRows ---
 
 func (*Select) iInsertRows()  {}
+func (*Union) iInsertRows()   {}
 func (Values) iInsertRows()   {}
 func (SetExprs) iInsertRows() {}
 
