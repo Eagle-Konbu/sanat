@@ -186,10 +186,8 @@ func TestLexer_PrefixedIntLiterals(t *testing.T) {
 		in   string
 	}{
 		{"hex lowercase x", "0x1a"},
-		{"hex uppercase X", "0X1A"},
 		{"hex mixed digits", "0xDEADbeef"},
 		{"binary lowercase b", "0b101"},
-		{"binary uppercase B", "0B110"},
 	}
 
 	for _, tt := range tests {
@@ -229,6 +227,22 @@ func TestLexer_PrefixedIntLiterals(t *testing.T) {
 			{parser.INT, "0x1a"},
 			{parser.DOT, "."},
 			{parser.IDENT, "col"},
+			{parser.EOF, ""},
+		})
+	})
+
+	t.Run("uppercase 0X prefix is not recognized, unlike lowercase 0x", func(t *testing.T) {
+		assertTokens(t, "0X1A", []wantToken{
+			{parser.INT, "0"},
+			{parser.IDENT, "X1A"},
+			{parser.EOF, ""},
+		})
+	})
+
+	t.Run("uppercase 0B prefix is not recognized, unlike lowercase 0b", func(t *testing.T) {
+		assertTokens(t, "0B110", []wantToken{
+			{parser.INT, "0"},
+			{parser.IDENT, "B110"},
 			{parser.EOF, ""},
 		})
 	})
@@ -337,6 +351,27 @@ func TestLexer_PrefixedStringLiterals(t *testing.T) {
 		l := parser.New("b'101")
 		if _, err := l.Next(); err == nil {
 			t.Fatal("expected error for unterminated bit string literal")
+		}
+	})
+
+	t.Run("hex string with invalid digit", func(t *testing.T) {
+		l := parser.New("x'0G'")
+		if _, err := l.Next(); err == nil {
+			t.Fatal("expected error for non-hex digit in hex string literal")
+		}
+	})
+
+	t.Run("bit string with invalid digit", func(t *testing.T) {
+		l := parser.New("b'102'")
+		if _, err := l.Next(); err == nil {
+			t.Fatal("expected error for non-binary digit in bit string literal")
+		}
+	})
+
+	t.Run("hex string with odd number of digits", func(t *testing.T) {
+		l := parser.New("x'F'")
+		if _, err := l.Next(); err == nil {
+			t.Fatal("expected error for odd number of digits in hex string literal")
 		}
 	})
 }

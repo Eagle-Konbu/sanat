@@ -119,7 +119,10 @@ predicate keywords (`AND`, `OR`, `NOT`, `IN`, `BETWEEN`, `LIKE`, `REGEXP`,
   (`` `users` ``, with doubled-backtick `` `` `` escaping for a literal
   backtick).
 - **Numbers**: integers and floats, including exponents (`1.5e10`), plus
-  MySQL's `0x1A`/`0X1A` hex and `0b101`/`0B101` binary integer forms.
+  MySQL's `0x1A` hex and `0b101` binary integer forms. Per MySQL, the `x`/`b`
+  must be lowercase in this notation — `0X1A`/`0B101` are not recognized as
+  prefixed literals (the leading `0` is lexed as a plain `INT` and the rest
+  as a separate identifier).
 - **Strings**: single-quoted, with backslash escapes (`\n`, `\r`, `\0`,
   `\Z`, `\\`, `\'`) and MySQL's doubled-quote (`''`) escaping. `\%` and
   `\_` are left un-decoded by the lexer (and re-escaped as-is by the
@@ -127,7 +130,10 @@ predicate keywords (`AND`, `OR`, `NOT`, `IN`, `BETWEEN`, `LIKE`, `REGEXP`,
   `LIKE` pattern. `x'1A'`/`X'1A'` (hex) and `b'101'`/`B'101'` (bit) string
   literals are also recognized; the quote must immediately follow the
   `x`/`b` letter with no space, which is how the lexer tells them apart
-  from a plain identifier named `x`/`b`.
+  from a plain identifier named `x`/`b`. Unlike the `0x`/`0b` integer forms,
+  the letter's case doesn't matter here. Hex string content must consist of
+  hex digits with an even number of digits (`x''` is valid); bit string
+  content must consist of only `0`/`1` digits.
 - **Comments**: `--` and `#` line comments and `/* ... */` block comments
   are skipped like whitespace.
 

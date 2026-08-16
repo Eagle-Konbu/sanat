@@ -53,9 +53,7 @@ func TestParseExpr_literals(t *testing.T) {
 
 func TestParseExpr_prefixedLiterals(t *testing.T) {
 	assertExpr(t, "0x1A", num("0x1A"))
-	assertExpr(t, "0X1a", num("0X1a"))
 	assertExpr(t, "0b101", num("0b101"))
-	assertExpr(t, "0B110", num("0B110"))
 	assertExpr(t, "x'1A'", num("x'1A'"))
 	assertExpr(t, "X'1a'", num("X'1a'"))
 	assertExpr(t, "b'101'", num("b'101'"))
@@ -438,6 +436,8 @@ func TestParseExpr_errors(t *testing.T) {
 		"CASE WHEN a THEN 1",
 		"NOT",
 		"1 2",
+		"0X1A",
+		"0B110",
 		":",
 		":+",
 		"COUNT(",
@@ -468,6 +468,9 @@ func TestParseExpr_errors(t *testing.T) {
 		"a <=> 'unterminated",
 		"x'unterminated",
 		"b'unterminated",
+		"x'0G'",
+		"b'102'",
+		"x'F'",
 		"a IN (1, 2, 'unterminated)",
 		"a NOT IN (1, 'unterminated)",
 		"a BETWEEN 1 AND 'unterminated",

@@ -214,23 +214,48 @@ func (l *Lexer) tryReadPrefixedStringLiteral(startPos Position) (Token, bool, er
 
 	prefix := l.ch
 
-	l.readChar() // consume prefix letter
-	l.readChar() // consume opening '
+	l.readChar()
+	l.readChar()
 
+	content, err := l.readPrefixedStringContent(startPos, tt)
+	if err != nil {
+		return Token{}, false, err
+	}
+
+	if tt == HexStr && len(content)%2 != 0 {
+		return Token{}, false, &LexError{Pos: startPos, Msg: "hex literal must have an even number of digits"}
+	}
+
+	l.readChar() // consume closing '
+
+	return Token{Type: tt, Literal: string(prefix) + "'" + content + "'", Pos: startPos}, true, nil
+}
+
+// readPrefixedStringContent reads the digit content of an x'..'/b'..'
+// literal up to (not including) the closing quote, validating that every
+// character is a legal digit for tt: hex digits for HexStr, 0/1 for BitStr.
+// l.ch must be positioned just after the opening quote.
+func (l *Lexer) readPrefixedStringContent(startPos Position, tt TokenType) (string, error) {
 	start := l.pos
+
+	isValidDigit := isHexDigit
+	if tt == BitStr {
+		isValidDigit = isBinDigit
+	}
 
 	for l.ch != '\'' {
 		if l.ch == eof {
-			return Token{}, false, &LexError{Pos: startPos, Msg: unterminatedStringMsg}
+			return "", &LexError{Pos: startPos, Msg: unterminatedStringMsg}
+		}
+
+		if !isValidDigit(l.ch) {
+			return "", &LexError{Pos: startPos, Msg: fmt.Sprintf("invalid digit %q in string literal", l.ch)}
 		}
 
 		l.readChar()
 	}
 
-	content := l.input[start:l.pos]
-	l.readChar() // consume closing '
-
-	return Token{Type: tt, Literal: string(prefix) + "'" + content + "'", Pos: startPos}, true, nil
+	return l.input[start:l.pos], nil
 }
 
 func (l *Lexer) readIdentifier() string {
@@ -365,23 +390,25 @@ func (l *Lexer) readNumber() (TokenType, string) {
 }
 
 // tryReadPrefixedNumber reads a 0x.../0b... hex or binary integer literal.
-// l.ch must be '0'.
+// l.ch must be '0'. Per MySQL, the x/b letter must be lowercase in this
+// notation (0X.../0B... is not a valid integer literal, unlike the X'..'/B'..'
+// string forms, which accept either case).
 func (l *Lexer) tryReadPrefixedNumber() (string, bool) {
 	start := l.pos
 
 	switch {
-	case (l.peek() == 'x' || l.peek() == 'X') && isHexDigit(l.peekAt(2)):
+	case l.peek() == 'x' && isHexDigit(l.peekAt(2)):
 		l.readChar() // consume '0'
-		l.readChar() // consume 'x'/'X'
+		l.readChar() // consume 'x'
 
 		for isHexDigit(l.ch) {
 			l.readChar()
 		}
 
 		return l.input[start:l.pos], true
-	case (l.peek() == 'b' || l.peek() == 'B') && isBinDigit(l.peekAt(2)):
+	case l.peek() == 'b' && isBinDigit(l.peekAt(2)):
 		l.readChar() // consume '0'
-		l.readChar() // consume 'b'/'B'
+		l.readChar() // consume 'b'
 
 		for isBinDigit(l.ch) {
 			l.readChar()
