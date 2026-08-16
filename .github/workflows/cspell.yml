@@ -1,0 +1,27 @@
+name: Spell Check
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  cspell:
+    name: CSpell
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      with:
+        persist-credentials: false
+
+    - name: Run cspell
+      uses: streetsidesoftware/cspell-action@76c6f6d52abd57f4bcab5f3fde1bbd4f19a99eb0 # v7.2.1
+      with:
+        files: "**/*.{go,md,yml,yaml,toml}"
+        check_dot_files: true
