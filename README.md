@@ -84,6 +84,8 @@ cat file.go | sanat > formatted.go
 | `-w, --write` | `false` | Overwrite files in place |
 | `--indent` | `2` | Indent width for SQL formatting |
 | `--newline` | `true` | Add newline after opening backtick |
+| `--keyword-case` | `upper` | Casing for operator/predicate keywords (`upper`, `lower`, `preserve`) |
+| `--comma-style` | `trailing` | Comma placement in lists (`trailing`, `leading`) |
 | `-c, --config` | | Path to config file |
 
 ## Configuration File
@@ -105,18 +107,26 @@ CLI flags take precedence over configuration file values when explicitly specifi
 ### YAML example (`.sanat.yml`)
 
 ```yaml
+version: 1
 write: true
 indent: 4
 newline: false
+keyword_case: upper
+comma_style: trailing
 ```
 
 ### TOML example (`.sanat.toml`)
 
 ```toml
+version = 1
 write = true
 indent = 4
 newline = false
+keyword_case = "upper"
+comma_style = "trailing"
 ```
+
+See [docs/formatter-spec.md](docs/formatter-spec.md#configuration) for the full list of configuration options.
 
 ## Supported SQL
 

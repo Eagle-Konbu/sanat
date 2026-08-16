@@ -17,10 +17,12 @@ import (
 var errPathOutsideWorkDir = errors.New("path is outside working directory")
 
 var (
-	writeFlag   bool
-	indentFlag  int
-	newlineFlag bool
-	configFlag  string
+	writeFlag       bool
+	indentFlag      int
+	newlineFlag     bool
+	keywordCaseFlag string
+	commaStyleFlag  string
+	configFlag      string
 )
 
 var rootCmd = &cobra.Command{
@@ -41,6 +43,10 @@ func init() {
 	rootCmd.Flags().BoolVarP(&writeFlag, "write", "w", false, "overwrite files in place")
 	rootCmd.Flags().IntVar(&indentFlag, "indent", 2, "indent width for SQL formatting")
 	rootCmd.Flags().BoolVar(&newlineFlag, "newline", true, "add newline after opening backtick")
+	rootCmd.Flags().StringVar(&keywordCaseFlag, "keyword-case", config.KeywordCaseUpper,
+		"casing for operator/predicate keywords (upper, lower, preserve)")
+	rootCmd.Flags().StringVar(&commaStyleFlag, "comma-style", config.CommaStyleTrailing,
+		"comma placement in lists (trailing, leading)")
 	rootCmd.Flags().StringVarP(&configFlag, "config", "c", "", "path to config file")
 }
 
@@ -49,39 +55,82 @@ func Execute() error {
 }
 
 func applyConfig(cmd *cobra.Command) error {
-	var (
-		cfg config.Config
-		err error
-	)
-
-	if configFlag != "" {
-		cfg, err = config.LoadFile(configFlag)
-	} else {
-		var dir string
-
-		dir, err = os.Getwd()
-		if err != nil {
-			return err
-		}
-
-		cfg, err = config.Load(dir)
-	}
-
+	cfg, err := loadConfig()
 	if err != nil {
 		return fmt.Errorf("loading config: %w", err)
 	}
 
-	// Config file values apply only when the flag was not explicitly set.
-	if !cmd.Flags().Changed("write") && cfg.Write != nil {
-		writeFlag = *cfg.Write
+	mergeConfig(cmd, cfg)
+
+	return validateFlags()
+}
+
+func loadConfig() (config.Config, error) {
+	if configFlag != "" {
+		return config.LoadFile(configFlag)
 	}
 
-	if !cmd.Flags().Changed("indent") && cfg.Indent != nil {
-		indentFlag = *cfg.Indent
+	dir, err := os.Getwd()
+	if err != nil {
+		return config.Config{}, err
 	}
 
-	if !cmd.Flags().Changed("newline") && cfg.Newline != nil {
-		newlineFlag = *cfg.Newline
+	return config.Load(dir)
+}
+
+// mergeConfig applies config file values to the package-level flag
+// variables, but only for flags the user did not explicitly set on the
+// command line.
+func mergeConfig(cmd *cobra.Command, cfg config.Config) {
+	assignments := []struct {
+		flag  string
+		apply func()
+	}{
+		{"write", func() {
+			if cfg.Write != nil {
+				writeFlag = *cfg.Write
+			}
+		}},
+		{"indent", func() {
+			if cfg.Indent != nil {
+				indentFlag = *cfg.Indent
+			}
+		}},
+		{"newline", func() {
+			if cfg.Newline != nil {
+				newlineFlag = *cfg.Newline
+			}
+		}},
+		{"keyword-case", func() {
+			if cfg.KeywordCase != nil {
+				keywordCaseFlag = *cfg.KeywordCase
+			}
+		}},
+		{"comma-style", func() {
+			if cfg.CommaStyle != nil {
+				commaStyleFlag = *cfg.CommaStyle
+			}
+		}},
+	}
+
+	for _, a := range assignments {
+		if !cmd.Flags().Changed(a.flag) {
+			a.apply()
+		}
+	}
+}
+
+func validateFlags() error {
+	switch keywordCaseFlag {
+	case config.KeywordCaseUpper, config.KeywordCaseLower, config.KeywordCasePreserve:
+	default:
+		return fmt.Errorf("%w: %q", config.ErrInvalidKeywordCase, keywordCaseFlag)
+	}
+
+	switch commaStyleFlag {
+	case config.CommaStyleTrailing, config.CommaStyleLeading:
+	default:
+		return fmt.Errorf("%w: %q", config.ErrInvalidCommaStyle, commaStyleFlag)
 	}
 
 	return nil
@@ -89,8 +138,10 @@ func applyConfig(cmd *cobra.Command) error {
 
 func opts() gofile.Options {
 	return gofile.Options{
-		Indent:  indentFlag,
-		Newline: newlineFlag,
+		Indent:      indentFlag,
+		Newline:     newlineFlag,
+		KeywordCase: keywordCaseFlag,
+		CommaStyle:  commaStyleFlag,
 	}
 }
 

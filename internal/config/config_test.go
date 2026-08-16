@@ -1,8 +1,11 @@
 package config_test
 
 import (
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/Eagle-Konbu/sanat/internal/config"
@@ -185,4 +188,204 @@ func TestLoad_InvalidTOML(t *testing.T) {
 	if err == nil {
 		t.Error("expected error for invalid TOML")
 	}
+}
+
+func TestLoad_Version_Supported(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, ".sanat.yml"), []byte("version: 1\nindent: 4\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := config.Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if cfg.Version == nil || *cfg.Version != 1 {
+		t.Errorf("version: got %v, want 1", cfg.Version)
+	}
+}
+
+func TestLoad_Version_Unsupported(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, ".sanat.yml"), []byte("version: 99\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := config.Load(dir)
+	if !errors.Is(err, config.ErrUnsupportedVersion) {
+		t.Errorf("got %v, want ErrUnsupportedVersion", err)
+	}
+}
+
+func TestLoad_Indent_Invalid(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+	}{
+		{"zero", "indent: 0\n"},
+		{"negative", "indent: -1\n"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, ".sanat.yml"), []byte(tt.content), 0644); err != nil {
+				t.Fatal(err)
+			}
+
+			_, err := config.Load(dir)
+			if !errors.Is(err, config.ErrInvalidIndent) {
+				t.Errorf("got %v, want ErrInvalidIndent", err)
+			}
+		})
+	}
+}
+
+func TestLoad_KeywordCase(t *testing.T) {
+	valid := []string{config.KeywordCaseUpper, config.KeywordCaseLower, config.KeywordCasePreserve}
+
+	for _, v := range valid {
+		t.Run(v, func(t *testing.T) {
+			dir := t.TempDir()
+			content := "keyword_case: " + v + "\n"
+
+			if err := os.WriteFile(filepath.Join(dir, ".sanat.yml"), []byte(content), 0644); err != nil {
+				t.Fatal(err)
+			}
+
+			cfg, err := config.Load(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if cfg.KeywordCase == nil || *cfg.KeywordCase != v {
+				t.Errorf("keyword_case: got %v, want %q", cfg.KeywordCase, v)
+			}
+		})
+	}
+
+	t.Run("invalid", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, ".sanat.yml"), []byte("keyword_case: sideways\n"), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		_, err := config.Load(dir)
+		if !errors.Is(err, config.ErrInvalidKeywordCase) {
+			t.Errorf("got %v, want ErrInvalidKeywordCase", err)
+		}
+	})
+}
+
+func TestLoad_CommaStyle(t *testing.T) {
+	valid := []string{config.CommaStyleTrailing, config.CommaStyleLeading}
+
+	for _, v := range valid {
+		t.Run(v, func(t *testing.T) {
+			dir := t.TempDir()
+			content := "comma_style: " + v + "\n"
+
+			if err := os.WriteFile(filepath.Join(dir, ".sanat.yml"), []byte(content), 0644); err != nil {
+				t.Fatal(err)
+			}
+
+			cfg, err := config.Load(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if cfg.CommaStyle == nil || *cfg.CommaStyle != v {
+				t.Errorf("comma_style: got %v, want %q", cfg.CommaStyle, v)
+			}
+		})
+	}
+
+	t.Run("invalid", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, ".sanat.yml"), []byte("comma_style: sideways\n"), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		_, err := config.Load(dir)
+		if !errors.Is(err, config.ErrInvalidCommaStyle) {
+			t.Errorf("got %v, want ErrInvalidCommaStyle", err)
+		}
+	})
+}
+
+func TestLoad_UnknownField_WarnsButSucceeds(t *testing.T) {
+	dir := t.TempDir()
+	content := "version: 1\nindent: 4\nnot_a_real_field: true\n"
+
+	if err := os.WriteFile(filepath.Join(dir, ".sanat.yml"), []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	stderr := captureStderr(t, func() {
+		cfg, err := config.Load(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if cfg.Indent == nil || *cfg.Indent != 4 {
+			t.Errorf("indent: got %v, want 4", cfg.Indent)
+		}
+	})
+
+	if !strings.Contains(stderr, "not_a_real_field") {
+		t.Errorf("expected warning about unknown field in stderr, got %q", stderr)
+	}
+}
+
+func TestLoad_MissingVersion_Warns(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, ".sanat.yml"), []byte("indent: 4\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	stderr := captureStderr(t, func() {
+		if _, err := config.Load(dir); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	if !strings.Contains(stderr, "version") {
+		t.Errorf("expected deprecation warning about missing version in stderr, got %q", stderr)
+	}
+}
+
+func captureStderr(t *testing.T, fn func()) string {
+	t.Helper()
+
+	orig := os.Stderr
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	os.Stderr = w
+
+	t.Cleanup(func() {
+		os.Stderr = orig
+
+		w.Close()
+		r.Close()
+	})
+
+	fn()
+
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	os.Stderr = orig
+
+	out, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return string(out)
 }

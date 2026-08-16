@@ -18,6 +18,10 @@ linters:
     - exhaustruct
 
   settings:
+    tagliatelle:
+      case:
+        rules:
+          yaml: snake
     exhaustive:
       default-signifies-exhaustive: true
     gocritic:

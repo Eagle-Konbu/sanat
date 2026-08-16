@@ -922,7 +922,7 @@ func TestFormatSQL_WithCTE_Update(t *testing.T) {
 		"SET",
 		"  status = 0",
 		"WHERE",
-		"  id in (",
+		"  id IN (",
 		"    SELECT",
 		"      id",
 		"    FROM",
@@ -952,7 +952,7 @@ func TestFormatSQL_WithCTE_Delete(t *testing.T) {
 		"DELETE FROM",
 		"  users",
 		"WHERE",
-		"  id in (",
+		"  id IN (",
 		"    SELECT",
 		"      id",
 		"    FROM",
@@ -1363,6 +1363,202 @@ func TestFormatSQL_JSONTableExpr(t *testing.T) {
 	if got != query {
 		t.Errorf("got:\n%s\n\nwant original input unchanged:\n%s", got, query)
 	}
+}
+
+func TestFormatSQLWithOptions_KeywordCase(t *testing.T) {
+	tests := []struct {
+		name        string
+		keywordCase string
+		want        string
+	}{
+		{
+			name:        "upper (default)",
+			keywordCase: "",
+			want: join(
+				"SELECT",
+				"  id",
+				"FROM",
+				"  users",
+				"WHERE",
+				"  status = 1",
+				"  AND active = TRUE",
+				"ORDER BY",
+				"  id DESC",
+			),
+		},
+		{
+			name:        "upper",
+			keywordCase: sqlfmt.KeywordCaseUpper,
+			want: join(
+				"SELECT",
+				"  id",
+				"FROM",
+				"  users",
+				"WHERE",
+				"  status = 1",
+				"  AND active = TRUE",
+				"ORDER BY",
+				"  id DESC",
+			),
+		},
+		{
+			name:        "lower",
+			keywordCase: sqlfmt.KeywordCaseLower,
+			want: join(
+				"SELECT",
+				"  id",
+				"FROM",
+				"  users",
+				"WHERE",
+				"  status = 1",
+				"  and active = true",
+				"ORDER BY",
+				"  id desc",
+			),
+		},
+		{
+			// The in-house parser, like the Vitess parser before it, doesn't
+			// retain the source's original casing for these tokens — it
+			// canonicalizes them to uppercase while parsing. So "preserve"
+			// falls back to the parser's canonical output, which is upper.
+			name:        "preserve",
+			keywordCase: sqlfmt.KeywordCasePreserve,
+			want: join(
+				"SELECT",
+				"  id",
+				"FROM",
+				"  users",
+				"WHERE",
+				"  status = 1",
+				"  AND active = TRUE",
+				"ORDER BY",
+				"  id DESC",
+			),
+		},
+	}
+
+	in := "select id from users where status = 1 and active = true order by id desc"
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := sqlfmt.FormatSQLWithOptions(in, sqlfmt.Options{Indent: 2, KeywordCase: tt.keywordCase})
+			if !ok {
+				t.Fatal("expected ok")
+			}
+
+			assertSQL(t, got, tt.want)
+		})
+	}
+}
+
+func TestFormatSQLWithOptions_KeywordCase_ASAndON(t *testing.T) {
+	in := "select u.id as uid from users u join orders o on u.id = o.user_id"
+
+	got, ok := sqlfmt.FormatSQLWithOptions(in, sqlfmt.Options{Indent: 2, KeywordCase: sqlfmt.KeywordCaseLower})
+	if !ok {
+		t.Fatal("expected ok")
+	}
+
+	want := join(
+		"SELECT",
+		"  u.id as uid",
+		"FROM",
+		"  users u",
+		"  JOIN",
+		"  orders o",
+		"    on u.id = o.user_id",
+	)
+
+	assertSQL(t, got, want)
+}
+
+func TestFormatSQLWithOptions_CommaStyle(t *testing.T) {
+	tests := []struct {
+		name       string
+		commaStyle string
+		want       string
+	}{
+		{
+			name:       "trailing (default)",
+			commaStyle: "",
+			want: join(
+				"SELECT",
+				"  id,",
+				"  name,",
+				"  email",
+				"FROM",
+				"  users",
+			),
+		},
+		{
+			name:       "trailing",
+			commaStyle: sqlfmt.CommaStyleTrailing,
+			want: join(
+				"SELECT",
+				"  id,",
+				"  name,",
+				"  email",
+				"FROM",
+				"  users",
+			),
+		},
+		{
+			name:       "leading",
+			commaStyle: sqlfmt.CommaStyleLeading,
+			want: join(
+				"SELECT",
+				"  id",
+				", name",
+				", email",
+				"FROM",
+				"  users",
+			),
+		},
+	}
+
+	in := "select id, name, email from users"
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := sqlfmt.FormatSQLWithOptions(in, sqlfmt.Options{Indent: 2, CommaStyle: tt.commaStyle})
+			if !ok {
+				t.Fatal("expected ok")
+			}
+
+			assertSQL(t, got, tt.want)
+		})
+	}
+}
+
+func TestFormatSQLWithOptions_CommaStyle_With(t *testing.T) {
+	in := "with a as (select id from t1), b as (select id from t2) select id from a"
+
+	got, ok := sqlfmt.FormatSQLWithOptions(in, sqlfmt.Options{Indent: 2, CommaStyle: sqlfmt.CommaStyleLeading})
+	if !ok {
+		t.Fatal("expected ok")
+	}
+
+	want := join(
+		"WITH",
+		"  a AS (",
+		"    SELECT",
+		"      id",
+		"    FROM",
+		"      t1",
+		"  )",
+		", b AS (",
+		"    SELECT",
+		"      id",
+		"    FROM",
+		"      t2",
+		"  )",
+		"SELECT",
+		"  id",
+		"FROM",
+		"  a",
+	)
+
+	assertSQL(t, got, want)
 }
 
 func assertSQL(t *testing.T, got, want string) {

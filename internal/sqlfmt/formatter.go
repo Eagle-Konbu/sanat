@@ -9,14 +9,80 @@ import (
 	"github.com/Eagle-Konbu/sanat/internal/sqlfmt/sqlast"
 )
 
-const descDir = " DESC"
+const (
+	KeywordCaseUpper    = "upper"
+	KeywordCaseLower    = "lower"
+	KeywordCasePreserve = "preserve"
+
+	CommaStyleTrailing = "trailing"
+	CommaStyleLeading  = "leading"
+)
 
 var (
 	sentinelRe    = regexp.MustCompile(`:_sqla_ph_(\d+)`)
 	placeholderRe = regexp.MustCompile(`\?`)
+
+	// keywordCaseRe matches whole-word operator/predicate keywords that the
+	// sqlast package always renders uppercase. Word boundaries (rather than a
+	// literal-substring replacer) keep adjacent keywords like "IS NULL" or
+	// "NOT BETWEEN" independently addressable — a substring replacer would
+	// consume the shared space between them and miss the second keyword.
+	keywordCaseRe = regexp.MustCompile(
+		`\b(AS|ASC|DESC|AND|OR|NOT|IN|IS|LIKE|BETWEEN|EXISTS|NULL|TRUE|FALSE|ON|USING)\b`,
+	)
 )
 
+// Options controls how FormatSQLWithOptions renders a SQL statement.
+type Options struct {
+	Indent int
+
+	// KeywordCase controls the casing of operator/predicate keywords
+	// (AS, AND, OR, NOT, IN, IS, LIKE, ...). Defaults to KeywordCaseUpper.
+	//
+	// The in-house parser does not retain the source's original keyword
+	// casing for these tokens either (they're canonicalized to uppercase
+	// while parsing), so KeywordCasePreserve currently behaves the same as
+	// KeywordCaseUpper (the parser's natural output).
+	KeywordCase string
+
+	// CommaStyle controls comma placement in rendered lists (SELECT
+	// columns, INSERT columns/values, SET assignments, ...). Defaults to
+	// CommaStyleTrailing.
+	CommaStyle string
+}
+
+// formatter holds the resolved rendering options for a single FormatSQL call.
+type formatter struct {
+	indent      int
+	keywordCase string
+	commaStyle  string
+}
+
+func newFormatter(opts Options) *formatter {
+	f := &formatter{
+		indent:      opts.Indent,
+		keywordCase: opts.KeywordCase,
+		commaStyle:  opts.CommaStyle,
+	}
+
+	if f.keywordCase == "" {
+		f.keywordCase = KeywordCaseUpper
+	}
+
+	if f.commaStyle == "" {
+		f.commaStyle = CommaStyleTrailing
+	}
+
+	return f
+}
+
+// FormatSQL formats sql with the given indent width, using the default
+// keyword casing and comma style. See FormatSQLWithOptions for full control.
 func FormatSQL(sql string, indent int) (string, bool) {
+	return FormatSQLWithOptions(sql, Options{Indent: indent})
+}
+
+func FormatSQLWithOptions(sql string, opts Options) (string, bool) {
 	replaced, count := replacePlaceholders(sql)
 
 	stmt, err := parser.ParseStatement(replaced)
@@ -24,9 +90,11 @@ func FormatSQL(sql string, indent int) (string, bool) {
 		return sql, false
 	}
 
+	f := newFormatter(opts)
+
 	var b strings.Builder
 
-	formatStatement(&b, stmt, 0, indent)
+	f.formatStatement(&b, stmt, 0)
 	result := restorePlaceholders(b.String(), count)
 
 	return result, true
@@ -48,34 +116,138 @@ func restorePlaceholders(sql string, _ int) string {
 	return sentinelRe.ReplaceAllString(sql, "?")
 }
 
-func formatStatement(b *strings.Builder, stmt sqlast.Statement, depth, indent int) {
+func (f *formatter) formatStatement(b *strings.Builder, stmt sqlast.Statement, depth int) {
 	switch s := stmt.(type) {
 	case *sqlast.Select:
-		formatSelect(b, s, depth, indent)
+		f.formatSelect(b, s, depth)
 	case *sqlast.Insert:
-		formatInsert(b, s, depth, indent)
+		f.formatInsert(b, s, depth)
 	case *sqlast.Update:
-		formatUpdate(b, s, depth, indent)
+		f.formatUpdate(b, s, depth)
 	case *sqlast.Delete:
-		formatDelete(b, s, depth, indent)
+		f.formatDelete(b, s, depth)
 	case *sqlast.Union:
-		formatUnion(b, s, depth, indent)
+		f.formatUnion(b, s, depth)
 	default:
 		panic(fmt.Sprintf("sqlfmt: unhandled statement type %T", stmt))
 	}
 }
 
-func pad(depth, indent int) string {
-	return strings.Repeat(" ", depth*indent)
+func (f *formatter) pad(depth int) string {
+	return strings.Repeat(" ", depth*f.indent)
 }
 
-func formatWith(b *strings.Builder, with *sqlast.With, depth, indent int) {
+// keyword renders a hardcoded operator/predicate literal (e.g. "AS", "AND")
+// according to the configured keyword case. sqlast always renders these
+// uppercase on its own, so KeywordCaseUpper and KeywordCasePreserve both take
+// the identity branch here; only KeywordCaseLower does any work.
+func (f *formatter) keyword(word string) string {
+	if f.keywordCase == KeywordCaseLower {
+		return strings.ToLower(word)
+	}
+
+	return strings.ToUpper(word)
+}
+
+// applyKeywordCase lowercases operator/predicate keywords embedded in text
+// produced by an sqlast node's String() method (which always renders them
+// uppercase), skipping quoted regions so literal contents are left intact.
+// It is a no-op unless keywordCase is KeywordCaseLower.
+func (f *formatter) applyKeywordCase(s string) string {
+	if f.keywordCase != KeywordCaseLower {
+		return s
+	}
+
+	var b strings.Builder
+
+	b.Grow(len(s))
+
+	segStart := 0
+
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c != '\'' && c != '"' && c != '`' {
+			continue
+		}
+
+		b.WriteString(keywordCaseRe.ReplaceAllStringFunc(s[segStart:i], strings.ToLower))
+
+		end := quotedRegionEnd(s, i, c)
+		b.WriteString(s[i:end])
+		segStart = end
+		i = end - 1
+	}
+
+	b.WriteString(keywordCaseRe.ReplaceAllStringFunc(s[segStart:], strings.ToLower))
+
+	return b.String()
+}
+
+// quotedRegionEnd returns the index just past the closing quote of the
+// quoted region starting at s[start] (a c-quote character), treating
+// backslash as an escape for the following character.
+func quotedRegionEnd(s string, start int, c byte) int {
+	i := start + 1
+
+	for i < len(s) {
+		switch {
+		case s[i] == '\\' && i+1 < len(s):
+			i += 2
+		case s[i] == c:
+			return i + 1
+		default:
+			i++
+		}
+	}
+
+	return i
+}
+
+// itemPrefix returns the indentation/comma prefix to write before item i of
+// an n-item list, per the configured comma style.
+func (f *formatter) itemPrefix(pi string, i int) string {
+	if f.commaStyle == CommaStyleLeading && i > 0 {
+		return leadingCommaPrefix(pi)
+	}
+
+	return pi
+}
+
+// itemSuffix returns the trailing comma (if any) to write after item i of an
+// n-item list, per the configured comma style.
+func (f *formatter) itemSuffix(i, n int) string {
+	if f.commaStyle == CommaStyleLeading {
+		return ""
+	}
+
+	if i < n-1 {
+		return ","
+	}
+
+	return ""
+}
+
+// writeList writes pre-rendered single-line items, applying the configured
+// comma style.
+func (f *formatter) writeList(b *strings.Builder, pi string, lines []string) {
+	for i, line := range lines {
+		b.WriteString(f.itemPrefix(pi, i) + line + f.itemSuffix(i, len(lines)) + "\n")
+	}
+}
+
+func leadingCommaPrefix(pi string) string {
+	n := max(len(pi)-2, 0)
+
+	return strings.Repeat(" ", n) + ", "
+}
+
+func (f *formatter) formatWith(b *strings.Builder, with *sqlast.With, depth int) {
 	if with == nil {
 		return
 	}
 
-	p := pad(depth, indent)
-	pi := pad(depth+1, indent)
+	p := f.pad(depth)
+	pi := f.pad(depth + 1)
 
 	keyword := "WITH"
 	if with.Recursive {
@@ -86,6 +258,8 @@ func formatWith(b *strings.Builder, with *sqlast.With, depth, indent int) {
 	b.WriteString(keyword)
 	b.WriteString("\n")
 
+	n := len(with.CTEs)
+
 	for i, cte := range with.CTEs {
 		name := cte.ID.String()
 
@@ -93,26 +267,24 @@ func formatWith(b *strings.Builder, with *sqlast.With, depth, indent int) {
 			name += " (" + cte.Columns.String() + ")"
 		}
 
-		b.WriteString(pi)
+		b.WriteString(f.itemPrefix(pi, i))
 		b.WriteString(name)
-		b.WriteString(" AS (\n")
-		formatStatement(b, cte.Subquery, depth+2, indent)
+		b.WriteString(" ")
+		b.WriteString(f.keyword("AS"))
+		b.WriteString(" (\n")
+		f.formatStatement(b, cte.Subquery, depth+2)
 		b.WriteString(pi)
 		b.WriteString(")")
-
-		if i < len(with.CTEs)-1 {
-			b.WriteString(",")
-		}
-
+		b.WriteString(f.itemSuffix(i, n))
 		b.WriteString("\n")
 	}
 }
 
-func formatSelect(b *strings.Builder, s *sqlast.Select, depth, indent int) {
-	p := pad(depth, indent)
-	pi := pad(depth+1, indent)
+func (f *formatter) formatSelect(b *strings.Builder, s *sqlast.Select, depth int) {
+	p := f.pad(depth)
+	pi := f.pad(depth + 1)
 
-	formatWith(b, s.With, depth, indent)
+	f.formatWith(b, s.With, depth)
 
 	b.WriteString(p)
 	b.WriteString("SELECT")
@@ -122,56 +294,52 @@ func formatSelect(b *strings.Builder, s *sqlast.Select, depth, indent int) {
 	}
 
 	b.WriteString("\n")
-	formatSelectExprs(b, s.SelectExprs, pi, indent, depth)
+	f.formatSelectExprs(b, s.SelectExprs, pi, depth)
 
 	if len(s.From) > 0 {
 		b.WriteString(p)
 		b.WriteString("FROM\n")
-		formatTableExprs(b, s.From, pi, indent, depth)
+		f.formatTableExprs(b, s.From, pi, depth)
 	}
 
 	if s.Where != nil {
 		b.WriteString(p)
 		b.WriteString("WHERE\n")
-		formatWhere(b, s.Where.Expr, pi, indent, depth)
+		f.formatWhere(b, s.Where.Expr, pi, depth)
 	}
 
-	formatGroupBy(b, s.GroupBy, p, pi, indent, depth)
+	f.formatGroupBy(b, s.GroupBy, p, pi, depth)
 
 	if s.Having != nil {
 		b.WriteString(p)
 		b.WriteString("HAVING\n")
-		formatWhere(b, s.Having.Expr, pi, indent, depth)
+		f.formatWhere(b, s.Having.Expr, pi, depth)
 	}
 
-	formatOrderBy(b, s.OrderBy, p, pi, indent, depth)
+	f.formatOrderBy(b, s.OrderBy, p, pi, depth)
 
 	if s.Limit != nil {
-		formatLimit(b, s.Limit, p, indent, depth)
+		f.formatLimit(b, s.Limit, p, depth)
 	}
 
 	formatLock(b, s.Lock, s.LockWait, p)
 }
 
-func formatSelectExprs(b *strings.Builder, exprs []sqlast.SelectExpr, pi string, indent, depth int) {
+func (f *formatter) formatSelectExprs(b *strings.Builder, exprs []sqlast.SelectExpr, pi string, depth int) {
+	lines := make([]string, len(exprs))
 	for i, expr := range exprs {
-		b.WriteString(pi)
-		b.WriteString(formatSelectExpr(expr, indent, depth))
-
-		if i < len(exprs)-1 {
-			b.WriteString(",")
-		}
-
-		b.WriteString("\n")
+		lines[i] = f.formatSelectExpr(expr, depth)
 	}
+
+	f.writeList(b, pi, lines)
 }
 
-func formatSelectExpr(expr sqlast.SelectExpr, indent, depth int) string {
+func (f *formatter) formatSelectExpr(expr sqlast.SelectExpr, depth int) string {
 	switch e := expr.(type) {
 	case *sqlast.AliasedExpr:
-		s := formatExpr(e.Expr, indent, depth+1)
+		s := f.formatExpr(e.Expr, depth+1)
 		if !e.As.IsEmpty() {
-			s += " AS " + e.As.String()
+			s += " " + f.keyword("AS") + " " + e.As.String()
 		}
 
 		return s
@@ -184,34 +352,38 @@ func formatSelectExpr(expr sqlast.SelectExpr, indent, depth int) string {
 
 // formatTableExprs renders a comma-separated table reference list (a FROM
 // clause, an UPDATE/DELETE target list, or a parenthesized table list). Each
-// element is rendered into its own builder first so a trailing comma can be
-// spliced in before the element's final newline, without threading "is this
-// the last element" through formatTableExpr's JOIN/paren recursion.
-func formatTableExprs(b *strings.Builder, exprs []sqlast.TableExpr, pi string, indent, depth int) {
+// element is rendered into its own builder first so the configured comma
+// style's prefix/suffix can be spliced onto its first/last line, without
+// threading "is this the first/last element" through formatTableExpr's
+// JOIN/paren recursion.
+func (f *formatter) formatTableExprs(b *strings.Builder, exprs []sqlast.TableExpr, pi string, depth int) {
+	n := len(exprs)
+
 	for i, expr := range exprs {
-		var elem strings.Builder
+		var item strings.Builder
 
-		formatTableExpr(&elem, expr, pi, indent, depth)
+		f.formatTableExpr(&item, expr, pi, depth)
 
-		s := elem.String()
-		if i < len(exprs)-1 {
-			s = strings.TrimSuffix(s, "\n") + ",\n"
+		lines := strings.Split(strings.TrimSuffix(item.String(), "\n"), "\n")
+		lines[0] = f.itemPrefix(pi, i) + strings.TrimPrefix(lines[0], pi)
+		lines[len(lines)-1] += f.itemSuffix(i, n)
+
+		for _, line := range lines {
+			b.WriteString(line + "\n")
 		}
-
-		b.WriteString(s)
 	}
 }
 
-func formatTableExpr(b *strings.Builder, expr sqlast.TableExpr, pi string, indent, depth int) {
+func (f *formatter) formatTableExpr(b *strings.Builder, expr sqlast.TableExpr, pi string, depth int) {
 	switch e := expr.(type) {
 	case *sqlast.AliasedTableExpr:
-		formatAliasedTableExpr(b, e, pi, indent, depth)
+		f.formatAliasedTableExpr(b, e, pi, depth)
 	case *sqlast.JoinTableExpr:
-		formatJoinTableExpr(b, e, pi, indent, depth)
+		f.formatJoinTableExpr(b, e, pi, depth)
 	case *sqlast.ParenTableExpr:
 		b.WriteString(pi)
 		b.WriteString("(\n")
-		formatTableExprs(b, e.Exprs, pad(depth+2, indent), indent, depth+1)
+		f.formatTableExprs(b, e.Exprs, f.pad(depth+2), depth+1)
 		b.WriteString(pi)
 		b.WriteString(")\n")
 	default:
@@ -219,11 +391,11 @@ func formatTableExpr(b *strings.Builder, expr sqlast.TableExpr, pi string, inden
 	}
 }
 
-func formatAliasedTableExpr(b *strings.Builder, e *sqlast.AliasedTableExpr, pi string, indent, depth int) {
+func (f *formatter) formatAliasedTableExpr(b *strings.Builder, e *sqlast.AliasedTableExpr, pi string, depth int) {
 	if sub, ok := e.Expr.(*sqlast.DerivedTable); ok {
 		b.WriteString(pi)
 		b.WriteString("(\n")
-		formatStatement(b, sub.Select, depth+1, indent)
+		f.formatStatement(b, sub.Select, depth+1)
 		b.WriteString(pi)
 		b.WriteString(")")
 	} else {
@@ -253,62 +425,66 @@ func formatIndexHints(hints sqlast.IndexHints) string {
 	return " " + strings.Join(parts, " ")
 }
 
-func formatJoinTableExpr(b *strings.Builder, e *sqlast.JoinTableExpr, pi string, indent, depth int) {
-	formatTableExpr(b, e.LeftExpr, pi, indent, depth)
+func (f *formatter) formatJoinTableExpr(b *strings.Builder, e *sqlast.JoinTableExpr, pi string, depth int) {
+	f.formatTableExpr(b, e.LeftExpr, pi, depth)
 	joinStr := strings.ToUpper(e.Join.ToString())
 
 	b.WriteString(pi)
 	b.WriteString(joinStr)
 	b.WriteString("\n")
-	formatTableExpr(b, e.RightExpr, pi, indent, depth)
+	f.formatTableExpr(b, e.RightExpr, pi, depth)
 
 	if e.Condition != nil && e.Condition.On != nil {
-		b.WriteString(pad(depth+2, indent))
-		b.WriteString("ON ")
-		b.WriteString(formatExpr(e.Condition.On, indent, depth))
+		b.WriteString(f.pad(depth + 2))
+		b.WriteString(f.keyword("ON"))
+		b.WriteString(" ")
+		b.WriteString(f.formatExpr(e.Condition.On, depth))
 		b.WriteString("\n")
 	}
 }
 
-func formatWhere(b *strings.Builder, expr sqlast.Expr, pi string, indent, depth int) {
-	formatWhereExpr(b, expr, pi, indent, depth, true)
+func (f *formatter) formatWhere(b *strings.Builder, expr sqlast.Expr, pi string, depth int) {
+	f.formatWhereExpr(b, expr, pi, depth, true)
 }
 
-func formatWhereExpr(b *strings.Builder, expr sqlast.Expr, pi string, indent, depth int, first bool) {
+func (f *formatter) formatWhereExpr(b *strings.Builder, expr sqlast.Expr, pi string, depth int, first bool) {
 	exprDepth := depth + 1
 
 	switch e := expr.(type) {
 	case *sqlast.AndExpr:
-		formatWhereExpr(b, e.Left, pi, indent, depth, first)
-		formatWhereExpr(b, e.Right, pi, indent, depth, false)
+		f.formatWhereExpr(b, e.Left, pi, depth, first)
+		f.formatWhereExpr(b, e.Right, pi, depth, false)
 	case *sqlast.OrExpr:
-		formatWhereExpr(b, e.Left, pi, indent, depth, first)
+		f.formatWhereExpr(b, e.Left, pi, depth, first)
 		b.WriteString(pi)
-		b.WriteString("OR ")
-		b.WriteString(formatExpr(e.Right, indent, exprDepth))
+		b.WriteString(f.keyword("OR"))
+		b.WriteString(" ")
+		b.WriteString(f.formatExpr(e.Right, exprDepth))
 		b.WriteString("\n")
 	default:
 		if first {
 			b.WriteString(pi)
-			b.WriteString(formatExpr(expr, indent, exprDepth))
+			b.WriteString(f.formatExpr(expr, exprDepth))
 			b.WriteString("\n")
 		} else {
 			b.WriteString(pi)
-			b.WriteString("AND ")
-			b.WriteString(formatExpr(expr, indent, exprDepth))
+			b.WriteString(f.keyword("AND"))
+			b.WriteString(" ")
+			b.WriteString(f.formatExpr(expr, exprDepth))
 			b.WriteString("\n")
 		}
 	}
 }
 
-func formatExpr(expr sqlast.Expr, indent, depth int) string {
+func (f *formatter) formatExpr(expr sqlast.Expr, depth int) string {
 	switch e := expr.(type) {
 	case *sqlast.ExistsExpr:
 		var b strings.Builder
 
-		b.WriteString("EXISTS (\n")
-		formatStatement(&b, e.Subquery.Select, depth+1, indent)
-		b.WriteString(pad(depth, indent))
+		b.WriteString(f.keyword("EXISTS"))
+		b.WriteString(" (\n")
+		f.formatStatement(&b, e.Subquery.Select, depth+1)
+		b.WriteString(f.pad(depth))
 		b.WriteString(")")
 
 		return b.String()
@@ -316,48 +492,48 @@ func formatExpr(expr sqlast.Expr, indent, depth int) string {
 		var b strings.Builder
 
 		b.WriteString("(\n")
-		formatStatement(&b, e.Select, depth+1, indent)
-		b.WriteString(pad(depth, indent))
+		f.formatStatement(&b, e.Select, depth+1)
+		b.WriteString(f.pad(depth))
 		b.WriteString(")")
 
 		return b.String()
 	case *sqlast.ComparisonExpr:
-		right := formatExpr(e.Right, indent, depth)
+		right := f.formatExpr(e.Right, depth)
 
-		return formatExpr(e.Left, indent, depth) + " " + e.Operator.ToString() + " " + right
+		return f.formatExpr(e.Left, depth) + " " + f.keyword(e.Operator.ToString()) + " " + right
 	case *sqlast.NotExpr:
-		return "NOT " + formatExpr(e.Expr, indent, depth)
+		return f.keyword("NOT") + " " + f.formatExpr(e.Expr, depth)
 	case *sqlast.CaseExpr:
-		return formatCaseExpr(e, indent, depth)
+		return f.formatCaseExpr(e, depth)
 	default:
 		if accessor := getOverAccessor(expr); accessor != nil {
 			if oc := accessor.getOverClause(); oc != nil {
-				return formatExprWithOver(expr, accessor, indent, depth)
+				return f.formatExprWithOver(expr, accessor, depth)
 			}
 		}
 
-		return expr.String()
+		return f.applyKeywordCase(expr.String())
 	}
 }
 
-func formatCaseExpr(e *sqlast.CaseExpr, indent, depth int) string {
+func (f *formatter) formatCaseExpr(e *sqlast.CaseExpr, depth int) string {
 	var b strings.Builder
 
-	pi := pad(depth+1, indent)
-	p := pad(depth, indent)
+	pi := f.pad(depth + 1)
+	p := f.pad(depth)
 
 	b.WriteString("CASE")
 
 	if e.Expr != nil {
 		b.WriteString(" ")
-		b.WriteString(formatExpr(e.Expr, indent, depth))
+		b.WriteString(f.formatExpr(e.Expr, depth))
 	}
 
 	b.WriteString("\n")
 
 	for _, when := range e.Whens {
-		cond := formatExpr(when.Cond, indent, depth+1)
-		val := formatExpr(when.Val, indent, depth+1)
+		cond := f.formatExpr(when.Cond, depth+1)
+		val := f.formatExpr(when.Val, depth+1)
 
 		b.WriteString(pi)
 		b.WriteString("WHEN ")
@@ -370,7 +546,7 @@ func formatCaseExpr(e *sqlast.CaseExpr, indent, depth int) string {
 	if e.Else != nil {
 		b.WriteString(pi)
 		b.WriteString("ELSE ")
-		b.WriteString(formatExpr(e.Else, indent, depth+1))
+		b.WriteString(f.formatExpr(e.Else, depth+1))
 		b.WriteString("\n")
 	}
 
@@ -446,31 +622,31 @@ func getOverAccessor(expr sqlast.Expr) overClauseAccessor { //nolint:cyclop,funl
 	}
 }
 
-func formatExprWithOver(expr sqlast.Expr, accessor overClauseAccessor, indent, depth int) string {
+func (f *formatter) formatExprWithOver(expr sqlast.Expr, accessor overClauseAccessor, depth int) string {
 	oc := accessor.getOverClause()
 
 	// Temporarily remove the OverClause to get the base function string
 	accessor.setOverClause(nil)
 
-	base := expr.String()
+	base := f.applyKeywordCase(expr.String())
 
 	accessor.setOverClause(oc)
 
-	return base + " " + formatOverClause(oc, indent, depth)
+	return base + " " + f.formatOverClause(oc, depth)
 }
 
-func formatOverClause(oc *sqlast.OverClause, indent, depth int) string {
+func (f *formatter) formatOverClause(oc *sqlast.OverClause, depth int) string {
 	if !oc.WindowName.IsEmpty() {
 		return "OVER " + oc.WindowName.String()
 	}
 
-	parts := formatWindowSpecParts(oc.WindowSpec)
+	parts := f.formatWindowSpecParts(oc.WindowSpec, depth)
 	if len(parts) == 0 {
 		return "OVER ()"
 	}
 
-	pi := pad(depth+1, indent)
-	p := pad(depth, indent)
+	pi := f.pad(depth + 1)
+	p := f.pad(depth)
 
 	var b strings.Builder
 
@@ -488,20 +664,20 @@ func formatOverClause(oc *sqlast.OverClause, indent, depth int) string {
 	return b.String()
 }
 
-func formatWindowSpecParts(spec *sqlast.WindowSpecification) []string {
+func (f *formatter) formatWindowSpecParts(spec *sqlast.WindowSpecification, depth int) []string {
 	var parts []string
 
 	if len(spec.PartitionClause) > 0 {
 		exprs := make([]string, len(spec.PartitionClause))
 		for i, e := range spec.PartitionClause {
-			exprs[i] = e.String()
+			exprs[i] = f.applyKeywordCase(e.String())
 		}
 
 		parts = append(parts, "PARTITION BY "+strings.Join(exprs, ", "))
 	}
 
 	if len(spec.OrderClause) > 0 {
-		parts = append(parts, spec.OrderClause.String())
+		parts = append(parts, "ORDER BY "+f.formatOrderExprs(spec.OrderClause, depth))
 	}
 
 	if spec.FrameClause != nil {
@@ -511,9 +687,31 @@ func formatWindowSpecParts(spec *sqlast.WindowSpecification) []string {
 	return parts
 }
 
-func formatInsert(b *strings.Builder, s *sqlast.Insert, depth, indent int) {
-	p := pad(depth, indent)
-	pi := pad(depth+1, indent)
+// formatOrderExprs renders ORDER BY items as a single comma-joined line, used
+// for a window spec's ORDER BY (unlike the top-level ORDER BY clause, which
+// formatOrderBy renders one item per line via writeList).
+func (f *formatter) formatOrderExprs(orders sqlast.OrderBy, depth int) string {
+	strs := make([]string, len(orders))
+
+	for i, o := range orders {
+		dir := ""
+		if o.Direction == sqlast.DescOrder {
+			dir = f.descSuffix()
+		}
+
+		strs[i] = f.formatExpr(o.Expr, depth) + dir
+	}
+
+	return strings.Join(strs, ", ")
+}
+
+func (f *formatter) descSuffix() string {
+	return " " + f.keyword("DESC")
+}
+
+func (f *formatter) formatInsert(b *strings.Builder, s *sqlast.Insert, depth int) {
+	p := f.pad(depth)
+	pi := f.pad(depth + 1)
 
 	action := "INSERT"
 	if s.Action == sqlast.ReplaceAct {
@@ -531,12 +729,12 @@ func formatInsert(b *strings.Builder, s *sqlast.Insert, depth, indent int) {
 	b.WriteString(s.Table.String())
 	b.WriteString("\n")
 
-	formatInsertColumns(b, s.Columns, p, pi)
-	formatInsertRows(b, s.Rows, p, pi, indent, depth)
-	formatOnDupUpdate(b, s.OnDup, p, pi)
+	f.formatInsertColumns(b, s.Columns, p, pi)
+	f.formatInsertRows(b, s.Rows, p, pi, depth)
+	f.formatOnDupUpdate(b, s.OnDup, p, pi)
 }
 
-func formatInsertColumns(b *strings.Builder, cols sqlast.Columns, p, pi string) {
+func (f *formatter) formatInsertColumns(b *strings.Builder, cols sqlast.Columns, p, pi string) {
 	if len(cols) == 0 {
 		return
 	}
@@ -544,76 +742,63 @@ func formatInsertColumns(b *strings.Builder, cols sqlast.Columns, p, pi string) 
 	b.WriteString(p)
 	b.WriteString("(\n")
 
+	lines := make([]string, len(cols))
 	for i, col := range cols {
-		b.WriteString(pi)
-		b.WriteString(col.String())
-
-		if i < len(cols)-1 {
-			b.WriteString(",")
-		}
-
-		b.WriteString("\n")
+		lines[i] = col.String()
 	}
+
+	f.writeList(b, pi, lines)
 
 	b.WriteString(p)
 	b.WriteString(")\n")
 }
 
-func formatInsertRows(b *strings.Builder, rows sqlast.InsertRows, p, pi string, indent, depth int) {
+func (f *formatter) formatInsertRows(b *strings.Builder, rows sqlast.InsertRows, p, pi string, depth int) {
 	switch r := rows.(type) {
 	case sqlast.Values:
-		formatValuesRows(b, r, p, pi, indent, depth)
+		f.formatValuesRows(b, r, p, pi, depth)
 	case *sqlast.Select:
-		formatSelect(b, r, depth, indent)
+		f.formatSelect(b, r, depth)
 	case *sqlast.Union:
-		formatUnion(b, r, depth, indent)
+		f.formatUnion(b, r, depth)
 	case sqlast.SetExprs:
-		formatSetExprs(b, r, p, pi)
+		f.formatSetExprs(b, r, p, pi)
 	default:
 		panic(fmt.Sprintf("sqlfmt: unhandled insert rows type %T", rows))
 	}
 }
 
-func formatValuesRows(b *strings.Builder, rows sqlast.Values, p, pi string, indent, depth int) {
+func (f *formatter) formatValuesRows(b *strings.Builder, rows sqlast.Values, p, pi string, depth int) {
 	b.WriteString(p)
 	b.WriteString("VALUES\n")
+
+	lines := make([]string, len(rows))
 
 	for i, row := range rows {
 		vals := make([]string, len(row))
 		for j, v := range row {
-			vals[j] = formatExpr(v, indent, depth)
+			vals[j] = f.formatExpr(v, depth)
 		}
 
-		b.WriteString(pi)
-		b.WriteString("(")
-		b.WriteString(strings.Join(vals, ", "))
-		b.WriteString(")")
-
-		if i < len(rows)-1 {
-			b.WriteString(",")
-		}
-
-		b.WriteString("\n")
+		lines[i] = "(" + strings.Join(vals, ", ") + ")"
 	}
+
+	f.writeList(b, pi, lines)
 }
 
-func formatSetExprs(b *strings.Builder, exprs sqlast.SetExprs, p, pi string) {
+func (f *formatter) formatSetExprs(b *strings.Builder, exprs sqlast.SetExprs, p, pi string) {
 	b.WriteString(p)
 	b.WriteString("SET\n")
 
+	lines := make([]string, len(exprs))
 	for i, expr := range exprs {
-		b.WriteString(pi)
-		b.WriteString(expr.String())
-
-		if i < len(exprs)-1 {
-			b.WriteString(",")
-		}
-
-		b.WriteString("\n")
+		lines[i] = f.applyKeywordCase(expr.String())
 	}
+
+	f.writeList(b, pi, lines)
 }
 
-func formatOnDupUpdate(b *strings.Builder, onDup sqlast.OnDup, p, pi string) {
+func (f *formatter) formatOnDupUpdate(b *strings.Builder, onDup sqlast.OnDup, p, pi string) {
 	if len(onDup) == 0 {
 		return
 	}
@@ -621,23 +806,19 @@ func formatOnDupUpdate(b *strings.Builder, onDup sqlast.OnDup, p, pi string) {
 	b.WriteString(p)
 	b.WriteString("ON DUPLICATE KEY UPDATE\n")
 
+	lines := make([]string, len(onDup))
 	for i, expr := range onDup {
-		b.WriteString(pi)
-		b.WriteString(expr.String())
-
-		if i < len(onDup)-1 {
-			b.WriteString(",")
-		}
-
-		b.WriteString("\n")
+		lines[i] = f.applyKeywordCase(expr.String())
 	}
+
+	f.writeList(b, pi, lines)
 }
 
-func formatUpdate(b *strings.Builder, s *sqlast.Update, depth, indent int) {
-	p := pad(depth, indent)
-	pi := pad(depth+1, indent)
+func (f *formatter) formatUpdate(b *strings.Builder, s *sqlast.Update, depth int) {
+	p := f.pad(depth)
+	pi := f.pad(depth + 1)
 
-	formatWith(b, s.With, depth, indent)
+	f.formatWith(b, s.With, depth)
 
 	action := "UPDATE"
 	if s.Ignore {
@@ -647,40 +828,36 @@ func formatUpdate(b *strings.Builder, s *sqlast.Update, depth, indent int) {
 	b.WriteString(p)
 	b.WriteString(action)
 	b.WriteString("\n")
-	formatTableExprs(b, s.TableExprs, pi, indent, depth)
+	f.formatTableExprs(b, s.TableExprs, pi, depth)
 
 	b.WriteString(p)
 	b.WriteString("SET\n")
 
+	lines := make([]string, len(s.Exprs))
 	for i, expr := range s.Exprs {
-		b.WriteString(pi)
-		b.WriteString(expr.String())
-
-		if i < len(s.Exprs)-1 {
-			b.WriteString(",")
-		}
-
-		b.WriteString("\n")
+		lines[i] = f.applyKeywordCase(expr.String())
 	}
+
+	f.writeList(b, pi, lines)
 
 	if s.Where != nil {
 		b.WriteString(p)
 		b.WriteString("WHERE\n")
-		formatWhere(b, s.Where.Expr, pi, indent, depth)
+		f.formatWhere(b, s.Where.Expr, pi, depth)
 	}
 
-	formatOrderBy(b, s.OrderBy, p, pi, indent, depth)
+	f.formatOrderBy(b, s.OrderBy, p, pi, depth)
 
 	if s.Limit != nil {
-		formatLimit(b, s.Limit, p, indent, depth)
+		f.formatLimit(b, s.Limit, p, depth)
 	}
 }
 
-func formatDelete(b *strings.Builder, s *sqlast.Delete, depth, indent int) {
-	p := pad(depth, indent)
-	pi := pad(depth+1, indent)
+func (f *formatter) formatDelete(b *strings.Builder, s *sqlast.Delete, depth int) {
+	p := f.pad(depth)
+	pi := f.pad(depth + 1)
 
-	formatWith(b, s.With, depth, indent)
+	f.formatWith(b, s.With, depth)
 
 	action := "DELETE"
 	if s.Ignore {
@@ -692,16 +869,12 @@ func formatDelete(b *strings.Builder, s *sqlast.Delete, depth, indent int) {
 		b.WriteString(action)
 		b.WriteString("\n")
 
+		lines := make([]string, len(s.Targets))
 		for i, target := range s.Targets {
-			b.WriteString(pi)
-			b.WriteString(target.String())
-
-			if i < len(s.Targets)-1 {
-				b.WriteString(",")
-			}
-
-			b.WriteString("\n")
+			lines[i] = target.String()
 		}
+
+		f.writeList(b, pi, lines)
 
 		b.WriteString(p)
 		b.WriteString("FROM\n")
@@ -711,27 +884,27 @@ func formatDelete(b *strings.Builder, s *sqlast.Delete, depth, indent int) {
 		b.WriteString(" FROM\n")
 	}
 
-	formatTableExprs(b, s.TableExprs, pi, indent, depth)
+	f.formatTableExprs(b, s.TableExprs, pi, depth)
 
 	if s.Where != nil {
 		b.WriteString(p)
 		b.WriteString("WHERE\n")
-		formatWhere(b, s.Where.Expr, pi, indent, depth)
+		f.formatWhere(b, s.Where.Expr, pi, depth)
 	}
 
-	formatOrderBy(b, s.OrderBy, p, pi, indent, depth)
+	f.formatOrderBy(b, s.OrderBy, p, pi, depth)
 
 	if s.Limit != nil {
-		formatLimit(b, s.Limit, p, indent, depth)
+		f.formatLimit(b, s.Limit, p, depth)
 	}
 }
 
-func formatUnion(b *strings.Builder, s *sqlast.Union, depth, indent int) {
-	p := pad(depth, indent)
+func (f *formatter) formatUnion(b *strings.Builder, s *sqlast.Union, depth int) {
+	p := f.pad(depth)
 
-	formatWith(b, s.With, depth, indent)
+	f.formatWith(b, s.With, depth)
 
-	formatStatement(b, s.Left, depth, indent)
+	f.formatStatement(b, s.Left, depth)
 
 	op := "UNION"
 	if !s.Distinct {
@@ -741,13 +914,13 @@ func formatUnion(b *strings.Builder, s *sqlast.Union, depth, indent int) {
 	b.WriteString(p)
 	b.WriteString(op)
 	b.WriteString("\n")
-	formatStatement(b, s.Right, depth, indent)
+	f.formatStatement(b, s.Right, depth)
 
-	pi := pad(depth+1, indent)
-	formatOrderBy(b, s.OrderBy, p, pi, indent, depth)
+	pi := f.pad(depth + 1)
+	f.formatOrderBy(b, s.OrderBy, p, pi, depth)
 
 	if s.Limit != nil {
-		formatLimit(b, s.Limit, p, indent, depth)
+		f.formatLimit(b, s.Limit, p, depth)
 	}
 
 	formatLock(b, s.Lock, s.LockWait, p)
@@ -768,7 +941,7 @@ func formatLock(b *strings.Builder, lock sqlast.Lock, wait sqlast.LockWaitType, 
 	b.WriteString("\n")
 }
 
-func formatGroupBy(b *strings.Builder, groupBy *sqlast.GroupBy, p, pi string, indent, depth int) {
+func (f *formatter) formatGroupBy(b *strings.Builder, groupBy *sqlast.GroupBy, p, pi string, depth int) {
 	if groupBy == nil || len(groupBy.Exprs) == 0 {
 		return
 	}
@@ -776,16 +949,12 @@ func formatGroupBy(b *strings.Builder, groupBy *sqlast.GroupBy, p, pi string, in
 	b.WriteString(p)
 	b.WriteString("GROUP BY\n")
 
+	lines := make([]string, len(groupBy.Exprs))
 	for i, expr := range groupBy.Exprs {
-		b.WriteString(pi)
-		b.WriteString(formatExpr(expr, indent, depth))
-
-		if i < len(groupBy.Exprs)-1 {
-			b.WriteString(",")
-		}
-
-		b.WriteString("\n")
+		lines[i] = f.formatExpr(expr, depth)
 	}
+
+	f.writeList(b, pi, lines)
 
 	if groupBy.WithRollup {
 		b.WriteString(p)
@@ -793,7 +962,7 @@ func formatGroupBy(b *strings.Builder, groupBy *sqlast.GroupBy, p, pi string, in
 	}
 }
 
-func formatOrderBy(b *strings.Builder, orders sqlast.OrderBy, p, pi string, indent, depth int) {
+func (f *formatter) formatOrderBy(b *strings.Builder, orders sqlast.OrderBy, p, pi string, depth int) {
 	if len(orders) == 0 {
 		return
 	}
@@ -801,43 +970,39 @@ func formatOrderBy(b *strings.Builder, orders sqlast.OrderBy, p, pi string, inde
 	b.WriteString(p)
 	b.WriteString("ORDER BY\n")
 
+	lines := make([]string, len(orders))
+
 	for i, order := range orders {
 		dir := ""
 		if order.Direction == sqlast.DescOrder {
-			dir = descDir
+			dir = f.descSuffix()
 		}
 
-		b.WriteString(pi)
-		b.WriteString(formatExpr(order.Expr, indent, depth))
-		b.WriteString(dir)
-
-		if i < len(orders)-1 {
-			b.WriteString(",")
-		}
-
-		b.WriteString("\n")
+		lines[i] = f.formatExpr(order.Expr, depth) + dir
 	}
+
+	f.writeList(b, pi, lines)
 }
 
-func formatLimit(b *strings.Builder, limit *sqlast.Limit, p string, indent, depth int) {
-	pi := pad(depth+1, indent)
+func (f *formatter) formatLimit(b *strings.Builder, limit *sqlast.Limit, p string, depth int) {
+	pi := f.pad(depth + 1)
 
 	if limit.Offset != nil {
 		b.WriteString(p)
 		b.WriteString("LIMIT\n")
 		b.WriteString(pi)
-		b.WriteString(formatExpr(limit.Rowcount, indent, depth))
+		b.WriteString(f.formatExpr(limit.Rowcount, depth))
 		b.WriteString("\n")
 		b.WriteString(p)
 		b.WriteString("OFFSET\n")
 		b.WriteString(pi)
-		b.WriteString(formatExpr(limit.Offset, indent, depth))
+		b.WriteString(f.formatExpr(limit.Offset, depth))
 		b.WriteString("\n")
 	} else {
 		b.WriteString(p)
 		b.WriteString("LIMIT\n")
 		b.WriteString(pi)
-		b.WriteString(formatExpr(limit.Rowcount, indent, depth))
+		b.WriteString(f.formatExpr(limit.Rowcount, depth))
 		b.WriteString("\n")
 	}
 }

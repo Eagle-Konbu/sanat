@@ -53,19 +53,29 @@ Since the SQL parser cannot handle `?` correctly, substitution and restoration a
 
 ### Common Rules
 
-- SQL keywords are converted to **UPPERCASE**
+- Clause keywords and aggregate/window function names are converted to **UPPERCASE**; operator/predicate keywords follow the [`keyword_case`](#keyword-casing) option instead
 - Each clause is placed on a **separate line**
 - Clause contents are **indented** (default: 2 spaces)
 - Backtick-quoted identifiers (MySQL style) are parsed and re-rendered unquoted
 - If parsing fails, the **original string is returned as-is**
 
-### Keyword Uppercasing
+### Keyword Casing
 
-The following keywords are uppercased during formatting:
+sanat renders three distinct categories of "keyword-shaped" text:
 
-`AS`, `ASC`, `DESC`, `AND`, `OR`, `NOT`, `IN`, `IS`, `LIKE`, `BETWEEN`, `EXISTS`, `NULL`, `TRUE`, `FALSE`, `ON`, `USING`
+- **Clause keywords** — `SELECT`, `FROM`, `WHERE`, `WITH`, `INSERT`, `UPDATE`, `DELETE`, `UNION`, `CASE`/`WHEN`/`THEN`/`ELSE`/`END`, `VALUES`, `SET`, and similar. These are emitted as hardcoded literals and are **always uppercase**, regardless of the `keyword_case` option.
+- **Operator/predicate keywords** — `AS`, `ASC`, `DESC`, `AND`, `OR`, `NOT`, `IN`, `IS`, `LIKE`, `BETWEEN`, `EXISTS`, `NULL`, `TRUE`, `FALSE`, `ON`, `USING`. Casing for these is controlled by the [`keyword_case`](#configuration-options) option (default: `upper`).
+- **Aggregate/window function names** — `COUNT`, `SUM`, `AVG`, and similar. These are always uppercase and are not affected by `keyword_case`.
 
-Clause keywords (`SELECT`, `FROM`, `WHERE`, etc.) are structurally output in uppercase.
+**`keyword_case` values:**
+
+| Value | Behavior |
+|-------|----------|
+| `upper` (default) | Operator/predicate keywords are uppercased |
+| `lower` | Operator/predicate keywords are lowercased |
+| `preserve` | Operator/predicate keywords are left as emitted by the parser |
+
+> **Note:** sanat parses SQL with its in-house parser (see [Parser](#parser)), which does not retain the source's original keyword casing for operator/predicate keywords either — these tokens are canonicalized to uppercase while parsing, regardless of how they were written in the source. As a result, `preserve` currently behaves the same as `upper` (the parser's canonical output). True preservation of the source's original casing would require the parser to retain each keyword token's original literal text, which it does not currently do.
 
 ### Indentation
 
@@ -457,6 +467,37 @@ SELECT
   COUNT(*) AS cnt
 ```
 
+### Comma Style
+
+The `comma_style` option controls comma placement in every rendered list (`SELECT` columns, `INSERT` columns/values, `SET` assignments, `GROUP BY`/`ORDER BY` expressions, CTE definitions, and similar).
+
+| Value | Behavior |
+|-------|----------|
+| `trailing` (default) | Each item except the last ends with a comma |
+| `leading` | Each item except the first starts with a comma |
+
+**`trailing` (default):**
+
+```sql
+SELECT
+  id,
+  name,
+  email
+FROM
+  users
+```
+
+**`leading`:**
+
+```sql
+SELECT
+  id
+, name
+, email
+FROM
+  users
+```
+
 ### Locking Clauses
 
 Locking clauses are placed on their own line after LIMIT (or after the last clause if no LIMIT). Supported clauses: `FOR UPDATE`, `FOR SHARE`, `LOCK IN SHARE MODE`, `FOR UPDATE SKIP LOCKED`, `FOR UPDATE NOWAIT`, `FOR SHARE SKIP LOCKED`, `FOR SHARE NOWAIT`.
@@ -561,29 +602,47 @@ Configuration files are searched in the following order (first match is used):
 
 ### Configuration Options
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `write` | bool | `false` | Whether to overwrite files |
-| `indent` | int | `2` | SQL indent width (number of spaces) |
-| `newline` | bool | `true` | Whether to insert a newline after the opening backtick |
+| Option | Type | Required | Default | Description |
+|--------|------|----------|---------|-------------|
+| `version` | int | no | — | Config schema version. Currently only `1` is supported. See [Config Versioning](#config-versioning). |
+| `write` | bool | no | `false` | Whether to overwrite files |
+| `indent` | int (> 0) | no | `2` | SQL indent width (number of spaces) |
+| `newline` | bool | no | `true` | Whether to insert a newline after the opening backtick |
+| `keyword_case` | `upper` \| `lower` \| `preserve` | no | `upper` | Casing for operator/predicate keywords. See [Keyword Casing](#keyword-casing). |
+| `comma_style` | `trailing` \| `leading` | no | `trailing` | Comma placement in rendered lists. See [Comma Style](#comma-style). |
 
 ### Configuration Examples
 
 **YAML:**
 
 ```yaml
+version: 1
 write: true
 indent: 4
 newline: true
+keyword_case: upper
+comma_style: trailing
 ```
 
 **TOML:**
 
 ```toml
+version = 1
 write = true
 indent = 4
 newline = true
+keyword_case = "upper"
+comma_style = "trailing"
 ```
+
+### Config Versioning
+
+The `version` field declares which config schema a file was written against, so sanat can evolve the schema safely:
+
+- If `version` is present but not a version sanat supports, loading the config **fails with an error**.
+- If `version` is absent, the config is treated as version 0 (pre-schema): sanat still loads it and applies defaults, but prints a deprecation warning to stderr suggesting `version = 1` be added.
+
+Unrecognized fields in the config file do not fail loading; sanat prints a warning to stderr for each one, to help catch typos while remaining forward-compatible with newer config files read by older sanat versions.
 
 ### Precedence
 
@@ -606,6 +665,8 @@ sanat [flags] [pattern ...]
 | `--write` | `-w` | `false` | Overwrite files |
 | `--indent` | | `2` | SQL indent width |
 | `--newline` | | `true` | Newline after opening backtick |
+| `--keyword-case` | | `upper` | Casing for operator/predicate keywords (`upper`, `lower`, `preserve`) |
+| `--comma-style` | | `trailing` | Comma placement in lists (`trailing`, `leading`) |
 | `--config` | `-c` | | Configuration file path |
 
 ### Input Methods
