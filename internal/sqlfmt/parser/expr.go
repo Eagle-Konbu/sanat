@@ -59,6 +59,10 @@ func (p *Parser) parseComparisonExpr() sqlast.Expr {
 func (p *Parser) parsePredicateSuffix(left sqlast.Expr) sqlast.Expr {
 	not := p.consumeNegatedPredicateKeyword()
 
+	// not is always consistent with one of the four predicate cases below:
+	// consumeNegatedPredicateKeyword only consumes NOT when the following
+	// token is already IN/BETWEEN/LIKE/REGEXP/RLIKE, so there is no case
+	// where not is true but none of them match.
 	switch {
 	case p.at(IN):
 		return p.parseInExpr(left, not)
@@ -68,8 +72,6 @@ func (p *Parser) parsePredicateSuffix(left sqlast.Expr) sqlast.Expr {
 		return p.parseLikeExpr(left, not)
 	case p.at(REGEXP) || p.at(RLIKE):
 		return p.parseRegexpExpr(left, not)
-	case not:
-		return failReturn[sqlast.Expr](p, "expected IN, BETWEEN, LIKE, REGEXP, or RLIKE after NOT")
 	case p.at(IS):
 		return p.parseIsExpr(left)
 	default:
