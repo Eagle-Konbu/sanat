@@ -41,12 +41,13 @@ func (p *Parser) parseNotExpr() sqlast.Expr {
 }
 
 var simpleComparisonOps = map[TokenType]sqlast.ComparisonOperator{
-	EQ: sqlast.EqualOp,
-	NE: sqlast.NotEqualOp,
-	LT: sqlast.LessThanOp,
-	GT: sqlast.GreaterThanOp,
-	LE: sqlast.LessEqualOp,
-	GE: sqlast.GreaterEqualOp,
+	EQ:  sqlast.EqualOp,
+	NE:  sqlast.NotEqualOp,
+	NSE: sqlast.NullSafeEqualOp,
+	LT:  sqlast.LessThanOp,
+	GT:  sqlast.GreaterThanOp,
+	LE:  sqlast.LessEqualOp,
+	GE:  sqlast.GreaterEqualOp,
 }
 
 // parseComparisonExpr parses a single predicate: a plain comparison, or one
@@ -65,8 +66,10 @@ func (p *Parser) parsePredicateSuffix(left sqlast.Expr) sqlast.Expr {
 		return p.parseBetweenExpr(left, not)
 	case p.at(LIKE):
 		return p.parseLikeExpr(left, not)
+	case p.at(REGEXP) || p.at(RLIKE):
+		return p.parseRegexpExpr(left, not)
 	case not:
-		return failReturn[sqlast.Expr](p, "expected IN, BETWEEN, or LIKE after NOT")
+		return failReturn[sqlast.Expr](p, "expected IN, BETWEEN, LIKE, REGEXP, or RLIKE after NOT")
 	case p.at(IS):
 		return p.parseIsExpr(left)
 	default:
@@ -75,10 +78,12 @@ func (p *Parser) parsePredicateSuffix(left sqlast.Expr) sqlast.Expr {
 }
 
 // consumeNegatedPredicateKeyword consumes a leading NOT that belongs to a
-// [NOT] IN / [NOT] BETWEEN / [NOT] LIKE predicate, as opposed to a prefix
-// logical NOT (already handled by parseNotExpr, above this precedence level).
+// [NOT] IN / [NOT] BETWEEN / [NOT] LIKE / [NOT] REGEXP / [NOT] RLIKE
+// predicate, as opposed to a prefix logical NOT (already handled by
+// parseNotExpr, above this precedence level).
 func (p *Parser) consumeNegatedPredicateKeyword() bool {
-	if !p.at(NOT) || (!p.peekAt(IN) && !p.peekAt(BETWEEN) && !p.peekAt(LIKE)) {
+	if !p.at(NOT) ||
+		(!p.peekAt(IN) && !p.peekAt(BETWEEN) && !p.peekAt(LIKE) && !p.peekAt(REGEXP) && !p.peekAt(RLIKE)) {
 		return false
 	}
 
@@ -143,6 +148,19 @@ func (p *Parser) parseLikeExpr(left sqlast.Expr, not bool) sqlast.Expr {
 	op := sqlast.LikeOp
 	if not {
 		op = sqlast.NotLikeOp
+	}
+
+	return &sqlast.ComparisonExpr{Left: left, Operator: op, Right: right}
+}
+
+func (p *Parser) parseRegexpExpr(left sqlast.Expr, not bool) sqlast.Expr {
+	p.advance() // consume REGEXP/RLIKE
+
+	right := p.parseAdditiveExpr()
+
+	op := sqlast.RegexpOp
+	if not {
+		op = sqlast.NotRegexpOp
 	}
 
 	return &sqlast.ComparisonExpr{Left: left, Operator: op, Right: right}
@@ -221,7 +239,7 @@ func (p *Parser) parsePrimaryExpr() sqlast.Expr {
 	}
 
 	switch p.tok.Type {
-	case INT, FLOAT, QUESTION:
+	case INT, FLOAT, QUESTION, HexStr, BitStr:
 		return p.parseLiteralToken()
 	case STRING:
 		return p.parseStringLiteral()

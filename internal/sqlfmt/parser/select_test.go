@@ -46,6 +46,10 @@ func TestParseSelect_basic(t *testing.T) {
 		{"order by limit offset", "SELECT * FROM t ORDER BY id DESC LIMIT 10 OFFSET 5",
 			"SELECT * FROM t ORDER BY id DESC LIMIT 10 OFFSET 5"},
 		{"order by asc default", "SELECT * FROM t ORDER BY id ASC", "SELECT * FROM t ORDER BY id"},
+		{"limit offset comma form normalizes to OFFSET form", "SELECT * FROM t LIMIT 5, 10",
+			"SELECT * FROM t LIMIT 10 OFFSET 5"},
+		{"group by with rollup", "SELECT dept, COUNT(*) FROM emp GROUP BY dept WITH ROLLUP",
+			"SELECT dept, COUNT(*) FROM emp GROUP BY dept WITH ROLLUP"},
 	}
 
 	for _, tt := range tests {
@@ -167,6 +171,22 @@ func TestParseSelect_structural(t *testing.T) {
 	}
 }
 
+// TestParseSelect_limitCommaForm verifies structurally that the older
+// `LIMIT offset, row_count` form is normalized into the same Rowcount/Offset
+// shape as `LIMIT row_count OFFSET offset` (offset first in the comma form,
+// row_count first in the OFFSET form -- easy to swap by accident).
+func TestParseSelect_limitCommaForm(t *testing.T) {
+	sel, err := parser.ParseSelect("SELECT id FROM t LIMIT 5, 10")
+	if err != nil {
+		t.Fatalf("ParseSelect error = %v", err)
+	}
+
+	want := &sqlast.Limit{Rowcount: num("10"), Offset: num("5")}
+	if !reflect.DeepEqual(sel.Limit, want) {
+		t.Errorf("Limit = %#v, want %#v", sel.Limit, want)
+	}
+}
+
 func TestParseSelect_errors(t *testing.T) {
 	tests := []string{
 		"",
@@ -176,6 +196,9 @@ func TestParseSelect_errors(t *testing.T) {
 		"SELECT * FROM t JOIN",
 		"SELECT * FROM t GROUP",
 		"SELECT * FROM t GROUP BY",
+		"SELECT * FROM t GROUP BY dept WITH",
+		"SELECT * FROM t GROUP BY dept WITH ROLLDOWN",
+		"SELECT * FROM t LIMIT 5,",
 		"SELECT * FROM t ORDER",
 		"SELECT * FROM t LIMIT",
 		"SELECT * FROM t USE",
@@ -219,6 +242,7 @@ func TestParseSelect_errors(t *testing.T) {
 		"SELECT a FROM t ORDER BY 'unterminated",
 		"SELECT a FROM t LIMIT 'unterminated",
 		"SELECT a FROM t LIMIT 1 OFFSET 'unterminated",
+		"SELECT a FROM t LIMIT 1, 'unterminated",
 		`SELECT "illegal FROM t`,
 		`SELECT a FROM t WHERE "illegal`,
 		"SELECT a FROM t LEFT 'unterminated",

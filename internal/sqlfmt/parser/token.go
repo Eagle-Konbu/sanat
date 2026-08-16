@@ -12,12 +12,15 @@ const (
 
 	IDENT       // unquoted identifier: users, id
 	QuotedIdent // backtick-quoted identifier: `users`
-	INT         // 123
+	INT         // 123 (also 0x1A, 0b101)
 	FLOAT       // 123.45
 	STRING      // 'abc'
+	HexStr      // x'1A' or X'1A'
+	BitStr      // b'101' or B'101'
 
 	EQ      // =
 	NE      // <> or !=
+	NSE     // <=>
 	LT      // <
 	GT      // >
 	LE      // <=
@@ -53,6 +56,8 @@ const (
 	IN
 	BETWEEN
 	LIKE
+	REGEXP
+	RLIKE
 	IS
 	NULL
 	TRUE
@@ -75,6 +80,7 @@ const (
 	ORDER
 	BY
 	GROUP
+	ROLLUP
 	HAVING
 	LIMIT
 	OFFSET
@@ -123,9 +129,12 @@ var tokenNames = map[TokenType]string{
 	INT:         "INT",
 	FLOAT:       "FLOAT",
 	STRING:      "STRING",
+	HexStr:      "HEX_STRING",
+	BitStr:      "BIT_STRING",
 
 	EQ:      "=",
 	NE:      "<>",
+	NSE:     "<=>",
 	LT:      "<",
 	GT:      ">",
 	LE:      "<=",
@@ -160,6 +169,8 @@ var tokenNames = map[TokenType]string{
 	IN:           "IN",
 	BETWEEN:      "BETWEEN",
 	LIKE:         "LIKE",
+	REGEXP:       "REGEXP",
+	RLIKE:        "RLIKE",
 	IS:           "IS",
 	NULL:         "NULL",
 	TRUE:         "TRUE",
@@ -182,6 +193,7 @@ var tokenNames = map[TokenType]string{
 	ORDER:        "ORDER",
 	BY:           "BY",
 	GROUP:        "GROUP",
+	ROLLUP:       "ROLLUP",
 	HAVING:       "HAVING",
 	LIMIT:        "LIMIT",
 	OFFSET:       "OFFSET",

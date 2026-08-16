@@ -33,8 +33,27 @@ func (p *Parser) parseUpdateStatement() *sqlast.Update {
 
 	upd.Exprs = p.parseSetExprList()
 	upd.Where = p.parseOptionalWhereClause(WHERE)
-	upd.OrderBy = p.parseOptionalOrderBy()
-	upd.Limit = p.parseOptionalLimit()
+
+	// ORDER BY and LIMIT are only valid for the single-table form; MySQL
+	// rejects them when TableExprs names more than one table or contains a
+	// JOIN, mirroring the same restriction on DELETE (see
+	// parseDeleteStatement).
+	if isSingleTableUpdate(upd.TableExprs) {
+		upd.OrderBy = p.parseOptionalOrderBy()
+		upd.Limit = p.parseOptionalLimit()
+	}
 
 	return upd
+}
+
+// isSingleTableUpdate reports whether exprs is the single-table form of
+// UPDATE's target: exactly one table reference with no JOIN.
+func isSingleTableUpdate(exprs []sqlast.TableExpr) bool {
+	if len(exprs) != 1 {
+		return false
+	}
+
+	_, isJoin := exprs[0].(*sqlast.JoinTableExpr)
+
+	return !isJoin
 }
