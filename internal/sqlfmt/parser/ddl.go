@@ -6,100 +6,52 @@ import (
 	"github.com/Eagle-Konbu/sanat/internal/sqlfmt/sqlast"
 )
 
-// ParseCreateTable parses a CREATE TABLE statement from input.
+// parseDDLEntry runs parse to completion over input, then verifies input was
+// fully consumed — the same shape every ParseXxx DDL entry point below
+// needs, factored out to avoid repeating it six times.
 //
 //nolint:nonamedreturns // the named results are mutated by the deferred recover
-func ParseCreateTable(input string) (ct *sqlast.CreateTable, err error) {
+func parseDDLEntry[T sqlast.Statement](input string, parse func(*Parser) T) (result T, err error) {
 	defer recoverParseError(&err)
 
 	p := NewParser(input)
-	ct = p.parseCreateTableStatement()
+	result = parse(p)
 
 	if !p.at(EOF) {
 		p.failf("unexpected token %s after statement", p.tok.Type)
 	}
 
-	return ct, nil
+	return result, nil
+}
+
+// ParseCreateTable parses a CREATE TABLE statement from input.
+func ParseCreateTable(input string) (*sqlast.CreateTable, error) {
+	return parseDDLEntry(input, (*Parser).parseCreateTableStatement)
 }
 
 // ParseAlterTable parses an ALTER TABLE statement from input.
-//
-//nolint:nonamedreturns // the named results are mutated by the deferred recover
-func ParseAlterTable(input string) (at *sqlast.AlterTable, err error) {
-	defer recoverParseError(&err)
-
-	p := NewParser(input)
-	at = p.parseAlterTableStatement()
-
-	if !p.at(EOF) {
-		p.failf("unexpected token %s after statement", p.tok.Type)
-	}
-
-	return at, nil
+func ParseAlterTable(input string) (*sqlast.AlterTable, error) {
+	return parseDDLEntry(input, (*Parser).parseAlterTableStatement)
 }
 
 // ParseCreateIndex parses a CREATE INDEX statement from input.
-//
-//nolint:nonamedreturns // the named results are mutated by the deferred recover
-func ParseCreateIndex(input string) (ci *sqlast.CreateIndex, err error) {
-	defer recoverParseError(&err)
-
-	p := NewParser(input)
-	ci = p.parseCreateIndexStatement()
-
-	if !p.at(EOF) {
-		p.failf("unexpected token %s after statement", p.tok.Type)
-	}
-
-	return ci, nil
+func ParseCreateIndex(input string) (*sqlast.CreateIndex, error) {
+	return parseDDLEntry(input, (*Parser).parseCreateIndexStatement)
 }
 
 // ParseDropIndex parses a DROP INDEX statement from input.
-//
-//nolint:nonamedreturns // the named results are mutated by the deferred recover
-func ParseDropIndex(input string) (di *sqlast.DropIndex, err error) {
-	defer recoverParseError(&err)
-
-	p := NewParser(input)
-	di = p.parseDropIndexStatement()
-
-	if !p.at(EOF) {
-		p.failf("unexpected token %s after statement", p.tok.Type)
-	}
-
-	return di, nil
+func ParseDropIndex(input string) (*sqlast.DropIndex, error) {
+	return parseDDLEntry(input, (*Parser).parseDropIndexStatement)
 }
 
 // ParseDropTable parses a DROP TABLE statement from input.
-//
-//nolint:nonamedreturns // the named results are mutated by the deferred recover
-func ParseDropTable(input string) (dt *sqlast.DropTable, err error) {
-	defer recoverParseError(&err)
-
-	p := NewParser(input)
-	dt = p.parseDropTableStatement()
-
-	if !p.at(EOF) {
-		p.failf("unexpected token %s after statement", p.tok.Type)
-	}
-
-	return dt, nil
+func ParseDropTable(input string) (*sqlast.DropTable, error) {
+	return parseDDLEntry(input, (*Parser).parseDropTableStatement)
 }
 
 // ParseTruncateTable parses a TRUNCATE TABLE statement from input.
-//
-//nolint:nonamedreturns // the named results are mutated by the deferred recover
-func ParseTruncateTable(input string) (tt *sqlast.TruncateTable, err error) {
-	defer recoverParseError(&err)
-
-	p := NewParser(input)
-	tt = p.parseTruncateTableStatement()
-
-	if !p.at(EOF) {
-		p.failf("unexpected token %s after statement", p.tok.Type)
-	}
-
-	return tt, nil
+func ParseTruncateTable(input string) (*sqlast.TruncateTable, error) {
+	return parseDDLEntry(input, (*Parser).parseTruncateTableStatement)
 }
 
 // parseCreateStatement dispatches a leading CREATE to CREATE TABLE or
@@ -160,8 +112,7 @@ func (p *Parser) parseCreateTableStatement() *sqlast.CreateTable {
 // starts one.
 func (p *Parser) parseTableElement() sqlast.TableElement {
 	if p.isTableConstraintStart() {
-		//nolint:forcetypeassert // every TableConstraint variant also implements TableElement
-		return p.parseTableConstraint().(sqlast.TableElement)
+		return p.parseTableConstraint()
 	}
 
 	return p.parseColumnDef()
@@ -452,18 +403,32 @@ func (p *Parser) parseForeignKeyConstraint(constraintName sqlast.TableIdent) *sq
 }
 
 // parseOptionalReferentialActions parses zero or more ON DELETE/ON UPDATE
-// clauses following a FOREIGN KEY's REFERENCES clause.
+// clauses following a FOREIGN KEY's REFERENCES clause. MySQL allows at most
+// one of each, so a repeated ON DELETE or ON UPDATE is a syntax error rather
+// than silently overwriting the one already parsed.
 func (p *Parser) parseOptionalReferentialActions() (sqlast.ReferenceAction, sqlast.ReferenceAction) {
 	var onDelete, onUpdate sqlast.ReferenceAction
+
+	var haveDelete, haveUpdate bool
 
 	for p.at(ON) {
 		p.advance()
 
 		switch {
 		case p.consume(DELETE):
+			if haveDelete {
+				p.failf("duplicate ON DELETE clause")
+			}
+
 			onDelete = p.parseReferenceAction()
+			haveDelete = true
 		case p.consume(UPDATE):
+			if haveUpdate {
+				p.failf("duplicate ON UPDATE clause")
+			}
+
 			onUpdate = p.parseReferenceAction()
+			haveUpdate = true
 		default:
 			p.failf("expected DELETE or UPDATE after ON, got %s", p.tok.Type)
 		}
@@ -503,12 +468,28 @@ func (p *Parser) parseReferenceAction() sqlast.ReferenceAction {
 func (p *Parser) parseTableOptions() []sqlast.TableOption {
 	var opts []sqlast.TableOption
 
-	for !p.at(EOF) {
+	for p.isTableOptionStart() {
 		opts = append(opts, p.parseTableOption())
 		p.consume(COMMA) // MySQL allows an optional comma between table options
 	}
 
 	return opts
+}
+
+// isTableOptionStart reports whether the current token could begin a table
+// option: one of the explicitly recognized option-name keywords, or a bare
+// identifier (the generic fallback in parseTableOptionName). Bounding the
+// parseTableOptions loop on this — rather than looping until EOF — means
+// trailing tokens that aren't shaped like an option name (e.g. a stray
+// literal, or the start of another statement) are left for the caller's own
+// trailing-token check instead of being force-fed into parseTableOption.
+func (p *Parser) isTableOptionStart() bool {
+	switch p.tok.Type {
+	case DEFAULT, ENGINE, CHARACTER, CHARSET, COLLATE, COMMENT, AutoIncrement, IDENT, QuotedIdent:
+		return true
+	default:
+		return false
+	}
 }
 
 func (p *Parser) parseTableOption() sqlast.TableOption {

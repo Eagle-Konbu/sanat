@@ -311,6 +311,25 @@ func (t TokenType) IsKeyword() bool {
 	return t > keywordBegin && t < keywordEnd
 }
 
+// nonReservedKeywords is the set of keyword tokens MySQL classifies as
+// non-reserved: recognized where the DDL grammar expects them (e.g. COMMENT
+// as a column/table option), but still valid as an ordinary identifier
+// everywhere else — a column or table actually named `comment`, `engine`,
+// `charset`, `no`, `action`, or `auto_increment` must keep working.
+var nonReservedKeywords = map[TokenType]bool{
+	COMMENT:       true,
+	ENGINE:        true,
+	CHARSET:       true,
+	NO:            true,
+	ACTION:        true,
+	AutoIncrement: true,
+}
+
+// IsNonReservedKeyword reports whether t is one of nonReservedKeywords.
+func (t TokenType) IsNonReservedKeyword() bool {
+	return nonReservedKeywords[t]
+}
+
 var keywords = buildKeywordTable()
 
 func buildKeywordTable() map[string]TokenType {

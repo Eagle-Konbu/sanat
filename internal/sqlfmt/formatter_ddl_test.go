@@ -109,8 +109,7 @@ func TestFormatSQL_CreateIndex(t *testing.T) {
 	assertFormatSQL(t,
 		"create unique index idx_email on users (email)",
 		join(
-			"CREATE UNIQUE INDEX idx_email ON users",
-			"(",
+			"CREATE UNIQUE INDEX idx_email ON users (",
 			"  email",
 			")",
 		),
@@ -143,7 +142,7 @@ func TestFormatSQL_CreateTable_ParseFailureFallsThrough(t *testing.T) {
 	}
 }
 
-func TestFormatSQLWithOptions_CreateTable_KeywordCaseLower(t *testing.T) {
+func TestFormatSQLWithOptions_CreateIndex_KeywordCaseLower(t *testing.T) {
 	in := "create index idx on users (name desc)"
 
 	got, ok := sqlfmt.FormatSQLWithOptions(in, sqlfmt.Options{Indent: 2, KeywordCase: sqlfmt.KeywordCaseLower})
@@ -152,9 +151,39 @@ func TestFormatSQLWithOptions_CreateTable_KeywordCaseLower(t *testing.T) {
 	}
 
 	want := join(
-		"CREATE INDEX idx ON users",
-		"(",
+		"CREATE INDEX idx ON users (",
 		"  name desc",
+		")",
+	)
+
+	got = strings.TrimRight(got, "\n")
+	want = strings.TrimRight(want, "\n")
+
+	if got != want {
+		t.Errorf("got:\n%s\n\nwant:\n%s", got, want)
+	}
+}
+
+// TestFormatSQLWithOptions_CreateTable_KeywordCaseLower_ClauseKeywordsStayUpper
+// confirms that DDL clause keywords (NOT NULL, ON DELETE, ON UPDATE, ...)
+// stay uppercase under keyword_case: lower, unlike the WHERE/SET-clause
+// operator/predicate keywords keyword_case actually governs. Only DESC in an
+// index column list (an operator/predicate keyword — see
+// TestFormatSQLWithOptions_CreateIndex_KeywordCaseLower) is affected.
+func TestFormatSQLWithOptions_CreateTable_KeywordCaseLower_ClauseKeywordsStayUpper(t *testing.T) {
+	in := "create table orders (id int not null, user_id int, " +
+		"foreign key (user_id) references users (id) on delete cascade on update restrict)"
+
+	got, ok := sqlfmt.FormatSQLWithOptions(in, sqlfmt.Options{Indent: 2, KeywordCase: sqlfmt.KeywordCaseLower})
+	if !ok {
+		t.Fatal("expected ok")
+	}
+
+	want := join(
+		"CREATE TABLE orders (",
+		"  id int NOT NULL,",
+		"  user_id int,",
+		"  FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE ON UPDATE RESTRICT",
 		")",
 	)
 

@@ -1052,9 +1052,14 @@ func (f *formatter) formatCreateTable(b *strings.Builder, s *sqlast.CreateTable,
 	b.WriteString(s.Table.String())
 	b.WriteString(" (\n")
 
+	// Elements aren't passed through applyKeywordCase: a column/constraint's
+	// rendered text is dominated by clause keywords (NOT NULL, ON UPDATE,
+	// PRIMARY KEY, ...) that must stay uppercase regardless of keyword_case,
+	// and the regex-based lowering can't tell those apart from a genuine
+	// operator/predicate keyword occurring at the same position.
 	lines := make([]string, len(s.Elements))
 	for i, e := range s.Elements {
-		lines[i] = f.applyKeywordCase(e.String())
+		lines[i] = e.String()
 	}
 
 	f.writeList(b, pi, lines)
@@ -1064,7 +1069,7 @@ func (f *formatter) formatCreateTable(b *strings.Builder, s *sqlast.CreateTable,
 
 	for _, opt := range s.Options {
 		b.WriteString(" ")
-		b.WriteString(f.applyKeywordCase(opt.String()))
+		b.WriteString(opt.String())
 	}
 
 	b.WriteString("\n")
@@ -1082,9 +1087,12 @@ func (f *formatter) formatAlterTable(b *strings.Builder, s *sqlast.AlterTable, d
 	b.WriteString(s.Table.String())
 	b.WriteString("\n")
 
+	// See formatCreateTable: actions aren't passed through applyKeywordCase
+	// for the same reason (ADD COLUMN, ON DELETE/ON UPDATE, ... must stay
+	// uppercase regardless of keyword_case).
 	lines := make([]string, len(s.Actions))
 	for i, a := range s.Actions {
-		lines[i] = f.applyKeywordCase(a.String())
+		lines[i] = a.String()
 	}
 
 	f.writeList(b, pi, lines)
@@ -1107,10 +1115,13 @@ func (f *formatter) formatCreateIndex(b *strings.Builder, s *sqlast.CreateIndex,
 	b.WriteString(s.Name.String())
 	b.WriteString(" ON ")
 	b.WriteString(s.Table.String())
-	b.WriteString("\n")
-	b.WriteString(p)
-	b.WriteString("(\n")
+	b.WriteString(" (\n")
 
+	// Unlike formatCreateTable/formatAlterTable, applyKeywordCase is safe
+	// here: an IndexColumn only ever renders a column name, an optional
+	// prefix length, and an optional DESC — DESC is a genuine
+	// operator/predicate keyword (matching ORDER BY's DESC), and there's no
+	// NOT/ON text in this position to false-positive on.
 	lines := make([]string, len(s.Columns))
 	for i, c := range s.Columns {
 		lines[i] = f.applyKeywordCase(c.String())

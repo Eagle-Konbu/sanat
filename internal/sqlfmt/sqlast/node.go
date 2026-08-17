@@ -50,9 +50,11 @@ type TableElement interface {
 
 // TableConstraint represents a table-level constraint or secondary index
 // definition, shared between CREATE TABLE and ALTER TABLE's ADD CONSTRAINT
-// action.
+// action. It embeds TableElement since every constraint variant is also a
+// valid CREATE TABLE column-list entry, letting parseTableElement return a
+// TableConstraint directly without a type assertion.
 type TableConstraint interface {
-	SQLNode
+	TableElement
 	iTableConstraint()
 }
 

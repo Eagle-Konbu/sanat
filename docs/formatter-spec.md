@@ -301,7 +301,7 @@ Trailing table options (`ENGINE`, `DEFAULT CHARSET`, ...) stay on the
 closing paren's line rather than being broken out, since they're key/value
 modifiers rather than a SQL clause with sub-structure.
 
-```
+```text
 CREATE TABLE                 -- optionally IF NOT EXISTS
   <table> (
   <column_or_constraint1>,
@@ -313,9 +313,7 @@ ALTER TABLE
   <action1>,
   <action2>
 
-CREATE INDEX                 -- optionally UNIQUE
-  <index> ON <table>
-(
+CREATE INDEX <index> ON <table> (   -- optionally UNIQUE
   <column1>,
   <column2>
 )

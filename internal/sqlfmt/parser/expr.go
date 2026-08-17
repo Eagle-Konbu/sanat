@@ -256,8 +256,21 @@ func (p *Parser) parsePrimaryExpr() sqlast.Expr {
 	case IDENT, QuotedIdent, VALUES:
 		return p.parseIdentOrValuesExpr()
 	default:
-		return failReturn[sqlast.Expr](p, "unexpected token %s in expression", p.tok.Type)
+		return p.parseNonReservedKeywordAsIdentExpr()
 	}
+}
+
+// parseNonReservedKeywordAsIdentExpr handles the fallback case in
+// parsePrimaryExpr's switch: a non-reserved keyword token (e.g. COMMENT,
+// ENGINE — see token.go's nonReservedKeywords) used as an ordinary column
+// reference or function name, split out to keep parsePrimaryExpr's
+// cyclomatic complexity down.
+func (p *Parser) parseNonReservedKeywordAsIdentExpr() sqlast.Expr {
+	if p.tok.Type.IsNonReservedKeyword() {
+		return p.parseIdentOrValuesExpr()
+	}
+
+	return failReturn[sqlast.Expr](p, "unexpected token %s in expression", p.tok.Type)
 }
 
 // parseIdentOrValuesExpr parses a column reference or function call, or the
@@ -451,7 +464,7 @@ func (p *Parser) parseExistsExpr() sqlast.Expr {
 }
 
 func (p *Parser) readIdent() string {
-	if p.tok.Type != IDENT && p.tok.Type != QuotedIdent {
+	if p.tok.Type != IDENT && p.tok.Type != QuotedIdent && !p.tok.Type.IsNonReservedKeyword() {
 		p.failf("expected identifier, got %s", p.tok.Type)
 	}
 

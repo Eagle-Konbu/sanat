@@ -130,6 +130,15 @@ predicate keywords (`AND`, `OR`, `NOT`, `IN`, `BETWEEN`, `LIKE`, `REGEXP`,
 `CHARSET`, `COLLATE`, `UNSIGNED`, `ZEROFILL`, `RENAME`, `TO`, `ADD`,
 `MODIFY`, `CASCADE`, `RESTRICT`, `NO`, `ACTION`, `IF`, `AUTO_INCREMENT`).
 
+Six of the DDL keywords — `COMMENT`, `ENGINE`, `CHARSET`, `NO`, `ACTION`,
+`AUTO_INCREMENT` — are non-reserved in MySQL: they're recognized where the
+DDL grammar expects them, but `readIdent` and `parsePrimaryExpr` also accept
+them anywhere an identifier is valid (`TokenType.IsNonReservedKeyword`,
+`token.go`), so e.g. `SELECT comment FROM t` or a column literally named
+`engine` still parse. The rest of the DDL keyword set is unconditionally
+reserved, matching this lexer's existing treatment of every other keyword
+(there's no non-reserved carve-out for `SELECT`, `KEY`, `INDEX`, etc. either).
+
 ### Literal Handling
 
 - **Identifiers**: unquoted (`users`, `id`) or backtick-quoted
@@ -387,7 +396,10 @@ already gives an unrecognized function name.
 `UNIQUE [INDEX|KEY] [name] (cols)`, or
 `FOREIGN KEY [name] (cols) REFERENCES table (cols) [ON DELETE action] [ON UPDATE action]`.
 Referential actions (`ReferenceAction`) are `CASCADE`, `RESTRICT`,
-`SET NULL`, `SET DEFAULT`, `NO ACTION`. `PRIMARY KEY`/`UNIQUE`/`INDEX`'s
+`SET NULL`, `SET DEFAULT`, `NO ACTION`; a second `ON DELETE` or `ON UPDATE`
+clause on the same `FOREIGN KEY` is a `*ParseError` rather than silently
+overwriting the first (MySQL allows at most one of each).
+`PRIMARY KEY`/`UNIQUE`/`INDEX`'s
 column lists use the richer `IndexColumn` shape (`parseIndexColumnList`) —
 each column accepts an optional prefix length (`col(20)`, required for
 indexing `TEXT`/`BLOB` columns) and `ASC`/`DESC` (canonicalized to omitting

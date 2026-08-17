@@ -136,6 +136,41 @@ func TestParseCreateTable(t *testing.T) {
 	}
 }
 
+// TestParseNonReservedKeywordsAsIdentifiers confirms that MySQL's
+// non-reserved DDL keywords (COMMENT, ENGINE, CHARSET, NO, ACTION,
+// AUTO_INCREMENT) still work as ordinary column names, both inside a
+// CREATE TABLE column list and in plain DML — these words are only
+// recognized as keywords where the DDL grammar expects them.
+func TestParseNonReservedKeywordsAsIdentifiers(t *testing.T) {
+	assertCreateTableRoundTrip(t,
+		"CREATE TABLE t (comment VARCHAR(20), engine VARCHAR(20), charset VARCHAR(20), no INT, action INT, auto_increment INT)",
+		"CREATE TABLE t (comment VARCHAR(20), engine VARCHAR(20), charset VARCHAR(20), no INT, action INT, auto_increment INT)",
+	)
+
+	tests := []struct{ name, in, want string }{
+		{"select column named comment", "SELECT comment FROM t", "SELECT comment FROM t"},
+		{"select column named engine", "SELECT engine FROM t", "SELECT engine FROM t"},
+		{"select column named charset", "SELECT charset FROM t", "SELECT charset FROM t"},
+		{"select column named no", "SELECT no FROM t", "SELECT no FROM t"},
+		{"select column named action", "SELECT action FROM t", "SELECT action FROM t"},
+		{"select column named auto_increment", "SELECT auto_increment FROM t", "SELECT auto_increment FROM t"},
+		{"where clause comparison", "SELECT id FROM t WHERE comment = 'x'", "SELECT id FROM t WHERE comment = 'x'"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stmt, err := parser.ParseStatement(tt.in)
+			if err != nil {
+				t.Fatalf("ParseStatement(%q) error = %v", tt.in, err)
+			}
+
+			if got := stmt.String(); got != tt.want {
+				t.Errorf("ParseStatement(%q).String() = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestParseCreateTable_errors(t *testing.T) {
 	tests := []string{
 		"",
@@ -157,6 +192,8 @@ func TestParseCreateTable_errors(t *testing.T) {
 		"CREATE TABLE t (id INT, FOREIGN KEY (id) REFERENCES t2 (id) ON DELETE MAYBE)",
 		"CREATE TABLE t (id INT, FOREIGN KEY (id) REFERENCES t2 (id) ON DELETE SET)",
 		"CREATE TABLE t (id INT, FOREIGN KEY (id) REFERENCES t2 (id) ON MAYBE)",
+		"CREATE TABLE t (id INT, FOREIGN KEY (id) REFERENCES t2 (id) ON DELETE CASCADE ON DELETE RESTRICT)",
+		"CREATE TABLE t (id INT, FOREIGN KEY (id) REFERENCES t2 (id) ON UPDATE CASCADE ON UPDATE RESTRICT)",
 	}
 
 	for _, in := range tests {
