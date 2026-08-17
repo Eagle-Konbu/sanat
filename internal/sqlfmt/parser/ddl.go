@@ -470,7 +470,16 @@ func (p *Parser) parseTableOptions() []sqlast.TableOption {
 
 	for p.isTableOptionStart() {
 		opts = append(opts, p.parseTableOption())
-		p.consume(COMMA) // MySQL allows an optional comma between table options
+
+		// Only consume a comma when another option actually follows it —
+		// MySQL allows an optional comma *between* table options, but a
+		// dangling trailing comma (e.g. "ENGINE=InnoDB,") is a syntax
+		// error. Leaving it unconsumed here means the loop's own
+		// isTableOptionStart check fails on the comma next iteration, and
+		// the caller's trailing-token check reports it.
+		if p.at(COMMA) && isTableOptionStartToken(p.peekTok.Type) {
+			p.advance()
+		}
 	}
 
 	return opts
@@ -484,7 +493,11 @@ func (p *Parser) parseTableOptions() []sqlast.TableOption {
 // literal, or the start of another statement) are left for the caller's own
 // trailing-token check instead of being force-fed into parseTableOption.
 func (p *Parser) isTableOptionStart() bool {
-	switch p.tok.Type {
+	return isTableOptionStartToken(p.tok.Type)
+}
+
+func isTableOptionStartToken(tt TokenType) bool {
+	switch tt {
 	case DEFAULT, ENGINE, CHARACTER, CHARSET, COLLATE, COMMENT, AutoIncrement, IDENT, QuotedIdent:
 		return true
 	default:

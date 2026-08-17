@@ -194,6 +194,7 @@ func TestParseCreateTable_errors(t *testing.T) {
 		"CREATE TABLE t (id INT, FOREIGN KEY (id) REFERENCES t2 (id) ON MAYBE)",
 		"CREATE TABLE t (id INT, FOREIGN KEY (id) REFERENCES t2 (id) ON DELETE CASCADE ON DELETE RESTRICT)",
 		"CREATE TABLE t (id INT, FOREIGN KEY (id) REFERENCES t2 (id) ON UPDATE CASCADE ON UPDATE RESTRICT)",
+		"CREATE TABLE t (id INT) ENGINE=InnoDB,",
 	}
 
 	for _, in := range tests {
