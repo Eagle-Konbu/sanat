@@ -290,6 +290,69 @@ FROM
   admins
 ```
 
+### DDL Statements
+
+`CREATE TABLE`'s column/constraint list and `CREATE INDEX`'s column list
+follow the same rule as every other bracketed list in this formatter (see
+the INSERT column list above): one element per line, indented, even when
+there's only one. `ALTER TABLE`'s action list follows the same rule as
+`UPDATE`'s `SET` list: one action per line, even for a single action.
+Trailing table options (`ENGINE`, `DEFAULT CHARSET`, ...) stay on the
+closing paren's line rather than being broken out, since they're key/value
+modifiers rather than a SQL clause with sub-structure.
+
+```text
+CREATE TABLE                 -- optionally IF NOT EXISTS
+  <table> (
+  <column_or_constraint1>,
+  <column_or_constraint2>
+) <option1> <option2>        -- if present, e.g. ENGINE=InnoDB
+
+ALTER TABLE
+  <table>
+  <action1>,
+  <action2>
+
+CREATE INDEX <index> ON <table> (   -- optionally UNIQUE
+  <column1>,
+  <column2>
+)
+
+DROP INDEX <index> ON <table>
+
+DROP TABLE                   -- optionally IF EXISTS
+  <table1>, <table2>
+
+TRUNCATE TABLE <table>
+```
+
+**Example output:**
+
+```sql
+CREATE TABLE IF NOT EXISTS users (
+  id INT NOT NULL AUTO_INCREMENT,
+  email VARCHAR(255) NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_email (email)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+```
+
+```sql
+ALTER TABLE users
+  ADD COLUMN age INT,
+  DROP COLUMN legacy_flag
+```
+
+Data type names (`INT`, `varchar`, ...) are not canonicalized to a fixed
+case — like an unrecognized function name, a type name's casing is
+preserved exactly as written in the source, since `sqlast.DataType` models
+MySQL's type vocabulary generically rather than as a fixed enum (see
+[parser-spec.md](parser-spec.md#ddl-statement-grammar)). Every other
+DDL keyword (`CREATE`, `TABLE`, `ADD`, `PRIMARY KEY`, `NOT NULL`,
+`AUTO_INCREMENT`, `ENGINE`, ...) is a clause keyword and therefore always
+uppercase, unaffected by `keyword_case`, the same treatment `SELECT`/`FROM`
+already get.
+
 ## Expression Formatting
 
 ### WHERE Clause Conditions
@@ -719,7 +782,7 @@ FROM
 
 ## Parser
 
-SQL syntax analysis uses an in-house lexer/parser (`internal/sqlfmt/parser`, producing the `internal/sqlfmt/sqlast` AST) scoped to the MySQL DML this formatter supports. See [parser-spec.md](parser-spec.md) for the full grammar and node reference.
+SQL syntax analysis uses an in-house lexer/parser (`internal/sqlfmt/parser`, producing the `internal/sqlfmt/sqlast` AST) scoped to the MySQL DML and DDL this formatter supports. See [parser-spec.md](parser-spec.md) for the full grammar and node reference.
 
 ### Supported SQL Statements
 
@@ -731,4 +794,15 @@ SQL syntax analysis uses an in-house lexer/parser (`internal/sqlfmt/parser`, pro
 | UPDATE | o |
 | DELETE | o |
 | UNION / UNION ALL | o |
-| Other (DDL, transaction, admin, `JSON_TABLE`, ...) | Not recognized by the parser — `FormatSQL` returns the input unchanged |
+| CREATE TABLE | o |
+| ALTER TABLE | o |
+| CREATE INDEX / DROP INDEX | o |
+| DROP TABLE | o |
+| TRUNCATE TABLE | o |
+| Other (transaction, admin, `JSON_TABLE`, ...) | Not recognized by the parser — `FormatSQL` returns the input unchanged |
+
+Note: DDL statement detection in the CLI's `MightBeSQL` heuristic (see
+[detect-spec.md](detect-spec.md)) is tracked separately and has not landed
+yet, so these statement types are currently reachable only through the
+`sqlfmt.FormatSQL`/`FormatSQLWithOptions` API directly, not yet through the
+`sanat` CLI's Go-source scan.

@@ -41,6 +41,29 @@ type InsertRows interface {
 	iInsertRows()
 }
 
+// TableElement represents one comma-separated entry inside CREATE TABLE's
+// column list: either a ColumnDef or a TableConstraint variant.
+type TableElement interface {
+	SQLNode
+	iTableElement()
+}
+
+// TableConstraint represents a table-level constraint or secondary index
+// definition, shared between CREATE TABLE and ALTER TABLE's ADD CONSTRAINT
+// action. It embeds TableElement since every constraint variant is also a
+// valid CREATE TABLE column-list entry, letting parseTableElement return a
+// TableConstraint directly without a type assertion.
+type TableConstraint interface {
+	TableElement
+	iTableConstraint()
+}
+
+// AlterAction represents a single action within an ALTER TABLE statement.
+type AlterAction interface {
+	SQLNode
+	iAlterAction()
+}
+
 // ColIdent represents a column identifier.
 type ColIdent string
 

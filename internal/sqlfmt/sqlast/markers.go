@@ -51,11 +51,17 @@ func (*JSONObjectAgg) iExpr()          {}
 
 // --- Statement ---
 
-func (*Select) iStatement() {}
-func (*Insert) iStatement() {}
-func (*Update) iStatement() {}
-func (*Delete) iStatement() {}
-func (*Union) iStatement()  {}
+func (*Select) iStatement()        {}
+func (*Insert) iStatement()        {}
+func (*Update) iStatement()        {}
+func (*Delete) iStatement()        {}
+func (*Union) iStatement()         {}
+func (*CreateTable) iStatement()   {}
+func (*AlterTable) iStatement()    {}
+func (*CreateIndex) iStatement()   {}
+func (*DropIndex) iStatement()     {}
+func (*DropTable) iStatement()     {}
+func (*TruncateTable) iStatement() {}
 
 // --- InsertRows ---
 
@@ -79,3 +85,27 @@ func (TableName) iSimpleTableExpr()     {}
 
 func (*AliasedExpr) iSelectExpr() {}
 func (*StarExpr) iSelectExpr()    {}
+
+// --- TableElement ---
+
+func (*ColumnDef) iTableElement()            {}
+func (*PrimaryKeyConstraint) iTableElement() {}
+func (*UniqueConstraint) iTableElement()     {}
+func (*IndexConstraint) iTableElement()      {}
+func (*ForeignKeyConstraint) iTableElement() {}
+
+// --- TableConstraint ---
+
+func (*PrimaryKeyConstraint) iTableConstraint() {}
+func (*UniqueConstraint) iTableConstraint()     {}
+func (*IndexConstraint) iTableConstraint()      {}
+func (*ForeignKeyConstraint) iTableConstraint() {}
+
+// --- AlterAction ---
+
+func (*AddColumnAction) iAlterAction()     {}
+func (*AddConstraintAction) iAlterAction() {}
+func (*DropColumnAction) iAlterAction()    {}
+func (*DropIndexAction) iAlterAction()     {}
+func (*ModifyColumnAction) iAlterAction()  {}
+func (*RenameTableAction) iAlterAction()   {}
