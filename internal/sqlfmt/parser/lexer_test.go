@@ -130,6 +130,36 @@ func TestLexer_Identifiers(t *testing.T) {
 	})
 }
 
+func TestLexer_AtVariable(t *testing.T) {
+	t.Run("simple", func(t *testing.T) {
+		assertTokens(t, "@rank", []wantToken{
+			{parser.AtVariable, "rank"},
+			{parser.EOF, ""},
+		})
+	})
+
+	t.Run("with underscore and digits", func(t *testing.T) {
+		assertTokens(t, "@my_var1", []wantToken{
+			{parser.AtVariable, "my_var1"},
+			{parser.EOF, ""},
+		})
+	})
+
+	t.Run("missing identifier", func(t *testing.T) {
+		l := parser.New("@ 1")
+		if _, err := l.Next(); err == nil {
+			t.Fatal("expected error for '@' not followed by an identifier")
+		}
+	})
+
+	t.Run("missing identifier at eof", func(t *testing.T) {
+		l := parser.New("@")
+		if _, err := l.Next(); err == nil {
+			t.Fatal("expected error for '@' not followed by an identifier")
+		}
+	})
+}
+
 func TestLexer_NumberLiterals(t *testing.T) {
 	tests := []struct {
 		name string

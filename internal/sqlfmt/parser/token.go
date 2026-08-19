@@ -1,11 +1,12 @@
 // Package parser implements a lexer and parser for the supported subset of
-// MySQL DML (SELECT/INSERT/REPLACE/UPDATE/DELETE/UNION) and DDL (CREATE
-// TABLE, ALTER TABLE, CREATE/DROP INDEX, DROP TABLE, TRUNCATE TABLE); see
-// parser-spec.md for the exact grammar. It produces the sqlast AST that the
-// formatter walks to render output. Anything outside that subset —
-// transaction/admin statements, JSON_TABLE, and other constructs not in the
-// grammar — fails to parse rather than being partially or incorrectly
-// accepted.
+// MySQL DML (SELECT/INSERT/REPLACE/UPDATE/DELETE/UNION), DDL (CREATE TABLE,
+// ALTER TABLE, CREATE/DROP INDEX, DROP TABLE, TRUNCATE TABLE), and
+// transaction/session statements (START TRANSACTION, BEGIN, COMMIT,
+// ROLLBACK, SAVEPOINT, RELEASE SAVEPOINT, SET); see parser-spec.md for the
+// exact grammar. It produces the sqlast AST that the formatter walks to
+// render output. Anything outside that subset — admin statements, JSON_TABLE,
+// and other constructs not in the grammar — fails to parse rather than being
+// partially or incorrectly accepted.
 package parser
 
 import "strings"
@@ -23,6 +24,7 @@ const (
 	STRING      // 'abc'
 	HexStr      // x'1A' or X'1A'
 	BitStr      // b'101' or B'101'
+	AtVariable  // @var_name (user-defined variable)
 
 	EQ      // =
 	NE      // <> or !=
@@ -153,6 +155,20 @@ const (
 	ACTION
 	IF
 	AutoIncrement
+	START
+	TRANSACTION
+	READ
+	WRITE
+	ONLY
+	BEGIN
+	WORK
+	COMMIT
+	ROLLBACK
+	SAVEPOINT
+	RELEASE
+	SESSION
+	GLOBAL
+	NAMES
 	keywordEnd
 )
 
@@ -166,6 +182,7 @@ var tokenNames = map[TokenType]string{
 	STRING:      "STRING",
 	HexStr:      "HEX_STRING",
 	BitStr:      "BIT_STRING",
+	AtVariable:  "AT_VARIABLE",
 
 	EQ:      "=",
 	NE:      "<>",
@@ -295,6 +312,20 @@ var tokenNames = map[TokenType]string{
 	ACTION:        "ACTION",
 	IF:            "IF",
 	AutoIncrement: "AUTO_INCREMENT",
+	START:         "START",
+	TRANSACTION:   "TRANSACTION",
+	READ:          "READ",
+	WRITE:         "WRITE",
+	ONLY:          "ONLY",
+	BEGIN:         "BEGIN",
+	WORK:          "WORK",
+	COMMIT:        "COMMIT",
+	ROLLBACK:      "ROLLBACK",
+	SAVEPOINT:     "SAVEPOINT",
+	RELEASE:       "RELEASE",
+	SESSION:       "SESSION",
+	GLOBAL:        "GLOBAL",
+	NAMES:         "NAMES",
 }
 
 // String returns the token type's display name, used in error messages.

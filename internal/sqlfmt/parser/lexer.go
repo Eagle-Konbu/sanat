@@ -55,12 +55,9 @@ func (l *Lexer) Next() (Token, error) {
 	case isIdentStart(l.ch):
 		return l.readIdentifierOrPrefixedLiteral(pos)
 	case l.ch == '`':
-		lit, err := l.readQuotedIdent(pos)
-		if err != nil {
-			return Token{}, err
-		}
-
-		return Token{Type: QuotedIdent, Literal: lit, Pos: pos}, nil
+		return l.readQuotedIdentToken(pos)
+	case l.ch == '@':
+		return l.readAtVariable(pos)
 	case l.ch == '\'':
 		lit, err := l.readString(pos)
 		if err != nil {
@@ -256,6 +253,31 @@ func (l *Lexer) readPrefixedStringContent(startPos Position, tt TokenType) (stri
 	}
 
 	return l.input[start:l.pos], nil
+}
+
+// readQuotedIdentToken reads a backtick-quoted identifier and wraps it as a
+// QuotedIdent token, extracted from Next to keep its cyclomatic complexity
+// down.
+func (l *Lexer) readQuotedIdentToken(pos Position) (Token, error) {
+	lit, err := l.readQuotedIdent(pos)
+	if err != nil {
+		return Token{}, err
+	}
+
+	return Token{Type: QuotedIdent, Literal: lit, Pos: pos}, nil
+}
+
+// readAtVariable reads a user-defined variable reference: '@' followed by an
+// identifier, e.g. @my_var. The Literal carries only the name, without the
+// leading '@'. l.ch must be '@'.
+func (l *Lexer) readAtVariable(startPos Position) (Token, error) {
+	l.readChar() // consume '@'
+
+	if !isIdentStart(l.ch) {
+		return Token{}, &LexError{Pos: startPos, Msg: "expected identifier after '@'"}
+	}
+
+	return Token{Type: AtVariable, Literal: l.readIdentifier(), Pos: startPos}, nil
 }
 
 func (l *Lexer) readIdentifier() string {

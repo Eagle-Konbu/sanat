@@ -3,11 +3,13 @@ package parser
 import "github.com/Eagle-Konbu/sanat/internal/sqlfmt/sqlast"
 
 // ParseStatement parses a single top-level SQL statement — SELECT, INSERT,
-// UPDATE, DELETE, a UNION of SELECT branches, or a DDL statement (CREATE
-// TABLE, ALTER TABLE, CREATE INDEX, DROP INDEX, DROP TABLE, TRUNCATE TABLE),
-// optionally preceded by a WITH clause (except before INSERT/REPLACE or any
-// DDL statement, none of which MySQL allows WITH before) — dispatching on
-// the statement's leading keyword. This is the formatter's entry point.
+// UPDATE, DELETE, a UNION of SELECT branches, a DDL statement (CREATE TABLE,
+// ALTER TABLE, CREATE INDEX, DROP INDEX, DROP TABLE, TRUNCATE TABLE), or a
+// transaction/session statement (START TRANSACTION, BEGIN, COMMIT, ROLLBACK,
+// SAVEPOINT, RELEASE SAVEPOINT, SET), optionally preceded by a WITH clause
+// (except before INSERT/REPLACE or any DDL/transaction/session statement,
+// none of which MySQL allows WITH before) — dispatching on the statement's
+// leading keyword. This is the formatter's entry point.
 //
 //nolint:nonamedreturns // the named results are mutated by the deferred recover
 func ParseStatement(input string) (stmt sqlast.Statement, err error) {
@@ -39,9 +41,14 @@ func (p *Parser) parseStatement() sqlast.Statement {
 		if stmt, ok := p.parseDDLStatement(); ok {
 			return stmt
 		}
+
+		if stmt, ok := p.parseSessionStatement(); ok {
+			return stmt
+		}
 	}
 
-	msg := "expected SELECT, INSERT, UPDATE, DELETE, REPLACE, CREATE, ALTER, DROP, or TRUNCATE, got %s"
+	msg := "expected SELECT, INSERT, UPDATE, DELETE, REPLACE, CREATE, ALTER, DROP, TRUNCATE, " +
+		"START, BEGIN, COMMIT, ROLLBACK, SAVEPOINT, RELEASE, or SET, got %s"
 
 	return failReturn[sqlast.Statement](p, msg, p.tok.Type)
 }
