@@ -397,6 +397,46 @@ identifier (`utf8mb4`), or a quoted string (`'utf8mb4'`), matching what
 MySQL itself accepts there — but either form is preserved exactly as
 written.
 
+### Admin/Utility Statements
+
+The seven `SHOW` variants, `DESCRIBE`, and `USE` are single-line statements,
+formatted the same way transaction/session statements are — keyword
+uppercasing and whitespace normalization, with no bracketed list to
+explode:
+
+```text
+SHOW TABLES [FROM <database>] [LIKE '<pattern>']
+SHOW CREATE TABLE <table>
+SHOW COLUMNS FROM <table>
+SHOW INDEX FROM <table>
+SHOW DATABASES
+SHOW VARIABLES [LIKE '<pattern>']
+SHOW STATUS [LIKE '<pattern>']
+
+DESCRIBE <table> [<column>]
+
+USE <database>
+```
+
+`EXPLAIN` is the one admin/utility statement with sub-structure: it writes
+`EXPLAIN` (plus a `FORMAT = <fmt>` clause, if present) on its own line, then
+formats the wrapped statement one level deeper — the same nesting
+convention a `WITH` clause uses for a CTE's subquery body.
+
+**Example output:**
+
+```sql
+SHOW TABLES FROM mydb LIKE 'user%'
+```
+
+```sql
+EXPLAIN
+  SELECT
+    id
+  FROM
+    users
+```
+
 ## Expression Formatting
 
 ### WHERE Clause Conditions
@@ -845,10 +885,13 @@ SQL syntax analysis uses an in-house lexer/parser (`internal/sqlfmt/parser`, pro
 | TRUNCATE TABLE | o |
 | START TRANSACTION / BEGIN / COMMIT / ROLLBACK / SAVEPOINT / RELEASE SAVEPOINT | o |
 | SET (variable assignment, `SET NAMES`) | o |
-| Other (admin statements, `JSON_TABLE`, ...) | Not recognized by the parser — `FormatSQL` returns the input unchanged |
+| SHOW TABLES / CREATE TABLE / COLUMNS / INDEX / DATABASES / VARIABLES / STATUS | o |
+| DESCRIBE / EXPLAIN / USE | o |
+| Other (stored program syntax — `CALL`, `PREPARE`, `EXECUTE`, `DEALLOCATE PREPARE` — `JSON_TABLE`, ...) | Not recognized by the parser — `FormatSQL` returns the input unchanged |
 
-Note: DDL and transaction/session statement detection in the CLI's
-`MightBeSQL` heuristic (see [detect-spec.md](detect-spec.md)) is tracked
-separately and has not landed yet, so these statement types are currently
-reachable only through the `sqlfmt.FormatSQL`/`FormatSQLWithOptions` API
-directly, not yet through the `sanat` CLI's Go-source scan.
+Note: DDL, transaction/session, and admin/utility statement detection in the
+CLI's `MightBeSQL` heuristic (see [detect-spec.md](detect-spec.md)) is
+tracked separately and has not landed yet, so these statement types are
+currently reachable only through the `sqlfmt.FormatSQL`/
+`FormatSQLWithOptions` API directly, not yet through the `sanat` CLI's
+Go-source scan.

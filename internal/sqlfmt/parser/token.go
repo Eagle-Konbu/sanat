@@ -1,12 +1,14 @@
 // Package parser implements a lexer and parser for the supported subset of
 // MySQL DML (SELECT/INSERT/REPLACE/UPDATE/DELETE/UNION), DDL (CREATE TABLE,
-// ALTER TABLE, CREATE/DROP INDEX, DROP TABLE, TRUNCATE TABLE), and
-// transaction/session statements (START TRANSACTION, BEGIN, COMMIT,
-// ROLLBACK, SAVEPOINT, RELEASE SAVEPOINT, SET); see parser-spec.md for the
-// exact grammar. It produces the sqlast AST that the formatter walks to
-// render output. Anything outside that subset — admin statements, JSON_TABLE,
-// and other constructs not in the grammar — fails to parse rather than being
-// partially or incorrectly accepted.
+// ALTER TABLE, CREATE/DROP INDEX, DROP TABLE, TRUNCATE TABLE), transaction/
+// session statements (START TRANSACTION, BEGIN, COMMIT, ROLLBACK, SAVEPOINT,
+// RELEASE SAVEPOINT, SET), and admin/utility statements (SHOW TABLES/CREATE
+// TABLE/COLUMNS/INDEX/DATABASES/VARIABLES/STATUS, DESCRIBE, EXPLAIN, USE);
+// see parser-spec.md for the exact grammar. It produces the sqlast AST that
+// the formatter walks to render output. Anything outside that subset —
+// stored program syntax (CALL, PREPARE, EXECUTE, DEALLOCATE PREPARE),
+// JSON_TABLE, and other constructs not in the grammar — fails to parse
+// rather than being partially or incorrectly accepted.
 package parser
 
 import "strings"
@@ -169,6 +171,15 @@ const (
 	SESSION
 	GLOBAL
 	NAMES
+	SHOW
+	TABLES
+	COLUMNS
+	DATABASES
+	VARIABLES
+	STATUS
+	DESCRIBE
+	EXPLAIN
+	FORMAT
 	keywordEnd
 )
 
@@ -326,6 +337,15 @@ var tokenNames = map[TokenType]string{
 	SESSION:       "SESSION",
 	GLOBAL:        "GLOBAL",
 	NAMES:         "NAMES",
+	SHOW:          "SHOW",
+	TABLES:        "TABLES",
+	COLUMNS:       "COLUMNS",
+	DATABASES:     "DATABASES",
+	VARIABLES:     "VARIABLES",
+	STATUS:        "STATUS",
+	DESCRIBE:      "DESCRIBE",
+	EXPLAIN:       "EXPLAIN",
+	FORMAT:        "FORMAT",
 }
 
 // String returns the token type's display name, used in error messages.
@@ -354,6 +374,8 @@ var nonReservedKeywords = map[TokenType]bool{
 	NO:            true,
 	ACTION:        true,
 	AutoIncrement: true,
+	FORMAT:        true,
+	STATUS:        true,
 }
 
 // IsNonReservedKeyword reports whether t is one of nonReservedKeywords.

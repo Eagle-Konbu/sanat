@@ -70,6 +70,16 @@ func (*Savepoint) iStatement()        {}
 func (*ReleaseSavepoint) iStatement() {}
 func (*SetVariable) iStatement()      {}
 func (*SetNames) iStatement()         {}
+func (*ShowTables) iStatement()       {}
+func (*ShowCreateTable) iStatement()  {}
+func (*ShowColumns) iStatement()      {}
+func (*ShowIndex) iStatement()        {}
+func (*ShowDatabases) iStatement()    {}
+func (*ShowVariables) iStatement()    {}
+func (*ShowStatus) iStatement()       {}
+func (*Describe) iStatement()         {}
+func (*Explain) iStatement()          {}
+func (*Use) iStatement()              {}
 
 // --- InsertRows ---
 

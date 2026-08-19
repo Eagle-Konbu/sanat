@@ -133,7 +133,11 @@ func (f *formatter) formatStatement(b *strings.Builder, stmt sqlast.Statement, d
 			return
 		}
 
-		if !f.formatSessionStatement(b, stmt, depth) {
+		if f.formatSessionStatement(b, stmt, depth) {
+			return
+		}
+
+		if !f.formatAdminStatement(b, stmt, depth) {
 			panic(fmt.Sprintf("sqlfmt: unhandled statement type %T", stmt))
 		}
 	}
@@ -264,6 +268,53 @@ func (f *formatter) formatSetNames(b *strings.Builder, s *sqlast.SetNames, depth
 	}
 
 	b.WriteString("\n")
+}
+
+// formatAdminStatement handles the admin/utility statement types (SHOW
+// TABLES/CREATE TABLE/COLUMNS/INDEX/DATABASES/VARIABLES/STATUS, DESCRIBE,
+// EXPLAIN, USE), split out of formatStatement to keep that switch's
+// cyclomatic complexity down. It reports whether stmt was a recognized
+// admin/utility statement.
+func (f *formatter) formatAdminStatement(b *strings.Builder, stmt sqlast.Statement, depth int) bool {
+	switch s := stmt.(type) {
+	case *sqlast.ShowTables, *sqlast.ShowCreateTable, *sqlast.ShowColumns, *sqlast.ShowIndex,
+		*sqlast.ShowDatabases, *sqlast.ShowVariables, *sqlast.ShowStatus, *sqlast.Describe, *sqlast.Use:
+		f.formatSingleLineStatement(b, s, depth)
+	case *sqlast.Explain:
+		f.formatExplain(b, s, depth)
+	default:
+		return false
+	}
+
+	return true
+}
+
+// formatSingleLineStatement writes a statement whose sqlast node's String()
+// is already the exact rendered output: none of the SHOW/DESCRIBE/USE
+// statement kinds have an Expr-valued field that needs keyword-case or
+// indentation handling beyond what String() already does (a SHOW ...
+// LIKE pattern is always a quoted string literal, never a bareword
+// expression keyword-case could affect).
+func (f *formatter) formatSingleLineStatement(b *strings.Builder, s sqlast.Statement, depth int) {
+	b.WriteString(f.pad(depth))
+	b.WriteString(s.String())
+	b.WriteString("\n")
+}
+
+// formatExplain writes "EXPLAIN [FORMAT = fmt]" on its own line, then
+// formats the wrapped statement one level deeper, the same nesting
+// convention formatWith uses for a CTE's subquery body.
+func (f *formatter) formatExplain(b *strings.Builder, s *sqlast.Explain, depth int) {
+	b.WriteString(f.pad(depth))
+	b.WriteString("EXPLAIN")
+
+	if format := s.Format.String(); format != "" {
+		b.WriteString(" FORMAT = ")
+		b.WriteString(format)
+	}
+
+	b.WriteString("\n")
+	f.formatStatement(b, s.Statement, depth+1)
 }
 
 func (f *formatter) pad(depth int) string {
