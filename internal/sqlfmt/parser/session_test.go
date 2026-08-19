@@ -34,6 +34,7 @@ func TestParseStartTransaction_errors(t *testing.T) {
 		"START TRANSACTION READ",
 		"START TRANSACTION READ ONLY WRITE",
 		"START TRANSACTION extra",
+		"START TRANSACTION WITH CONSISTENT SNAPSHOT",
 	}
 
 	for _, in := range tests {
@@ -119,6 +120,19 @@ func TestParseSavepoint(t *testing.T) {
 	}
 }
 
+func TestParseSavepoint_errors(t *testing.T) {
+	tests := []string{
+		"SAVEPOINT",
+		"SAVEPOINT sp1 extra",
+	}
+
+	for _, in := range tests {
+		if _, err := parser.ParseSavepoint(in); err == nil {
+			t.Errorf("ParseSavepoint(%q) expected error, got nil", in)
+		}
+	}
+}
+
 func TestParseReleaseSavepoint(t *testing.T) {
 	r, err := parser.ParseReleaseSavepoint("RELEASE SAVEPOINT sp1")
 	if err != nil {
@@ -128,6 +142,34 @@ func TestParseReleaseSavepoint(t *testing.T) {
 	want := "RELEASE SAVEPOINT sp1"
 	if got := r.String(); got != want {
 		t.Errorf("ParseReleaseSavepoint(...).String() = %q, want %q", got, want)
+	}
+}
+
+func TestParseReleaseSavepoint_errors(t *testing.T) {
+	tests := []string{
+		"RELEASE SAVEPOINT",
+		"RELEASE sp1",
+		"RELEASE SAVEPOINT sp1 extra",
+	}
+
+	for _, in := range tests {
+		if _, err := parser.ParseReleaseSavepoint(in); err == nil {
+			t.Errorf("ParseReleaseSavepoint(%q) expected error, got nil", in)
+		}
+	}
+}
+
+func TestParseRollback_errors(t *testing.T) {
+	tests := []string{
+		"ROLLBACK AND CHAIN",
+		"ROLLBACK RELEASE",
+		"ROLLBACK TO",
+	}
+
+	for _, in := range tests {
+		if _, err := parser.ParseRollback(in); err == nil {
+			t.Errorf("ParseRollback(%q) expected error, got nil", in)
+		}
 	}
 }
 
@@ -159,6 +201,8 @@ func TestParseSetNames(t *testing.T) {
 		{"charset only", "SET NAMES utf8mb4", "SET NAMES utf8mb4"},
 		{"quoted charset", "SET NAMES 'utf8mb4'", "SET NAMES 'utf8mb4'"},
 		{"charset and collate", "SET NAMES utf8mb4 COLLATE utf8mb4_bin", "SET NAMES utf8mb4 COLLATE utf8mb4_bin"},
+		{"quoted charset and collate", "SET NAMES 'utf8mb4' COLLATE 'utf8mb4_bin'", "SET NAMES 'utf8mb4' COLLATE 'utf8mb4_bin'"},
+		{"default charset", "SET NAMES DEFAULT", "SET NAMES DEFAULT"},
 	}
 
 	for _, tt := range tests {
@@ -175,12 +219,31 @@ func TestParseSetNames(t *testing.T) {
 	}
 }
 
+func TestParseSetNames_errors(t *testing.T) {
+	tests := []string{
+		"SET NAMES",
+		"SET NAMES 1+2",
+		"SET NAMES utf8mb4 COLLATE",
+		"SET NAMES utf8mb4 extra",
+	}
+
+	for _, in := range tests {
+		if _, err := parser.ParseSetNames(in); err == nil {
+			t.Errorf("ParseSetNames(%q) expected error, got nil", in)
+		}
+	}
+}
+
 func TestParseSetVariable_errors(t *testing.T) {
 	tests := []string{
 		"SET",
 		"SET @rank",
 		"SET sql_mode",
 		"SET @rank = 0 extra",
+		"SET @@global.sql_mode = 1",
+		"SET LOCAL sql_mode = 'x'",
+		"SET a = 1, b = 2",
+		"SET SESSION sql_mode",
 	}
 
 	for _, in := range tests {

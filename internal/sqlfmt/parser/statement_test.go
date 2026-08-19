@@ -103,6 +103,7 @@ func TestParseStatement_errors(t *testing.T) {
 		"SAVEPOINT sp1 extra tokens",
 		"RELEASE SAVEPOINT sp1 extra tokens",
 		"SET @rank = 0 extra tokens",
+		"SET NAMES utf8mb4 extra tokens",
 	}
 
 	for _, in := range tests {

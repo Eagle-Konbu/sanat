@@ -81,7 +81,7 @@ func TestSetVariable_String(t *testing.T) {
 		s    *sqlast.SetVariable
 		want string
 	}{
-		{"user variable", &sqlast.SetVariable{Name: "@rank", Value: lit("0")}, "SET @rank = 0"},
+		{"user variable", &sqlast.SetVariable{IsUserVariable: true, Name: "rank", Value: lit("0")}, "SET @rank = 0"},
 		{"no scope", &sqlast.SetVariable{Name: "sql_mode", Value: lit("STRICT_TRANS_TABLES")}, "SET sql_mode = STRICT_TRANS_TABLES"},
 		{
 			"session scope",

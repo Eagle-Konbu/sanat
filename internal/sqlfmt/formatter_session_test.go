@@ -20,6 +20,7 @@ func TestFormatSQL_Commit(t *testing.T) {
 
 func TestFormatSQL_Rollback(t *testing.T) {
 	assertFormatSQL(t, "rollback", "ROLLBACK")
+	assertFormatSQL(t, "rollback work", "ROLLBACK")
 	assertFormatSQL(t, "rollback to savepoint sp1", "ROLLBACK TO SAVEPOINT sp1")
 	assertFormatSQL(t, "rollback to sp1", "ROLLBACK TO SAVEPOINT sp1")
 }
@@ -42,4 +43,6 @@ func TestFormatSQL_SetVariable(t *testing.T) {
 func TestFormatSQL_SetNames(t *testing.T) {
 	assertFormatSQL(t, "set names utf8mb4", "SET NAMES utf8mb4")
 	assertFormatSQL(t, "set names utf8mb4 collate utf8mb4_bin", "SET NAMES utf8mb4 COLLATE utf8mb4_bin")
+	assertFormatSQL(t, "set names 'utf8mb4'", "SET NAMES 'utf8mb4'")
+	assertFormatSQL(t, "set names 'utf8mb4' collate 'utf8mb4_bin'", "SET NAMES 'utf8mb4' COLLATE 'utf8mb4_bin'")
 }

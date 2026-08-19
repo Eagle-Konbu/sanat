@@ -534,20 +534,23 @@ flowchart TD
   single required identifier with no optional parts.
 - **`SET`** dispatches on whether `NAMES` follows:
   - **`SET NAMES charset [COLLATE collation]`** (`SetNames{Charset,
-    Collate}`) parses both `charset` and `collation` with the full
-    expression grammar (`parseExpr`), so either a bare identifier
-    (`utf8mb4`) or a quoted string (`'utf8mb4'`) is accepted, the same
-    trick `DEFAULT`/`COMMENT` values use in DDL (see
-    [DDL Statement Grammar](#ddl-statement-grammar) above). MySQL's
-    `DEFAULT` value form (`SET NAMES DEFAULT`) is not recognized.
-  - Anything else is a variable assignment (`SetVariable{Scope, Name,
-    Value}`): an optional `SESSION`/`GLOBAL` scope keyword before a plain
-    identifier (`sqlast.SessionScope`/`sqlast.GlobalScope`), a plain
-    identifier with no scope keyword at all (`sqlast.NoScope`, MySQL's
-    implicit-session form), or an `AtVariable` token for a user-defined
-    variable (`Name` is stored with its leading `@`, e.g. `"@rank"`) —
-    never both a scope keyword and `@`, since MySQL doesn't allow scoping a
-    user variable. `Value` reuses the full expression grammar. MySQL's
+    Collate}`) parses `charset` and `collation` with `parseCharsetOrCollationName`,
+    not the full expression grammar: each is the `DEFAULT` keyword, a bare
+    identifier (`utf8mb4`), or a quoted string (`'utf8mb4'`) — MySQL doesn't
+    accept any other expression shape (arithmetic, function calls, qualified
+    names, ...) in either position, unlike DDL's `DEFAULT`/`COMMENT` values,
+    which do reuse `parseExpr` (see
+    [DDL Statement Grammar](#ddl-statement-grammar) above).
+  - Anything else is a variable assignment (`SetVariable{Scope,
+    IsUserVariable, Name, Value}`): an optional `SESSION`/`GLOBAL` scope
+    keyword before a plain identifier (`sqlast.SessionScope`/
+    `sqlast.GlobalScope`), a plain identifier with no scope keyword at all
+    (`sqlast.NoScope`, MySQL's implicit-session form), or an `AtVariable`
+    token for a user-defined variable (`IsUserVariable: true`, `Name` holding
+    the name *without* its leading `@` — the `@` is added back only when
+    rendering, via `SetVariable.String()`) — never both a scope keyword and
+    `IsUserVariable`, since MySQL doesn't allow scoping a user variable.
+    `Value` reuses the full expression grammar. MySQL's
     `@@[global.|session.]var` system-variable syntax, `SET LOCAL` (a
     `SESSION` synonym), and comma-separated multi-assignment `SET` are not
     recognized.

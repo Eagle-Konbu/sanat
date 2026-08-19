@@ -194,15 +194,15 @@ func (f *formatter) formatSessionStatement(b *strings.Builder, stmt sqlast.State
 	return true
 }
 
+// formatStartTransaction, formatRollback, formatSavepoint, and
+// formatReleaseSavepoint all delegate to their sqlast node's String(): none
+// of these statements have an Expr-valued field, so there's no keyword-case
+// or indentation concern String() doesn't already handle correctly (unlike
+// formatSetVariable/formatSetNames, whose values must go through
+// formatExpr).
 func (f *formatter) formatStartTransaction(b *strings.Builder, s *sqlast.StartTransaction, depth int) {
 	b.WriteString(f.pad(depth))
-	b.WriteString("START TRANSACTION")
-
-	if mode := s.Mode.String(); mode != "" {
-		b.WriteString(" ")
-		b.WriteString(mode)
-	}
-
+	b.WriteString(s.String())
 	b.WriteString("\n")
 }
 
@@ -218,27 +218,19 @@ func (f *formatter) formatCommit(b *strings.Builder, depth int) {
 
 func (f *formatter) formatRollback(b *strings.Builder, s *sqlast.Rollback, depth int) {
 	b.WriteString(f.pad(depth))
-	b.WriteString("ROLLBACK")
-
-	if !s.SavepointName.IsEmpty() {
-		b.WriteString(" TO SAVEPOINT ")
-		b.WriteString(s.SavepointName.String())
-	}
-
+	b.WriteString(s.String())
 	b.WriteString("\n")
 }
 
 func (f *formatter) formatSavepoint(b *strings.Builder, s *sqlast.Savepoint, depth int) {
 	b.WriteString(f.pad(depth))
-	b.WriteString("SAVEPOINT ")
-	b.WriteString(s.Name.String())
+	b.WriteString(s.String())
 	b.WriteString("\n")
 }
 
 func (f *formatter) formatReleaseSavepoint(b *strings.Builder, s *sqlast.ReleaseSavepoint, depth int) {
 	b.WriteString(f.pad(depth))
-	b.WriteString("RELEASE SAVEPOINT ")
-	b.WriteString(s.Name.String())
+	b.WriteString(s.String())
 	b.WriteString("\n")
 }
 
@@ -249,6 +241,10 @@ func (f *formatter) formatSetVariable(b *strings.Builder, s *sqlast.SetVariable,
 	if scope := s.Scope.String(); scope != "" {
 		b.WriteString(scope)
 		b.WriteString(" ")
+	}
+
+	if s.IsUserVariable {
+		b.WriteString("@")
 	}
 
 	b.WriteString(s.Name)

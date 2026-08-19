@@ -167,13 +167,29 @@ func (p *Parser) parseSetNamesStatement() *sqlast.SetNames {
 // parseSetNamesRest parses the remainder of a SET NAMES statement after SET
 // NAMES has been consumed: a charset, and an optional COLLATE collation.
 func (p *Parser) parseSetNamesRest() *sqlast.SetNames {
-	sn := &sqlast.SetNames{Charset: p.parseExpr()}
+	sn := &sqlast.SetNames{Charset: p.parseCharsetOrCollationName()}
 
 	if p.consume(COLLATE) {
-		sn.Collate = p.parseExpr()
+		sn.Collate = p.parseCharsetOrCollationName()
 	}
 
 	return sn
+}
+
+// parseCharsetOrCollationName parses a SET NAMES charset or COLLATE
+// collation value: the DEFAULT keyword, a bare identifier, or a quoted
+// string. Unlike DDL's DEFAULT/COMMENT values, this is deliberately not the
+// full expression grammar — MySQL doesn't accept any other expression shape
+// (arithmetic, function calls, qualified names, ...) in either position.
+func (p *Parser) parseCharsetOrCollationName() sqlast.Expr {
+	switch {
+	case p.consume(DEFAULT):
+		return &sqlast.Literal{Val: "DEFAULT"}
+	case p.at(STRING):
+		return p.parseStringLiteral()
+	default:
+		return &sqlast.Literal{Val: p.readIdent()}
+	}
 }
 
 // parseSetVariableStatement parses a full SET statement assigning a
@@ -199,7 +215,8 @@ func (p *Parser) parseSetVariableRest() *sqlast.SetVariable {
 		sv.Scope = sqlast.GlobalScope
 		sv.Name = p.readIdent()
 	case p.at(AtVariable):
-		sv.Name = "@" + p.tok.Literal
+		sv.IsUserVariable = true
+		sv.Name = p.tok.Literal
 		p.advance()
 	default:
 		sv.Name = p.readIdent()

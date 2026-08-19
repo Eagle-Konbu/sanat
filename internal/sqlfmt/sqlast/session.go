@@ -110,11 +110,13 @@ func (s VariableScope) String() string {
 }
 
 // SetVariable represents a SET statement assigning a user-defined variable
-// (Name starting with "@") or a session/global system variable.
+// (IsUserVariable true, Name holding the name without its leading "@") or a
+// session/global system variable.
 type SetVariable struct {
-	Scope VariableScope
-	Name  string
-	Value Expr
+	Scope          VariableScope
+	IsUserVariable bool
+	Name           string
+	Value          Expr
 }
 
 // String returns SetVariable's SQL text.
@@ -126,6 +128,10 @@ func (s *SetVariable) String() string {
 	if scope := s.Scope.String(); scope != "" {
 		b.WriteString(scope)
 		b.WriteString(" ")
+	}
+
+	if s.IsUserVariable {
+		b.WriteString("@")
 	}
 
 	b.WriteString(s.Name)

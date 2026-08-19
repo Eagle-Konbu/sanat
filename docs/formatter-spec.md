@@ -391,9 +391,11 @@ SET SESSION sql_mode = 'STRICT_TRANS_TABLES'
 Like every other DDL keyword, these statements' clause keywords (`START
 TRANSACTION`, `ROLLBACK TO SAVEPOINT`, `SET NAMES`, ...) are always
 uppercase, unaffected by `keyword_case`. A `SET` statement's assigned value
-and a `SET NAMES` statement's charset/collation reuse the full expression
-grammar (`parseExpr`), so either a bare identifier (`utf8mb4`) or a quoted
-string (`'utf8mb4'`) is accepted and preserved as written.
+reuses the full expression grammar (`parseExpr`). A `SET NAMES` statement's
+charset/collation is more restricted — the `DEFAULT` keyword, a bare
+identifier (`utf8mb4`), or a quoted string (`'utf8mb4'`), matching what
+MySQL itself accepts there — but either form is preserved exactly as
+written.
 
 ## Expression Formatting
 
