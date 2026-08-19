@@ -1,6 +1,7 @@
 package parser_test
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/Eagle-Konbu/sanat/internal/sqlfmt/parser"
@@ -126,6 +127,55 @@ func TestLexer_Identifiers(t *testing.T) {
 		l := parser.New("`abc")
 		if _, err := l.Next(); err == nil {
 			t.Fatal("expected error for unterminated quoted identifier")
+		}
+	})
+}
+
+func TestLexer_AtVariable(t *testing.T) {
+	t.Run("simple", func(t *testing.T) {
+		assertTokens(t, "@rank", []wantToken{
+			{parser.AtVariable, "rank"},
+			{parser.EOF, ""},
+		})
+	})
+
+	t.Run("with underscore and digits", func(t *testing.T) {
+		assertTokens(t, "@my_var1", []wantToken{
+			{parser.AtVariable, "my_var1"},
+			{parser.EOF, ""},
+		})
+	})
+
+	t.Run("missing identifier", func(t *testing.T) {
+		l := parser.New("@ 1")
+
+		_, err := l.Next()
+
+		var lexErr *parser.LexError
+		if !errors.As(err, &lexErr) {
+			t.Fatalf("Next() error = %v, want *parser.LexError", err)
+		}
+	})
+
+	t.Run("missing identifier at eof", func(t *testing.T) {
+		l := parser.New("@")
+
+		_, err := l.Next()
+
+		var lexErr *parser.LexError
+		if !errors.As(err, &lexErr) {
+			t.Fatalf("Next() error = %v, want *parser.LexError", err)
+		}
+	})
+
+	t.Run("at-at system variable syntax is rejected", func(t *testing.T) {
+		l := parser.New("@@global.sql_mode")
+
+		_, err := l.Next()
+
+		var lexErr *parser.LexError
+		if !errors.As(err, &lexErr) {
+			t.Fatalf("Next() error = %v, want *parser.LexError", err)
 		}
 	})
 }

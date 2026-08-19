@@ -51,17 +51,25 @@ func (*JSONObjectAgg) iExpr()          {}
 
 // --- Statement ---
 
-func (*Select) iStatement()        {}
-func (*Insert) iStatement()        {}
-func (*Update) iStatement()        {}
-func (*Delete) iStatement()        {}
-func (*Union) iStatement()         {}
-func (*CreateTable) iStatement()   {}
-func (*AlterTable) iStatement()    {}
-func (*CreateIndex) iStatement()   {}
-func (*DropIndex) iStatement()     {}
-func (*DropTable) iStatement()     {}
-func (*TruncateTable) iStatement() {}
+func (*Select) iStatement()           {}
+func (*Insert) iStatement()           {}
+func (*Update) iStatement()           {}
+func (*Delete) iStatement()           {}
+func (*Union) iStatement()            {}
+func (*CreateTable) iStatement()      {}
+func (*AlterTable) iStatement()       {}
+func (*CreateIndex) iStatement()      {}
+func (*DropIndex) iStatement()        {}
+func (*DropTable) iStatement()        {}
+func (*TruncateTable) iStatement()    {}
+func (*StartTransaction) iStatement() {}
+func (*Begin) iStatement()            {}
+func (*Commit) iStatement()           {}
+func (*Rollback) iStatement()         {}
+func (*Savepoint) iStatement()        {}
+func (*ReleaseSavepoint) iStatement() {}
+func (*SetVariable) iStatement()      {}
+func (*SetNames) iStatement()         {}
 
 // --- InsertRows ---
 

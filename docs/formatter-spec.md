@@ -353,6 +353,50 @@ DDL keyword (`CREATE`, `TABLE`, `ADD`, `PRIMARY KEY`, `NOT NULL`,
 uppercase, unaffected by `keyword_case`, the same treatment `SELECT`/`FROM`
 already get.
 
+### Transaction and Session Statements
+
+`START TRANSACTION`, `BEGIN`, `COMMIT`, `ROLLBACK`, `SAVEPOINT`, `RELEASE
+SAVEPOINT`, and `SET` are all single-line statements with no bracketed list
+to explode, so formatting is limited to keyword uppercasing, the optional
+`WORK` noise word being dropped, and normalizing whitespace:
+
+```text
+START TRANSACTION [READ ONLY | READ WRITE]
+
+BEGIN
+
+COMMIT
+
+ROLLBACK
+ROLLBACK TO SAVEPOINT <savepoint>
+
+SAVEPOINT <savepoint>
+
+RELEASE SAVEPOINT <savepoint>
+
+SET [SESSION | GLOBAL] <var> = <expr>   -- <var> is @-prefixed for a user variable
+SET NAMES <charset> [COLLATE <collation>]
+```
+
+**Example output:**
+
+```sql
+START TRANSACTION READ ONLY
+```
+
+```sql
+SET SESSION sql_mode = 'STRICT_TRANS_TABLES'
+```
+
+Like every other DDL keyword, these statements' clause keywords (`START
+TRANSACTION`, `ROLLBACK TO SAVEPOINT`, `SET NAMES`, ...) are always
+uppercase, unaffected by `keyword_case`. A `SET` statement's assigned value
+reuses the full expression grammar (`parseExpr`). A `SET NAMES` statement's
+charset/collation is more restricted — the `DEFAULT` keyword, a bare
+identifier (`utf8mb4`), or a quoted string (`'utf8mb4'`), matching what
+MySQL itself accepts there — but either form is preserved exactly as
+written.
+
 ## Expression Formatting
 
 ### WHERE Clause Conditions
@@ -799,10 +843,12 @@ SQL syntax analysis uses an in-house lexer/parser (`internal/sqlfmt/parser`, pro
 | CREATE INDEX / DROP INDEX | o |
 | DROP TABLE | o |
 | TRUNCATE TABLE | o |
-| Other (transaction, admin, `JSON_TABLE`, ...) | Not recognized by the parser — `FormatSQL` returns the input unchanged |
+| START TRANSACTION / BEGIN / COMMIT / ROLLBACK / SAVEPOINT / RELEASE SAVEPOINT | o |
+| SET (variable assignment, `SET NAMES`) | o |
+| Other (admin statements, `JSON_TABLE`, ...) | Not recognized by the parser — `FormatSQL` returns the input unchanged |
 
-Note: DDL statement detection in the CLI's `MightBeSQL` heuristic (see
-[detect-spec.md](detect-spec.md)) is tracked separately and has not landed
-yet, so these statement types are currently reachable only through the
-`sqlfmt.FormatSQL`/`FormatSQLWithOptions` API directly, not yet through the
-`sanat` CLI's Go-source scan.
+Note: DDL and transaction/session statement detection in the CLI's
+`MightBeSQL` heuristic (see [detect-spec.md](detect-spec.md)) is tracked
+separately and has not landed yet, so these statement types are currently
+reachable only through the `sqlfmt.FormatSQL`/`FormatSQLWithOptions` API
+directly, not yet through the `sanat` CLI's Go-source scan.

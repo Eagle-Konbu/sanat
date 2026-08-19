@@ -57,6 +57,14 @@ func TestParseStatement_dispatch(t *testing.T) {
 		{"drop table", "DROP TABLE t", "DROP TABLE t", &sqlast.DropTable{}},
 		{"drop index", "DROP INDEX idx ON t", "DROP INDEX idx ON t", &sqlast.DropIndex{}},
 		{"truncate table", "TRUNCATE TABLE t", "TRUNCATE TABLE t", &sqlast.TruncateTable{}},
+		{"start transaction", "START TRANSACTION", "START TRANSACTION", &sqlast.StartTransaction{}},
+		{"begin", "BEGIN", "BEGIN", &sqlast.Begin{}},
+		{"commit", "COMMIT", "COMMIT", &sqlast.Commit{}},
+		{"rollback", "ROLLBACK", "ROLLBACK", &sqlast.Rollback{}},
+		{"savepoint", "SAVEPOINT sp1", "SAVEPOINT sp1", &sqlast.Savepoint{}},
+		{"release savepoint", "RELEASE SAVEPOINT sp1", "RELEASE SAVEPOINT sp1", &sqlast.ReleaseSavepoint{}},
+		{"set variable", "SET @rank = 0", "SET @rank = 0", &sqlast.SetVariable{}},
+		{"set names", "SET NAMES utf8mb4", "SET NAMES utf8mb4", &sqlast.SetNames{}},
 	}
 
 	for _, tt := range tests {
@@ -86,6 +94,16 @@ func TestParseStatement_errors(t *testing.T) {
 		"TRUNCATE TABLE t extra tokens",
 		"SELECT VALUES(a)",
 		"UPDATE t SET a = VALUES(name)",
+		"WITH c AS (SELECT 1) START TRANSACTION",
+		"WITH c AS (SELECT 1) SET @rank = 0",
+		"START TRANSACTION extra tokens",
+		"BEGIN extra tokens",
+		"COMMIT extra tokens",
+		"ROLLBACK extra tokens",
+		"SAVEPOINT sp1 extra tokens",
+		"RELEASE SAVEPOINT sp1 extra tokens",
+		"SET @rank = 0 extra tokens",
+		"SET NAMES utf8mb4 extra tokens",
 	}
 
 	for _, in := range tests {

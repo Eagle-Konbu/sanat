@@ -129,7 +129,11 @@ func (f *formatter) formatStatement(b *strings.Builder, stmt sqlast.Statement, d
 	case *sqlast.Union:
 		f.formatUnion(b, s, depth)
 	default:
-		if !f.formatDDLStatement(b, stmt, depth) {
+		if f.formatDDLStatement(b, stmt, depth) {
+			return
+		}
+
+		if !f.formatSessionStatement(b, stmt, depth) {
 			panic(fmt.Sprintf("sqlfmt: unhandled statement type %T", stmt))
 		}
 	}
@@ -158,6 +162,108 @@ func (f *formatter) formatDDLStatement(b *strings.Builder, stmt sqlast.Statement
 	}
 
 	return true
+}
+
+// formatSessionStatement handles the transaction-control and SET statement
+// types (START TRANSACTION, BEGIN, COMMIT, ROLLBACK, SAVEPOINT, RELEASE
+// SAVEPOINT, SET), split out of formatStatement to keep that switch's
+// cyclomatic complexity down. It reports whether stmt was a recognized
+// transaction/session statement.
+func (f *formatter) formatSessionStatement(b *strings.Builder, stmt sqlast.Statement, depth int) bool {
+	switch s := stmt.(type) {
+	case *sqlast.StartTransaction:
+		f.formatStartTransaction(b, s, depth)
+	case *sqlast.Begin:
+		f.formatBegin(b, depth)
+	case *sqlast.Commit:
+		f.formatCommit(b, depth)
+	case *sqlast.Rollback:
+		f.formatRollback(b, s, depth)
+	case *sqlast.Savepoint:
+		f.formatSavepoint(b, s, depth)
+	case *sqlast.ReleaseSavepoint:
+		f.formatReleaseSavepoint(b, s, depth)
+	case *sqlast.SetVariable:
+		f.formatSetVariable(b, s, depth)
+	case *sqlast.SetNames:
+		f.formatSetNames(b, s, depth)
+	default:
+		return false
+	}
+
+	return true
+}
+
+// formatStartTransaction, formatRollback, formatSavepoint, and
+// formatReleaseSavepoint all delegate to their sqlast node's String(): none
+// of these statements have an Expr-valued field, so there's no keyword-case
+// or indentation concern String() doesn't already handle correctly (unlike
+// formatSetVariable/formatSetNames, whose values must go through
+// formatExpr).
+func (f *formatter) formatStartTransaction(b *strings.Builder, s *sqlast.StartTransaction, depth int) {
+	b.WriteString(f.pad(depth))
+	b.WriteString(s.String())
+	b.WriteString("\n")
+}
+
+func (f *formatter) formatBegin(b *strings.Builder, depth int) {
+	b.WriteString(f.pad(depth))
+	b.WriteString("BEGIN\n")
+}
+
+func (f *formatter) formatCommit(b *strings.Builder, depth int) {
+	b.WriteString(f.pad(depth))
+	b.WriteString("COMMIT\n")
+}
+
+func (f *formatter) formatRollback(b *strings.Builder, s *sqlast.Rollback, depth int) {
+	b.WriteString(f.pad(depth))
+	b.WriteString(s.String())
+	b.WriteString("\n")
+}
+
+func (f *formatter) formatSavepoint(b *strings.Builder, s *sqlast.Savepoint, depth int) {
+	b.WriteString(f.pad(depth))
+	b.WriteString(s.String())
+	b.WriteString("\n")
+}
+
+func (f *formatter) formatReleaseSavepoint(b *strings.Builder, s *sqlast.ReleaseSavepoint, depth int) {
+	b.WriteString(f.pad(depth))
+	b.WriteString(s.String())
+	b.WriteString("\n")
+}
+
+func (f *formatter) formatSetVariable(b *strings.Builder, s *sqlast.SetVariable, depth int) {
+	b.WriteString(f.pad(depth))
+	b.WriteString("SET ")
+
+	if scope := s.Scope.String(); scope != "" {
+		b.WriteString(scope)
+		b.WriteString(" ")
+	}
+
+	if s.IsUserVariable {
+		b.WriteString("@")
+	}
+
+	b.WriteString(s.Name)
+	b.WriteString(" = ")
+	b.WriteString(f.formatExpr(s.Value, depth))
+	b.WriteString("\n")
+}
+
+func (f *formatter) formatSetNames(b *strings.Builder, s *sqlast.SetNames, depth int) {
+	b.WriteString(f.pad(depth))
+	b.WriteString("SET NAMES ")
+	b.WriteString(f.formatExpr(s.Charset, depth))
+
+	if s.Collate != nil {
+		b.WriteString(" COLLATE ")
+		b.WriteString(f.formatExpr(s.Collate, depth))
+	}
+
+	b.WriteString("\n")
 }
 
 func (f *formatter) pad(depth int) string {

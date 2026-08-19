@@ -29,14 +29,18 @@ removed from `go.mod`.
 | Migrate formatter to custom AST | `internal/sqlfmt/formatter.go` | #29 | Done |
 | Remove Vitess dependency | `go.mod` | #30 | Done |
 | DDL statement parsing (CREATE/ALTER/DROP TABLE, CREATE/DROP INDEX, TRUNCATE TABLE) | `internal/sqlfmt/sqlast/ddl.go`, `internal/sqlfmt/parser/ddl.go` | #32 | Done |
+| Transaction/session statement parsing (START TRANSACTION, BEGIN, COMMIT, ROLLBACK, SAVEPOINT, RELEASE SAVEPOINT, SET) | `internal/sqlfmt/sqlast/session.go`, `internal/sqlfmt/parser/session.go` | #33 | Done |
 
 Scope is MySQL DML (SELECT/INSERT/UPDATE/DELETE/UNION) plus the expression
-features above, and the DDL statement kinds in
+features above, the DDL statement kinds in
 [#32](https://github.com/Eagle-Konbu/sanat/issues/32) (see
-[DDL Statement Grammar](#ddl-statement-grammar) below); transaction and admin
-statements remain out of scope, tracked separately in
-[#38](https://github.com/Eagle-Konbu/sanat/issues/38)'s remaining sub-issues
-(#33, #34). A set of minor/advanced expression and query-modifier features
+[DDL Statement Grammar](#ddl-statement-grammar) below), and the transaction/
+session statement kinds in
+[#33](https://github.com/Eagle-Konbu/sanat/issues/33) (see
+[Transaction and Session Statement Grammar](#transaction-and-session-statement-grammar)
+below); admin statements remain out of scope, tracked separately in
+[#38](https://github.com/Eagle-Konbu/sanat/issues/38)'s remaining sub-issue
+(#34). A set of minor/advanced expression and query-modifier features
 (e.g. `SOUNDS LIKE`, `COLLATE` on expressions, `INTERVAL`, `MATCH ... AGAINST`,
 `BINARY` cast, `ANY`/`SOME`/`ALL` subquery modifiers, `SQL_CALC_FOUND_ROWS`)
 is deliberately deferred; see [#14](https://github.com/Eagle-Konbu/sanat/issues/14).
@@ -65,7 +69,7 @@ their marker methods (`iExpr()`, `iStatement()`, ...) are gathered in
 
 | Category | Types |
 |----------|-------|
-| Statements | `Select`, `Insert`, `Update`, `Delete`, `Union`, `With`, `CommonTableExpr`, `CreateTable`, `AlterTable`, `CreateIndex`, `DropIndex`, `DropTable`, `TruncateTable` |
+| Statements | `Select`, `Insert`, `Update`, `Delete`, `Union`, `With`, `CommonTableExpr`, `CreateTable`, `AlterTable`, `CreateIndex`, `DropIndex`, `DropTable`, `TruncateTable`, `StartTransaction`, `Begin`, `Commit`, `Rollback`, `Savepoint`, `ReleaseSavepoint`, `SetVariable`, `SetNames` |
 | Table expressions | `AliasedTableExpr`, `JoinTableExpr`, `ParenTableExpr`, `DerivedTable` |
 | Select expressions | `AliasedExpr`, `StarExpr` |
 | Expressions | `ComparisonExpr`, `RangeCond`, `IsExpr`, `ArithmeticExpr`, `UnaryExpr`, `AndExpr`, `OrExpr`, `NotExpr`, `CaseExpr`, `ExistsExpr`, `Subquery`, `ColName`, `Literal`, `FuncExpr`, `ParenExpr`, `ValTuple` |
@@ -107,7 +111,7 @@ flowchart TD
 
 | Category | Tokens |
 |----------|--------|
-| Identifiers/literals | `IDENT`, `QuotedIdent`, `INT` (also `0x1A`/`0b101` forms), `FLOAT`, `STRING`, `HexStr` (`x'1A'`), `BitStr` (`b'101'`) |
+| Identifiers/literals | `IDENT`, `QuotedIdent`, `INT` (also `0x1A`/`0b101` forms), `FLOAT`, `STRING`, `HexStr` (`x'1A'`), `BitStr` (`b'101'`), `AtVariable` (`@var_name`) |
 | Comparison operators | `EQ` (`=`), `NE` (`<>` or `!=`), `NSE` (`<=>`), `LT`, `GT`, `LE`, `GE` |
 | Arithmetic operators | `PLUS`, `MINUS`, `STAR`, `SLASH`, `PERCENT` |
 | Punctuation | `LPAREN`, `RPAREN`, `COMMA`, `DOT`, `COLON`, `QUESTION` |
@@ -124,11 +128,14 @@ predicate keywords (`AND`, `OR`, `NOT`, `IN`, `BETWEEN`, `LIKE`, `REGEXP`,
 `SKIP`, `LOCKED`, `MODE`), CTEs (`WITH`, `RECURSIVE`), window functions
 (`OVER`, `PARTITION`, `ROWS`, `RANGE`, `UNBOUNDED`, `PRECEDING`, `FOLLOWING`,
 `CURRENT`, `ROW`, `RESPECT`, `NULLS`, `FIRST`, `LAST`), index hints
-(`USE`, `FORCE`, `IGNORE`, `INDEX`), and DDL keywords (`CREATE`, `ALTER`,
+(`USE`, `FORCE`, `IGNORE`, `INDEX`), DDL keywords (`CREATE`, `ALTER`,
 `DROP`, `TRUNCATE`, `TABLE`, `COLUMN`, `CONSTRAINT`, `PRIMARY`, `FOREIGN`,
 `REFERENCES`, `UNIQUE`, `DEFAULT`, `COMMENT`, `ENGINE`, `CHARACTER`,
 `CHARSET`, `COLLATE`, `UNSIGNED`, `ZEROFILL`, `RENAME`, `TO`, `ADD`,
-`MODIFY`, `CASCADE`, `RESTRICT`, `NO`, `ACTION`, `IF`, `AUTO_INCREMENT`).
+`MODIFY`, `CASCADE`, `RESTRICT`, `NO`, `ACTION`, `IF`, `AUTO_INCREMENT`), and
+transaction/session keywords (`START`, `TRANSACTION`, `READ`, `WRITE`,
+`ONLY`, `BEGIN`, `WORK`, `COMMIT`, `ROLLBACK`, `SAVEPOINT`, `RELEASE`,
+`SESSION`, `GLOBAL`, `NAMES`).
 
 Six of the DDL keywords — `COMMENT`, `ENGINE`, `CHARSET`, `NO`, `ACTION`,
 `AUTO_INCREMENT` — are non-reserved in MySQL: they're recognized where the
@@ -162,6 +169,13 @@ reserved, matching this lexer's existing treatment of every other keyword
   content must consist of only `0`/`1` digits.
 - **Comments**: `--` and `#` line comments and `/* ... */` block comments
   are skipped like whitespace.
+- **User variables**: `@` followed by an identifier (`@rank`, `@my_var`) is
+  lexed as a single `AtVariable` token, whose `Literal` carries the name
+  without the leading `@`. Only the single-`@` user-variable form is
+  recognized — MySQL's `@@global.var`/`@@session.var` system-variable syntax
+  is out of scope (`SESSION`/`GLOBAL` are instead parsed as a leading keyword
+  before a plain identifier; see
+  [Transaction and Session Statement Grammar](#transaction-and-session-statement-grammar)).
 
 ## Parser (`parser.Parser`)
 
@@ -180,6 +194,14 @@ func ParseCreateIndex(input string) (*sqlast.CreateIndex, error)
 func ParseDropIndex(input string) (*sqlast.DropIndex, error)
 func ParseDropTable(input string) (*sqlast.DropTable, error)
 func ParseTruncateTable(input string) (*sqlast.TruncateTable, error)
+func ParseStartTransaction(input string) (*sqlast.StartTransaction, error)
+func ParseBegin(input string) (*sqlast.Begin, error)
+func ParseCommit(input string) (*sqlast.Commit, error)
+func ParseRollback(input string) (*sqlast.Rollback, error)
+func ParseSavepoint(input string) (*sqlast.Savepoint, error)
+func ParseReleaseSavepoint(input string) (*sqlast.ReleaseSavepoint, error)
+func ParseSetVariable(input string) (*sqlast.SetVariable, error)
+func ParseSetNames(input string) (*sqlast.SetNames, error)
 func ParseStatement(input string) (sqlast.Statement, error)
 ```
 
@@ -187,15 +209,17 @@ All fully consume `input`, failing with `*ParseError` if trailing tokens
 remain after the expression/statement. `ParseSelect`, `ParseUpdate`, and
 `ParseDelete` each accept an optional leading `WITH` clause; `ParseUnion`
 does too, but fails if the input turns out to be a single `SELECT` with no
-`UNION` (use `ParseSelect` for that case). None of the DDL entry points
-accept a `WITH` clause — MySQL doesn't allow one before any DDL statement.
+`UNION` (use `ParseSelect` for that case). None of the DDL or transaction/
+session entry points accept a `WITH` clause — MySQL doesn't allow one before
+any of those statements.
 `ParseStatement` is the formatter's entry point: it dispatches on the
 statement's leading keyword (after consuming an optional `WITH`) to
 whichever of `SELECT`/`INSERT`/`REPLACE`/`UPDATE`/`DELETE`/`UNION`/`CREATE`/
-`ALTER`/`DROP`/`TRUNCATE` parsing applies — `REPLACE` routes
-through the same `parseInsertStatement` as `INSERT` (it becomes an
-`*sqlast.Insert` with `Action: ReplaceAct`), and `WITH` is not accepted
-before `INSERT`/`REPLACE`, matching MySQL.
+`ALTER`/`DROP`/`TRUNCATE`/`START`/`BEGIN`/`COMMIT`/`ROLLBACK`/`SAVEPOINT`/
+`RELEASE`/`SET` parsing applies — `REPLACE` routes through the same
+`parseInsertStatement` as `INSERT` (it becomes an `*sqlast.Insert` with
+`Action: ReplaceAct`), and `WITH` is not accepted before `INSERT`/`REPLACE`
+or any DDL/transaction/session statement, matching MySQL.
 
 ### Error Handling Model
 
@@ -470,14 +494,86 @@ formatter to leave the original source string unchanged (see
 [formatter-spec.md](formatter-spec.md)) — the same fallback every DML parse
 failure already gets.
 
+## Transaction and Session Statement Grammar
+
+Eight statement kinds, implemented in `internal/sqlfmt/parser/session.go`:
+`START TRANSACTION`, `BEGIN`, `COMMIT`, `ROLLBACK` (including `ROLLBACK TO
+[SAVEPOINT]`), `SAVEPOINT`, `RELEASE SAVEPOINT`, and `SET` (dispatching
+further to a variable assignment or `SET NAMES`). `ParseStatement`
+dispatches to these the same way it dispatches DML/DDL: on the leading
+keyword, via `parseSessionStatement`.
+
+```mermaid
+flowchart TD
+    A[leading keyword] -- START --> B["TRANSACTION [READ ONLY | READ WRITE]"]
+    A -- BEGIN --> C["[WORK]"]
+    A -- COMMIT --> D["[WORK]"]
+    A -- ROLLBACK --> E["[WORK] [TO [SAVEPOINT] name]"]
+    A -- SAVEPOINT --> F[name]
+    A -- RELEASE --> G["SAVEPOINT name"]
+    A -- SET --> H{NAMES?}
+    H -- Yes --> I["charset [COLLATE collation]"]
+    H -- No --> J["[SESSION | GLOBAL] name = expr, or @name = expr"]
+```
+
+- **`START TRANSACTION`** (`StartTransaction{Mode}`) accepts an optional
+  trailing `READ ONLY` or `READ WRITE` characteristic
+  (`sqlast.TransactionMode`); MySQL's other `START TRANSACTION` modifiers
+  (`WITH CONSISTENT SNAPSHOT`, comma-separated multiple characteristics) are
+  not recognized.
+- **`BEGIN`**/**`COMMIT`** (`Begin{}`/`Commit{}`) accept and discard an
+  optional trailing `WORK` — MySQL treats it as a no-op synonym, so it isn't
+  retained on the AST node and never appears in formatted output.
+- **`ROLLBACK`** (`Rollback{SavepointName}`) accepts an optional trailing
+  `WORK`, then either nothing (rolls back the whole transaction) or
+  `TO [SAVEPOINT] identifier` (rolls back to a savepoint) — both forms share
+  one AST type, distinguished by whether `SavepointName` is empty. MySQL's
+  `AND [NO] CHAIN`/`[NO] RELEASE` modifiers are not recognized.
+- **`SAVEPOINT identifier`** (`Savepoint{Name}`) and
+  **`RELEASE SAVEPOINT identifier`** (`ReleaseSavepoint{Name}`) are each a
+  single required identifier with no optional parts.
+- **`SET`** dispatches on whether `NAMES` follows:
+  - **`SET NAMES charset [COLLATE collation]`** (`SetNames{Charset,
+    Collate}`) parses `charset` and `collation` with `parseCharsetOrCollationName`,
+    not the full expression grammar: each is the `DEFAULT` keyword, a bare
+    identifier (`utf8mb4`), or a quoted string (`'utf8mb4'`) — MySQL doesn't
+    accept any other expression shape (arithmetic, function calls, qualified
+    names, ...) in either position, unlike DDL's `DEFAULT`/`COMMENT` values,
+    which do reuse `parseExpr` (see
+    [DDL Statement Grammar](#ddl-statement-grammar) above).
+  - Anything else is a variable assignment (`SetVariable{Scope,
+    IsUserVariable, Name, Value}`): an optional `SESSION`/`GLOBAL` scope
+    keyword before a plain identifier (`sqlast.SessionScope`/
+    `sqlast.GlobalScope`), a plain identifier with no scope keyword at all
+    (`sqlast.NoScope`, MySQL's implicit-session form), or an `AtVariable`
+    token for a user-defined variable (`IsUserVariable: true`, `Name` holding
+    the name *without* its leading `@` — the `@` is added back only when
+    rendering, via `SetVariable.String()`) — never both a scope keyword and
+    `IsUserVariable`, since MySQL doesn't allow scoping a user variable.
+    `Value` reuses the full expression grammar. MySQL's
+    `@@[global.|session.]var` system-variable syntax, `SET LOCAL` (a
+    `SESSION` synonym), and comma-separated multi-assignment `SET` are not
+    recognized.
+
+### Error Handling
+
+Transaction/session statement parsing follows the same whole-statement
+model as DDL: there is no partial or best-effort recognition, and no
+`WITH` clause is accepted before any of these statements. A construct
+outside the grammar above (an unsupported modifier, a multi-assignment
+`SET`, `@@`-syntax) is a `*ParseError`, which propagates up through
+`ParseStatement` and causes the formatter to leave the original source
+string unchanged (see [formatter-spec.md](formatter-spec.md)) — the same
+fallback every DML/DDL parse failure already gets.
+
 ## Testing
 
 `sqlast` has 100% test coverage; `parser` is table-driven per token
 category (lexer) and per grammar production (parser), including error
 paths (`*LexError`/`*ParseError` propagation) — see `lexer_test.go`,
-`expr_test.go`, `select_test.go`, and `ddl_test.go`. `codecov.yml` excludes
-`sqlast/markers.go`, whose marker methods are intentionally empty (see the
-comment at the top of that file).
+`expr_test.go`, `select_test.go`, `ddl_test.go`, and `session_test.go`.
+`codecov.yml` excludes `sqlast/markers.go`, whose marker methods are
+intentionally empty (see the comment at the top of that file).
 
 ## Relationship to the Formatter
 
