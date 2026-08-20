@@ -229,6 +229,8 @@ func TestParseDescribe(t *testing.T) {
 		{"table only", "DESCRIBE users", "DESCRIBE users"},
 		{"lowercase", "describe users", "DESCRIBE users"},
 		{"with column", "DESCRIBE users id", "DESCRIBE users id"},
+		{"column named status", "DESCRIBE users status", "DESCRIBE users status"},
+		{"column named format", "DESCRIBE users format", "DESCRIBE users format"},
 	}
 
 	for _, tt := range tests {

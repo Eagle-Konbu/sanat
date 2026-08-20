@@ -194,7 +194,7 @@ func (p *Parser) parseDescribeStatement() *sqlast.Describe {
 
 	d := &sqlast.Describe{Table: p.parseTableName()}
 
-	if p.at(IDENT) || p.at(QuotedIdent) {
+	if p.at(IDENT) || p.at(QuotedIdent) || p.tok.Type.IsNonReservedKeyword() {
 		d.Column = sqlast.ColIdent(p.readIdent())
 	}
 

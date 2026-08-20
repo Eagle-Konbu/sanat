@@ -43,7 +43,7 @@ below), and the admin/utility statement kinds in
 [#34](https://github.com/Eagle-Konbu/sanat/issues/34) (see
 [Admin/Utility Statement Grammar](#adminutility-statement-grammar) below).
 Stored program syntax (`CALL`, `PREPARE`, `EXECUTE`, `DEALLOCATE PREPARE`) —
-#34's lowest-priority items — remains deferred, along with a set of
+issue #34's lowest-priority items — remains deferred, along with a set of
 minor/advanced expression and query-modifier features (e.g. `SOUNDS LIKE`,
 `COLLATE` on expressions, `INTERVAL`, `MATCH ... AGAINST`, `BINARY` cast,
 `ANY`/`SOME`/`ALL` subquery modifiers, `SQL_CALC_FOUND_ROWS`); see
