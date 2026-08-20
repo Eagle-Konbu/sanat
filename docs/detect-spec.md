@@ -276,7 +276,7 @@ Inner content: `  SELECT id FROM users`
 | `PREPARE stmt FROM 'SELECT 1'` | Not SQL | `PREPARE` is not a target keyword — parser does not support it |
 | `EXECUTE stmt` | Not SQL | `EXECUTE` is not a target keyword — parser does not support it |
 | `DEALLOCATE PREPARE stmt` | Not SQL | `DEALLOCATE` is not a target keyword — parser does not support it |
-| `DESC users` | Not SQL | `DESC` is not a target keyword (only `DESCRIBE` is; `DESC` is otherwise just an `ORDER BY` direction) |
+| `DESC users` | Not SQL | `DESC` is not a target keyword — MySQL accepts it as a synonym for `DESCRIBE`, but the parser does not support it as a statement prefix (it only recognizes `DESC` as an `ORDER BY` direction) |
 
 ## Design Rationale
 
