@@ -65,6 +65,16 @@ func TestParseStatement_dispatch(t *testing.T) {
 		{"release savepoint", "RELEASE SAVEPOINT sp1", "RELEASE SAVEPOINT sp1", &sqlast.ReleaseSavepoint{}},
 		{"set variable", "SET @rank = 0", "SET @rank = 0", &sqlast.SetVariable{}},
 		{"set names", "SET NAMES utf8mb4", "SET NAMES utf8mb4", &sqlast.SetNames{}},
+		{"show tables", "SHOW TABLES", "SHOW TABLES", &sqlast.ShowTables{}},
+		{"show create table", "SHOW CREATE TABLE t", "SHOW CREATE TABLE t", &sqlast.ShowCreateTable{}},
+		{"show columns", "SHOW COLUMNS FROM t", "SHOW COLUMNS FROM t", &sqlast.ShowColumns{}},
+		{"show index", "SHOW INDEX FROM t", "SHOW INDEX FROM t", &sqlast.ShowIndex{}},
+		{"show databases", "SHOW DATABASES", "SHOW DATABASES", &sqlast.ShowDatabases{}},
+		{"show variables", "SHOW VARIABLES", "SHOW VARIABLES", &sqlast.ShowVariables{}},
+		{"show status", "SHOW STATUS", "SHOW STATUS", &sqlast.ShowStatus{}},
+		{"describe", "DESCRIBE t", "DESCRIBE t", &sqlast.Describe{}},
+		{"explain", "EXPLAIN SELECT 1", "EXPLAIN SELECT 1", &sqlast.Explain{}},
+		{"use", "USE db", "USE db", &sqlast.Use{}},
 	}
 
 	for _, tt := range tests {
@@ -82,7 +92,10 @@ func TestParseStatement_errors(t *testing.T) {
 		"WITH c AS (SELECT 1) ALTER TABLE t ADD COLUMN a INT",
 		"WITH c AS (SELECT 1) DROP TABLE t",
 		"WITH c AS (SELECT 1) TRUNCATE TABLE t",
-		"SHOW TABLES",
+		"WITH c AS (SELECT 1) SHOW TABLES",
+		"WITH c AS (SELECT 1) DESCRIBE t",
+		"WITH c AS (SELECT 1) USE db",
+		"CALL proc()",
 		"SELECT 1 extra tokens",
 		"SELECT 1 UNION SELECT 2 extra tokens",
 		"INSERT INTO t (a) VALUES (1) extra tokens",
@@ -104,6 +117,12 @@ func TestParseStatement_errors(t *testing.T) {
 		"RELEASE SAVEPOINT sp1 extra tokens",
 		"SET @rank = 0 extra tokens",
 		"SET NAMES utf8mb4 extra tokens",
+		"SHOW TABLES extra tokens",
+		"SHOW WAT",
+		"DESCRIBE t extra tokens extra",
+		"EXPLAIN extra tokens",
+		"EXPLAIN FORMAT = XML SELECT 1",
+		"USE db extra tokens",
 	}
 
 	for _, in := range tests {
@@ -117,7 +136,7 @@ func TestParseStatement_errors(t *testing.T) {
 // *parser.ParseError specifically, matching the other entry points' error
 // model.
 func TestParseStatement_errorType(t *testing.T) {
-	_, err := parser.ParseStatement("SHOW TABLES")
+	_, err := parser.ParseStatement("CALL proc()")
 	if err == nil {
 		t.Fatal("ParseStatement(...) expected error, got nil")
 	}

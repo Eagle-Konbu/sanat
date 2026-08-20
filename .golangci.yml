@@ -16,6 +16,7 @@ linters:
     - paralleltest
     - mnd
     - exhaustruct
+    - exhaustruct_v5
 
   settings:
     tagliatelle:

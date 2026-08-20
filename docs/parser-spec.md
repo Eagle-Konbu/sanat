@@ -30,20 +30,24 @@ removed from `go.mod`.
 | Remove Vitess dependency | `go.mod` | #30 | Done |
 | DDL statement parsing (CREATE/ALTER/DROP TABLE, CREATE/DROP INDEX, TRUNCATE TABLE) | `internal/sqlfmt/sqlast/ddl.go`, `internal/sqlfmt/parser/ddl.go` | #32 | Done |
 | Transaction/session statement parsing (START TRANSACTION, BEGIN, COMMIT, ROLLBACK, SAVEPOINT, RELEASE SAVEPOINT, SET) | `internal/sqlfmt/sqlast/session.go`, `internal/sqlfmt/parser/session.go` | #33 | Done |
+| Admin/utility statement parsing (SHOW, DESCRIBE, EXPLAIN, USE) | `internal/sqlfmt/sqlast/admin.go`, `internal/sqlfmt/parser/admin.go` | #34 | Done |
 
 Scope is MySQL DML (SELECT/INSERT/UPDATE/DELETE/UNION) plus the expression
 features above, the DDL statement kinds in
 [#32](https://github.com/Eagle-Konbu/sanat/issues/32) (see
-[DDL Statement Grammar](#ddl-statement-grammar) below), and the transaction/
+[DDL Statement Grammar](#ddl-statement-grammar) below), the transaction/
 session statement kinds in
 [#33](https://github.com/Eagle-Konbu/sanat/issues/33) (see
 [Transaction and Session Statement Grammar](#transaction-and-session-statement-grammar)
-below); admin statements remain out of scope, tracked separately in
-[#38](https://github.com/Eagle-Konbu/sanat/issues/38)'s remaining sub-issue
-(#34). A set of minor/advanced expression and query-modifier features
-(e.g. `SOUNDS LIKE`, `COLLATE` on expressions, `INTERVAL`, `MATCH ... AGAINST`,
-`BINARY` cast, `ANY`/`SOME`/`ALL` subquery modifiers, `SQL_CALC_FOUND_ROWS`)
-is deliberately deferred; see [#14](https://github.com/Eagle-Konbu/sanat/issues/14).
+below), and the admin/utility statement kinds in
+[#34](https://github.com/Eagle-Konbu/sanat/issues/34) (see
+[Admin/Utility Statement Grammar](#adminutility-statement-grammar) below).
+Stored program syntax (`CALL`, `PREPARE`, `EXECUTE`, `DEALLOCATE PREPARE`) —
+issue #34's lowest-priority items — remains deferred, along with a set of
+minor/advanced expression and query-modifier features (e.g. `SOUNDS LIKE`,
+`COLLATE` on expressions, `INTERVAL`, `MATCH ... AGAINST`, `BINARY` cast,
+`ANY`/`SOME`/`ALL` subquery modifiers, `SQL_CALC_FOUND_ROWS`); see
+[#14](https://github.com/Eagle-Konbu/sanat/issues/14).
 
 ## Package Layout
 
@@ -69,7 +73,7 @@ their marker methods (`iExpr()`, `iStatement()`, ...) are gathered in
 
 | Category | Types |
 |----------|-------|
-| Statements | `Select`, `Insert`, `Update`, `Delete`, `Union`, `With`, `CommonTableExpr`, `CreateTable`, `AlterTable`, `CreateIndex`, `DropIndex`, `DropTable`, `TruncateTable`, `StartTransaction`, `Begin`, `Commit`, `Rollback`, `Savepoint`, `ReleaseSavepoint`, `SetVariable`, `SetNames` |
+| Statements | `Select`, `Insert`, `Update`, `Delete`, `Union`, `With`, `CommonTableExpr`, `CreateTable`, `AlterTable`, `CreateIndex`, `DropIndex`, `DropTable`, `TruncateTable`, `StartTransaction`, `Begin`, `Commit`, `Rollback`, `Savepoint`, `ReleaseSavepoint`, `SetVariable`, `SetNames`, `ShowTables`, `ShowCreateTable`, `ShowColumns`, `ShowIndex`, `ShowDatabases`, `ShowVariables`, `ShowStatus`, `Describe`, `Explain`, `Use` |
 | Table expressions | `AliasedTableExpr`, `JoinTableExpr`, `ParenTableExpr`, `DerivedTable` |
 | Select expressions | `AliasedExpr`, `StarExpr` |
 | Expressions | `ComparisonExpr`, `RangeCond`, `IsExpr`, `ArithmeticExpr`, `UnaryExpr`, `AndExpr`, `OrExpr`, `NotExpr`, `CaseExpr`, `ExistsExpr`, `Subquery`, `ColName`, `Literal`, `FuncExpr`, `ParenExpr`, `ValTuple` |
@@ -135,16 +139,22 @@ predicate keywords (`AND`, `OR`, `NOT`, `IN`, `BETWEEN`, `LIKE`, `REGEXP`,
 `MODIFY`, `CASCADE`, `RESTRICT`, `NO`, `ACTION`, `IF`, `AUTO_INCREMENT`), and
 transaction/session keywords (`START`, `TRANSACTION`, `READ`, `WRITE`,
 `ONLY`, `BEGIN`, `WORK`, `COMMIT`, `ROLLBACK`, `SAVEPOINT`, `RELEASE`,
-`SESSION`, `GLOBAL`, `NAMES`).
+`SESSION`, `GLOBAL`, `NAMES`), and admin/utility keywords (`SHOW`, `TABLES`,
+`COLUMNS`, `DATABASES`, `VARIABLES`, `STATUS`, `DESCRIBE`, `EXPLAIN`,
+`FORMAT`; `SHOW CREATE TABLE`/`SHOW INDEX`/`USE database_name` reuse the
+existing `CREATE`/`TABLE`/`INDEX`/`USE` tokens rather than adding new ones).
 
-Six of the DDL keywords — `COMMENT`, `ENGINE`, `CHARSET`, `NO`, `ACTION`,
-`AUTO_INCREMENT` — are non-reserved in MySQL: they're recognized where the
-DDL grammar expects them, but `readIdent` and `parsePrimaryExpr` also accept
-them anywhere an identifier is valid (`TokenType.IsNonReservedKeyword`,
-`token.go`), so e.g. `SELECT comment FROM t` or a column literally named
-`engine` still parse. The rest of the DDL keyword set is unconditionally
-reserved, matching this lexer's existing treatment of every other keyword
-(there's no non-reserved carve-out for `SELECT`, `KEY`, `INDEX`, etc. either).
+Eight of the keywords above — `COMMENT`, `ENGINE`, `CHARSET`, `NO`, `ACTION`,
+`AUTO_INCREMENT`, `FORMAT`, `STATUS` — are non-reserved in MySQL: they're
+recognized where the DDL/admin grammar expects them, but `readIdent` and
+`parsePrimaryExpr` also accept them anywhere an identifier is valid
+(`TokenType.IsNonReservedKeyword`, `token.go`), so e.g. `SELECT comment FROM
+t` or a column literally named `status` still parse (`status` is an
+especially common column name, and reserving it broke a wide swath of
+existing DML formatting before this carve-out was added). The rest of the
+keyword set is unconditionally reserved, matching this lexer's existing
+treatment of every other keyword (there's no non-reserved carve-out for
+`SELECT`, `KEY`, `INDEX`, `SHOW`, `DESCRIBE`, `EXPLAIN`, etc. either).
 
 ### Literal Handling
 
@@ -202,6 +212,16 @@ func ParseSavepoint(input string) (*sqlast.Savepoint, error)
 func ParseReleaseSavepoint(input string) (*sqlast.ReleaseSavepoint, error)
 func ParseSetVariable(input string) (*sqlast.SetVariable, error)
 func ParseSetNames(input string) (*sqlast.SetNames, error)
+func ParseShowTables(input string) (*sqlast.ShowTables, error)
+func ParseShowCreateTable(input string) (*sqlast.ShowCreateTable, error)
+func ParseShowColumns(input string) (*sqlast.ShowColumns, error)
+func ParseShowIndex(input string) (*sqlast.ShowIndex, error)
+func ParseShowDatabases(input string) (*sqlast.ShowDatabases, error)
+func ParseShowVariables(input string) (*sqlast.ShowVariables, error)
+func ParseShowStatus(input string) (*sqlast.ShowStatus, error)
+func ParseDescribe(input string) (*sqlast.Describe, error)
+func ParseExplain(input string) (*sqlast.Explain, error)
+func ParseUse(input string) (*sqlast.Use, error)
 func ParseStatement(input string) (sqlast.Statement, error)
 ```
 
@@ -209,17 +229,20 @@ All fully consume `input`, failing with `*ParseError` if trailing tokens
 remain after the expression/statement. `ParseSelect`, `ParseUpdate`, and
 `ParseDelete` each accept an optional leading `WITH` clause; `ParseUnion`
 does too, but fails if the input turns out to be a single `SELECT` with no
-`UNION` (use `ParseSelect` for that case). None of the DDL or transaction/
-session entry points accept a `WITH` clause — MySQL doesn't allow one before
-any of those statements.
+`UNION` (use `ParseSelect` for that case). None of the DDL, transaction/
+session, or admin/utility entry points accept a leading `WITH` clause —
+MySQL doesn't allow one before any of those statements (`ParseExplain` is the
+one exception with a `WITH` inside it: the wrapped `select_stmt` accepts its
+own `WITH` clause, matching `EXPLAIN WITH c AS (...) SELECT ...`).
 `ParseStatement` is the formatter's entry point: it dispatches on the
 statement's leading keyword (after consuming an optional `WITH`) to
 whichever of `SELECT`/`INSERT`/`REPLACE`/`UPDATE`/`DELETE`/`UNION`/`CREATE`/
 `ALTER`/`DROP`/`TRUNCATE`/`START`/`BEGIN`/`COMMIT`/`ROLLBACK`/`SAVEPOINT`/
-`RELEASE`/`SET` parsing applies — `REPLACE` routes through the same
-`parseInsertStatement` as `INSERT` (it becomes an `*sqlast.Insert` with
-`Action: ReplaceAct`), and `WITH` is not accepted before `INSERT`/`REPLACE`
-or any DDL/transaction/session statement, matching MySQL.
+`RELEASE`/`SET`/`SHOW`/`DESCRIBE`/`EXPLAIN`/`USE` parsing applies —
+`REPLACE` routes through the same `parseInsertStatement` as `INSERT` (it
+becomes an `*sqlast.Insert` with `Action: ReplaceAct`), and `WITH` is not
+accepted before `INSERT`/`REPLACE` or any DDL/transaction/session/admin
+statement, matching MySQL.
 
 ### Error Handling Model
 
@@ -566,14 +589,102 @@ outside the grammar above (an unsupported modifier, a multi-assignment
 string unchanged (see [formatter-spec.md](formatter-spec.md)) — the same
 fallback every DML/DDL parse failure already gets.
 
+## Admin/Utility Statement Grammar
+
+Ten statement kinds, implemented in `internal/sqlfmt/parser/admin.go`: the
+seven `SHOW` variants, `DESCRIBE`, `EXPLAIN`, and `USE`. `ParseStatement`
+dispatches to these the same way it dispatches DDL/transaction/session: on
+the leading keyword, via `parseAdminStatement`; `SHOW`'s seven variants are
+then sub-dispatched on the following keyword by `parseShowStatement`, with
+one token of lookahead (`peekAt`) — the same shape `CREATE`'s
+`TABLE`-vs-`INDEX` dispatch already uses (see
+[DDL Statement Grammar](#ddl-statement-grammar) above).
+
+```mermaid
+flowchart TD
+    A[leading keyword] -- SHOW --> B{second keyword}
+    B -- TABLES --> C["[FROM database] [LIKE pattern]"]
+    B -- CREATE --> D["TABLE table_name"]
+    B -- COLUMNS --> E["FROM table_name"]
+    B -- INDEX --> F["FROM table_name"]
+    B -- DATABASES --> G[End]
+    B -- VARIABLES --> H["[LIKE pattern]"]
+    B -- STATUS --> I["[LIKE pattern]"]
+    A -- DESCRIBE --> J["table_name [col_name]"]
+    A -- EXPLAIN --> K["[FORMAT = fmt] select_stmt"]
+    A -- USE --> L[database_name]
+```
+
+- **`SHOW TABLES`** (`ShowTables{Database, Like}`) accepts an optional
+  `FROM database` and an optional `LIKE pattern`, in that order (MySQL's
+  alternative `WHERE expr` form in place of `LIKE` is not recognized).
+- **`SHOW CREATE TABLE table_name`** (`ShowCreateTable{Table}`),
+  **`SHOW COLUMNS FROM table_name`** (`ShowColumns{Table}`), and
+  **`SHOW INDEX FROM table_name`** (`ShowIndex{Table}`) each take a single
+  required (possibly qualified) table name — `SHOW INDEX`'s MySQL synonyms
+  `SHOW KEYS`/`SHOW INDEXES` are not recognized, and none of the three
+  accept MySQL's optional trailing `FROM database` (a second way to qualify
+  the table, distinct from `db.table`).
+- **`SHOW DATABASES`** (`ShowDatabases{}`) takes no arguments; MySQL's
+  optional `LIKE pattern`/`WHERE expr` forms are not recognized.
+- **`SHOW VARIABLES`** (`ShowVariables{Like}`) and **`SHOW STATUS`**
+  (`ShowStatus{Like}`) each accept an optional `LIKE pattern`; MySQL's
+  leading `[SESSION | GLOBAL]` scope keyword and the alternative
+  `WHERE expr` form are not recognized on either.
+- Every `LIKE pattern` above is parsed by `parseOptionalLike`, which only
+  accepts a quoted string literal — not the full expression grammar — the
+  same restriction `SET NAMES`'s charset/collation values already get (see
+  [Transaction and Session Statement Grammar](#transaction-and-session-statement-grammar)
+  above).
+- **`DESCRIBE table_name [col_name]`** (`Describe{Table, Column}`) takes a
+  required table name and an optional trailing column name; MySQL's `DESC`
+  synonym and the alternative wildcard-pattern form in the column position
+  are not recognized.
+- **`EXPLAIN [FORMAT = {TRADITIONAL|JSON|TREE}] select_stmt`**
+  (`Explain{Format, Statement}`) wraps a `SELECT` statement — or a `UNION`
+  of `SELECT` branches, optionally preceded by a `WITH` clause — parsed via
+  the same `parseSelectOrUnionAfterWith` helper subqueries use, so
+  `Statement` holds whatever concrete type that call returns (`*sqlast.
+  Select` or `*sqlast.Union`). `Format` is matched case-insensitively via
+  `parseExplainFormat`; MySQL's `EXPLAIN` forms for `INSERT`/`UPDATE`/
+  `DELETE`, the `ANALYZE`/`EXTENDED`/`PARTITIONS` legacy options, and the
+  `EXPLAIN table_name`/`EXPLAIN FOR CONNECTION` variants are not
+  recognized.
+- **`USE database_name`** (`Use{Database}`) takes a single required
+  identifier.
+
+Two of the new keywords are non-reserved, joining the DDL set already
+carved out in [Lexer](#lexer-parserlexer) above: `FORMAT` (a plausible
+column name, gated the same way as `COMMENT`/`ENGINE`) and `STATUS` (an
+especially common column name — see that section for why this carve-out
+exists).
+
+### Error Handling
+
+Admin/utility statement parsing follows the same whole-statement model as
+DDL and transaction/session: there is no partial or best-effort
+recognition, and no `WITH` clause is accepted before any of these
+statements (`EXPLAIN`'s wrapped `select_stmt` is the sole exception — it
+parses its own optional `WITH`, as noted above). A construct outside the
+grammar above (an unrecognized `SHOW` variant, an unsupported `EXPLAIN`
+`FORMAT` value, ...) is a `*ParseError`, which propagates up through
+`ParseStatement` and causes the formatter to leave the original source
+string unchanged (see [formatter-spec.md](formatter-spec.md)) — the same
+fallback every other statement kind's parse failure already gets. MySQL's
+stored program syntax (`CALL`, `PREPARE`, `EXECUTE`, `DEALLOCATE PREPARE`)
+is not recognized at all — [issue #34](https://github.com/Eagle-Konbu/sanat/issues/34)
+tracks it as lowest priority, and it's deferred in the same spirit as
+[#14](https://github.com/Eagle-Konbu/sanat/issues/14)'s deferred SELECT
+features.
+
 ## Testing
 
 `sqlast` has 100% test coverage; `parser` is table-driven per token
 category (lexer) and per grammar production (parser), including error
 paths (`*LexError`/`*ParseError` propagation) — see `lexer_test.go`,
-`expr_test.go`, `select_test.go`, `ddl_test.go`, and `session_test.go`.
-`codecov.yml` excludes `sqlast/markers.go`, whose marker methods are
-intentionally empty (see the comment at the top of that file).
+`expr_test.go`, `select_test.go`, `ddl_test.go`, `session_test.go`, and
+`admin_test.go`. `codecov.yml` excludes `sqlast/markers.go`, whose marker
+methods are intentionally empty (see the comment at the top of that file).
 
 ## Relationship to the Formatter
 
