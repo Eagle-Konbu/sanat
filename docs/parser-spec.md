@@ -182,7 +182,12 @@ treatment of every other keyword (there's no non-reserved carve-out for
   hex digits with an even number of digits (`x''` is valid); bit string
   content must consist of only `0`/`1` digits.
 - **Comments**: `--` and `#` line comments and `/* ... */` block comments
-  are skipped like whitespace. `/*+ ... */` optimizer hints and `/*! ... */`
+  are skipped like whitespace. Per MySQL, a `--` only starts a comment when
+  followed by whitespace or a control character — `balance--1` is `balance -
+  (-1)`, not `balance` followed by a comment. A bare trailing `--` with
+  nothing after it (end of input) doesn't count as that whitespace either,
+  so it lexes as two `MINUS` tokens rather than an empty comment. `/*+ ... */`
+  optimizer hints and `/*! ... */`
   (including version-gated `/*!50700 ... */`) executable comments carry
   semantic content rather than being purely decorative, so the lexer reports
   a `LexError` on them instead of silently discarding that content; parse
@@ -383,8 +388,12 @@ flowchart TD
 tables (`(SELECT ...) alias`), and index hints (`USE`/`FORCE`/`IGNORE INDEX`,
 each with an optional `FOR JOIN|GROUP BY|ORDER BY`). `LEFT`/`RIGHT [OUTER]
 JOIN` require an `ON` or `USING` clause, matching MySQL; it's optional for
-every other join form (`INNER`/plain `JOIN`, `CROSS JOIN`, `NATURAL` joins,
-`STRAIGHT_JOIN`).
+`INNER`/plain `JOIN`, `CROSS JOIN`, and `STRAIGHT_JOIN`. `NATURAL` joins
+(`NATURAL JOIN`, `NATURAL LEFT JOIN`, `NATURAL RIGHT JOIN`) go further: they
+determine their join columns implicitly and MySQL rejects an explicit `ON`
+or `USING` alongside `NATURAL`, so the parser doesn't look for one at all —
+`NATURAL JOIN b ON ...`/`NATURAL JOIN b USING (...)` fail as unconsumed
+trailing input rather than being accepted.
 
 `LIMIT` accepts either `LIMIT row_count [OFFSET offset]` or the older
 `LIMIT offset, row_count` comma form; both are normalized into the same

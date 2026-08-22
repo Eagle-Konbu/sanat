@@ -242,6 +242,16 @@ func (p *Parser) isJoinStart() bool {
 func (p *Parser) parseJoin(left sqlast.TableExpr) sqlast.TableExpr {
 	joinType := p.parseJoinType()
 	right := p.parseTableFactor()
+
+	// NATURAL joins determine their join columns implicitly and MySQL
+	// rejects an explicit ON/USING alongside NATURAL, so this doesn't even
+	// look for one: any ON/USING left in the token stream is then unconsumed
+	// input, which fails elsewhere with a parse error instead of being
+	// silently accepted (and possibly dropped) here.
+	if isNaturalJoinType(joinType) {
+		return &sqlast.JoinTableExpr{LeftExpr: left, Join: joinType, RightExpr: right}
+	}
+
 	cond := p.parseOptionalJoinCondition()
 
 	if cond == nil && joinRequiresCondition(joinType) {
@@ -252,10 +262,20 @@ func (p *Parser) parseJoin(left sqlast.TableExpr) sqlast.TableExpr {
 }
 
 // joinRequiresCondition reports whether MySQL requires an ON or USING clause
-// for joinType. INNER/CROSS/STRAIGHT_JOIN and the NATURAL forms may omit
-// one; LEFT and RIGHT (OUTER) JOIN may not.
+// for joinType. INNER/CROSS/STRAIGHT_JOIN may omit one; LEFT and RIGHT
+// (OUTER) JOIN may not. NATURAL joins are handled separately in parseJoin,
+// since they may not have a condition at all.
 func joinRequiresCondition(joinType sqlast.JoinType) bool {
 	return joinType == sqlast.LeftJoinType || joinType == sqlast.RightJoinType
+}
+
+func isNaturalJoinType(joinType sqlast.JoinType) bool {
+	switch joinType {
+	case sqlast.NaturalJoinType, sqlast.NaturalLeftJoinType, sqlast.NaturalRightJoinType:
+		return true
+	default:
+		return false
+	}
 }
 
 func (p *Parser) parseOptionalJoinCondition() *sqlast.JoinCondition {

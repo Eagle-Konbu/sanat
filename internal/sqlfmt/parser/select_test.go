@@ -259,6 +259,10 @@ func TestParseSelect_errors(t *testing.T) {
 		"SELECT * FROM t OUTER JOIN u",
 		"SELECT * FROM a LEFT JOIN b",
 		"SELECT * FROM a RIGHT JOIN b",
+		"SELECT * FROM a NATURAL JOIN b ON a.id = b.id",
+		"SELECT * FROM a NATURAL JOIN b USING (id)",
+		"SELECT * FROM a NATURAL LEFT JOIN b ON a.id = b.id",
+		"SELECT * FROM a NATURAL RIGHT JOIN b USING (id)",
 	}
 
 	for _, in := range tests {

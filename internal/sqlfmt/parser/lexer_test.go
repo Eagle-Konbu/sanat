@@ -553,6 +553,16 @@ func TestLexer_Comments(t *testing.T) {
 				{parser.EOF, ""},
 			},
 		},
+		{
+			name: "trailing double dash at EOF is not a comment",
+			in:   "a--",
+			want: []wantToken{
+				{parser.IDENT, "a"},
+				{parser.MINUS, "-"},
+				{parser.MINUS, "-"},
+				{parser.EOF, ""},
+			},
+		},
 	}
 
 	for _, tt := range tests {
