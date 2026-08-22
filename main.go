@@ -6,7 +6,7 @@ import (
 	"github.com/Eagle-Konbu/sanat/cmd"
 )
 
-var version = "0.1.1"
+var version = "1.0.0-alpha.1"
 
 func main() {
 	cmd.SetVersion(version)
