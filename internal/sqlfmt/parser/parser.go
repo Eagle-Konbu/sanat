@@ -31,6 +31,7 @@ type Parser struct {
 	tok      Token
 	peekTok  Token
 	peek2Tok Token
+	mode     SQLMode
 
 	// inOnDupUpdate is true while parsing the assignment list of an ON
 	// DUPLICATE KEY UPDATE clause, the only place MySQL accepts VALUES(col)
@@ -38,10 +39,18 @@ type Parser struct {
 	inOnDupUpdate bool
 }
 
-// NewParser creates a Parser over input, priming its three-token lookahead
-// buffer. It panics (with a *LexError) if the input cannot be lexed at all.
+// NewParser creates a Parser over input using ModeDefault, priming its
+// three-token lookahead buffer. It panics (with a *LexError) if the input
+// cannot be lexed at all.
 func NewParser(input string) *Parser {
-	p := &Parser{lex: New(input)}
+	return NewParserWithMode(input, ModeDefault)
+}
+
+// NewParserWithMode creates a Parser over input, decoding string literals per
+// mode, priming its three-token lookahead buffer. It panics (with a
+// *LexError) if the input cannot be lexed at all.
+func NewParserWithMode(input string, mode SQLMode) *Parser {
+	p := &Parser{lex: NewWithMode(input, mode), mode: mode}
 
 	for range 3 {
 		p.advance()
@@ -130,13 +139,21 @@ func recoverParseError(err *error) {
 	}
 }
 
-// ParseExpr parses a single SQL expression from input.
+// ParseExpr parses a single SQL expression from input, using ModeDefault.
 //
 //nolint:nonamedreturns // the named results are mutated by the deferred recover
 func ParseExpr(input string) (expr sqlast.Expr, err error) {
+	return ParseExprWithMode(input, ModeDefault)
+}
+
+// ParseExprWithMode parses a single SQL expression from input, decoding
+// string literals per mode.
+//
+//nolint:nonamedreturns // the named results are mutated by the deferred recover
+func ParseExprWithMode(input string, mode SQLMode) (expr sqlast.Expr, err error) {
 	defer recoverParseError(&err)
 
-	p := NewParser(input)
+	p := NewParserWithMode(input, mode)
 	result := p.parseExpr()
 
 	if !p.at(EOF) {
@@ -147,13 +164,21 @@ func ParseExpr(input string) (expr sqlast.Expr, err error) {
 }
 
 // ParseSelect parses a SELECT statement (optionally preceded by a WITH
-// clause) from input.
+// clause) from input, using ModeDefault.
 //
 //nolint:nonamedreturns // the named results are mutated by the deferred recover
 func ParseSelect(input string) (sel *sqlast.Select, err error) {
+	return ParseSelectWithMode(input, ModeDefault)
+}
+
+// ParseSelectWithMode parses a SELECT statement (optionally preceded by a
+// WITH clause) from input, decoding string literals per mode.
+//
+//nolint:nonamedreturns // the named results are mutated by the deferred recover
+func ParseSelectWithMode(input string, mode SQLMode) (sel *sqlast.Select, err error) {
 	defer recoverParseError(&err)
 
-	p := NewParser(input)
+	p := NewParserWithMode(input, mode)
 	result := p.parseSelectStatement()
 
 	p.consume(SEMICOLON)

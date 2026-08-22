@@ -12,10 +12,10 @@ type wantToken struct {
 	literal string
 }
 
-func lexAll(t *testing.T, input string) []wantToken {
+func lexAllWithMode(t *testing.T, input string, mode parser.SQLMode) []wantToken {
 	t.Helper()
 
-	l := parser.New(input)
+	l := parser.NewWithMode(input, mode)
 
 	var got []wantToken
 
@@ -36,7 +36,13 @@ func lexAll(t *testing.T, input string) []wantToken {
 func assertTokens(t *testing.T, input string, want []wantToken) {
 	t.Helper()
 
-	got := lexAll(t, input)
+	assertTokensWithMode(t, input, parser.ModeDefault, want)
+}
+
+func assertTokensWithMode(t *testing.T, input string, mode parser.SQLMode, want []wantToken) {
+	t.Helper()
+
+	got := lexAllWithMode(t, input, mode)
 
 	if len(got) != len(want) {
 		t.Fatalf("token count = %d, want %d\ngot:  %+v\nwant: %+v", len(got), len(want), got, want)
@@ -343,6 +349,34 @@ func TestLexer_StringLiterals(t *testing.T) {
 			t.Fatal("expected error for unterminated string literal")
 		}
 	})
+}
+
+// TestLexer_StringLiterals_NoBackslashEscapes covers ModeNoBackslashEscapes,
+// under which backslash has no special meaning in a string literal: it reads
+// like any other character instead of introducing an escape sequence. Quote
+// doubling still works, since that isn't backslash-based.
+func TestLexer_StringLiterals_NoBackslashEscapes(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"simple", "'hello'", "hello"},
+		{"doubled quote escape", "'it''s'", "it's"},
+		{"backslash is a literal character, not an escape", `'a\nb'`, `a\nb`},
+		{"backslash before quote does not escape it", `'a\'`, "a\\"},
+		{"literal newline is preserved as-is", "'a\nb'", "a\nb"},
+		{"trailing backslash before closing quote", `'a\\'`, `a\\`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assertTokensWithMode(t, tt.in, parser.ModeNoBackslashEscapes, []wantToken{
+				{parser.STRING, tt.want},
+				{parser.EOF, ""},
+			})
+		})
+	}
 }
 
 func TestLexer_PrefixedStringLiterals(t *testing.T) {
