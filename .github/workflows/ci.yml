@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [ main, epic/** ]
+    branches: [ main, "epic/**" ]
   pull_request:
-    branches: [ main, epic/** ]
+    branches: [ main, "epic/**" ]
 
 jobs:
   mod-check:
