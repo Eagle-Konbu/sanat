@@ -31,24 +31,50 @@ func ParseShowDatabases(input string) (*sqlast.ShowDatabases, error) {
 	return parseDDLEntry(input, ModeDefault, (*Parser).parseShowDatabasesStatement)
 }
 
-// ParseShowVariables parses a SHOW VARIABLES statement from input.
+// ParseShowVariables parses a SHOW VARIABLES statement from input, using
+// ModeDefault.
 func ParseShowVariables(input string) (*sqlast.ShowVariables, error) {
-	return parseDDLEntry(input, ModeDefault, (*Parser).parseShowVariablesStatement)
+	return ParseShowVariablesWithMode(input, ModeDefault)
 }
 
-// ParseShowStatus parses a SHOW STATUS statement from input.
+// ParseShowVariablesWithMode parses a SHOW VARIABLES statement from input,
+// decoding string literals (the optional LIKE pattern) per mode.
+func ParseShowVariablesWithMode(input string, mode SQLMode) (*sqlast.ShowVariables, error) {
+	return parseDDLEntry(input, mode, (*Parser).parseShowVariablesStatement)
+}
+
+// ParseShowStatus parses a SHOW STATUS statement from input, using
+// ModeDefault.
 func ParseShowStatus(input string) (*sqlast.ShowStatus, error) {
-	return parseDDLEntry(input, ModeDefault, (*Parser).parseShowStatusStatement)
+	return ParseShowStatusWithMode(input, ModeDefault)
 }
 
-// ParseDescribe parses a DESCRIBE statement from input.
+// ParseShowStatusWithMode parses a SHOW STATUS statement from input,
+// decoding string literals (the optional LIKE pattern) per mode.
+func ParseShowStatusWithMode(input string, mode SQLMode) (*sqlast.ShowStatus, error) {
+	return parseDDLEntry(input, mode, (*Parser).parseShowStatusStatement)
+}
+
+// ParseDescribe parses a DESCRIBE statement from input, using ModeDefault.
 func ParseDescribe(input string) (*sqlast.Describe, error) {
-	return parseDDLEntry(input, ModeDefault, (*Parser).parseDescribeStatement)
+	return ParseDescribeWithMode(input, ModeDefault)
 }
 
-// ParseExplain parses an EXPLAIN statement from input.
+// ParseDescribeWithMode parses a DESCRIBE statement from input, decoding
+// string literals per mode.
+func ParseDescribeWithMode(input string, mode SQLMode) (*sqlast.Describe, error) {
+	return parseDDLEntry(input, mode, (*Parser).parseDescribeStatement)
+}
+
+// ParseExplain parses an EXPLAIN statement from input, using ModeDefault.
 func ParseExplain(input string) (*sqlast.Explain, error) {
-	return parseDDLEntry(input, ModeDefault, (*Parser).parseExplainStatement)
+	return ParseExplainWithMode(input, ModeDefault)
+}
+
+// ParseExplainWithMode parses an EXPLAIN statement from input, decoding
+// string literals in the wrapped statement per mode.
+func ParseExplainWithMode(input string, mode SQLMode) (*sqlast.Explain, error) {
+	return parseDDLEntry(input, mode, (*Parser).parseExplainStatement)
 }
 
 // ParseUse parses a USE statement from input.

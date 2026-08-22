@@ -33,14 +33,27 @@ func ParseReleaseSavepoint(input string) (*sqlast.ReleaseSavepoint, error) {
 }
 
 // ParseSetVariable parses a SET statement assigning a user-defined or
-// session/global system variable from input.
+// session/global system variable from input, using ModeDefault.
 func ParseSetVariable(input string) (*sqlast.SetVariable, error) {
-	return parseDDLEntry(input, ModeDefault, (*Parser).parseSetVariableStatement)
+	return ParseSetVariableWithMode(input, ModeDefault)
 }
 
-// ParseSetNames parses a SET NAMES statement from input.
+// ParseSetVariableWithMode parses a SET statement assigning a user-defined
+// or session/global system variable from input, decoding string literals
+// per mode.
+func ParseSetVariableWithMode(input string, mode SQLMode) (*sqlast.SetVariable, error) {
+	return parseDDLEntry(input, mode, (*Parser).parseSetVariableStatement)
+}
+
+// ParseSetNames parses a SET NAMES statement from input, using ModeDefault.
 func ParseSetNames(input string) (*sqlast.SetNames, error) {
-	return parseDDLEntry(input, ModeDefault, (*Parser).parseSetNamesStatement)
+	return ParseSetNamesWithMode(input, ModeDefault)
+}
+
+// ParseSetNamesWithMode parses a SET NAMES statement from input, decoding
+// string literals per mode.
+func ParseSetNamesWithMode(input string, mode SQLMode) (*sqlast.SetNames, error) {
+	return parseDDLEntry(input, mode, (*Parser).parseSetNamesStatement)
 }
 
 // parseSessionStatement dispatches a leading START, BEGIN, COMMIT, ROLLBACK,
