@@ -1,6 +1,10 @@
 package sqlfmt_test
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/Eagle-Konbu/sanat/internal/sqlfmt"
+)
 
 func TestFormatSQL_StartTransaction(t *testing.T) {
 	assertFormatSQL(t, "start transaction", "START TRANSACTION")
@@ -16,6 +20,20 @@ func TestFormatSQL_Begin(t *testing.T) {
 func TestFormatSQL_Commit(t *testing.T) {
 	assertFormatSQL(t, "commit", "COMMIT")
 	assertFormatSQL(t, "commit work", "COMMIT")
+}
+
+// TestFormatSQL_Commit_unsupportedChainRelease documents that COMMIT's
+// [AND [NO] CHAIN] and [[NO] RELEASE] modifiers aren't in the grammar (see
+// parser-spec.md): FormatSQL falls back to returning the input unchanged.
+func TestFormatSQL_Commit_unsupportedChainRelease(t *testing.T) {
+	got, ok := sqlfmt.FormatSQL("commit and chain", 2)
+	if ok {
+		t.Fatalf("FormatSQL(%q) ok = true, want false", "commit and chain")
+	}
+
+	if got != "commit and chain" {
+		t.Errorf("FormatSQL(%q) = %q, want input unchanged", "commit and chain", got)
+	}
 }
 
 func TestFormatSQL_Rollback(t *testing.T) {
@@ -45,4 +63,5 @@ func TestFormatSQL_SetNames(t *testing.T) {
 	assertFormatSQL(t, "set names utf8mb4 collate utf8mb4_bin", "SET NAMES utf8mb4 COLLATE utf8mb4_bin")
 	assertFormatSQL(t, "set names 'utf8mb4'", "SET NAMES 'utf8mb4'")
 	assertFormatSQL(t, "set names 'utf8mb4' collate 'utf8mb4_bin'", "SET NAMES 'utf8mb4' COLLATE 'utf8mb4_bin'")
+	assertFormatSQL(t, "set names default", "SET NAMES DEFAULT")
 }

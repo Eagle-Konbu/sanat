@@ -137,13 +137,13 @@ func ParseExpr(input string) (expr sqlast.Expr, err error) {
 	defer recoverParseError(&err)
 
 	p := NewParser(input)
-	expr = p.parseExpr()
+	result := p.parseExpr()
 
 	if !p.at(EOF) {
 		p.failf("unexpected token %s after expression", p.tok.Type)
 	}
 
-	return expr, nil
+	return result, nil
 }
 
 // ParseSelect parses a SELECT statement (optionally preceded by a WITH
@@ -154,11 +154,13 @@ func ParseSelect(input string) (sel *sqlast.Select, err error) {
 	defer recoverParseError(&err)
 
 	p := NewParser(input)
-	sel = p.parseSelectStatement()
+	result := p.parseSelectStatement()
+
+	p.consume(SEMICOLON)
 
 	if !p.at(EOF) {
 		p.failf("unexpected token %s after statement", p.tok.Type)
 	}
 
-	return sel, nil
+	return result, nil
 }

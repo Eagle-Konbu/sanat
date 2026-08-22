@@ -307,6 +307,23 @@ func TestUnion_String(t *testing.T) {
 
 		assertEqual(t, "SELECT 1 UNION SELECT 2 ORDER BY 1 LIMIT 10 FOR UPDATE", u.String())
 	})
+
+	t.Run("nested left renders without extra parens", func(t *testing.T) {
+		inner := &sqlast.Union{Left: left, Right: right, Distinct: true}
+		outer := &sqlast.Union{Left: inner, Right: right, Distinct: true}
+
+		assertEqual(t, "SELECT 1 UNION SELECT 2 UNION SELECT 2", outer.String())
+	})
+
+	t.Run("nested right is parenthesized to preserve its own clauses", func(t *testing.T) {
+		inner := &sqlast.Union{
+			Left: left, Right: right, Distinct: true,
+			OrderBy: sqlast.OrderBy{{Expr: lit("1")}},
+		}
+		outer := &sqlast.Union{Left: left, Right: inner, Distinct: true}
+
+		assertEqual(t, "SELECT 1 UNION (SELECT 1 UNION SELECT 2 ORDER BY 1)", outer.String())
+	})
 }
 
 func TestWith_String(t *testing.T) {

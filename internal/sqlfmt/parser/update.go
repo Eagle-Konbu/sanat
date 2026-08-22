@@ -10,13 +10,15 @@ func ParseUpdate(input string) (upd *sqlast.Update, err error) {
 	defer recoverParseError(&err)
 
 	p := NewParser(input)
-	upd = p.parseUpdateStatement()
+	result := p.parseUpdateStatement()
+
+	p.consume(SEMICOLON)
 
 	if !p.at(EOF) {
 		p.failf("unexpected token %s after statement", p.tok.Type)
 	}
 
-	return upd, nil
+	return result, nil
 }
 
 // parseUpdateStatement parses an UPDATE statement, optionally preceded by a
@@ -54,13 +56,19 @@ func (p *Parser) parseUpdateStatementAfterWith(with *sqlast.With) *sqlast.Update
 }
 
 // isSingleTableUpdate reports whether exprs is the single-table form of
-// UPDATE's target: exactly one table reference with no JOIN.
+// UPDATE's target: exactly one plain table name, not a JOIN and not a
+// parenthesized table reference (which may itself contain a JOIN).
 func isSingleTableUpdate(exprs []sqlast.TableExpr) bool {
 	if len(exprs) != 1 {
 		return false
 	}
 
-	_, isJoin := exprs[0].(*sqlast.JoinTableExpr)
+	aliased, ok := exprs[0].(*sqlast.AliasedTableExpr)
+	if !ok {
+		return false
+	}
 
-	return !isJoin
+	_, isTableName := aliased.Expr.(sqlast.TableName)
+
+	return isTableName
 }

@@ -161,11 +161,15 @@ treatment of every other keyword (there's no non-reserved carve-out for
 - **Identifiers**: unquoted (`users`, `id`) or backtick-quoted
   (`` `users` ``, with doubled-backtick `` `` `` escaping for a literal
   backtick).
-- **Numbers**: integers and floats, including exponents (`1.5e10`), plus
-  MySQL's `0x1A` hex and `0b101` binary integer forms. Per MySQL, the `x`/`b`
-  must be lowercase in this notation — `0X1A`/`0B101` are not recognized as
-  prefixed literals (the leading `0` is lexed as a plain `INT` and the rest
-  as a separate identifier).
+- **Numbers**: integers and floats, including exponents (`1.5e10`) and a
+  leading-dot form with no integer part (`.5`), plus MySQL's `0x1A` hex and
+  `0b101` binary integer forms. Per MySQL, the `x`/`b` must be lowercase in
+  this notation — `0X1A`/`0B101` are not recognized as prefixed literals (the
+  leading `0` is lexed as a plain `INT` and the rest as a separate
+  identifier). A `.` is only read as the start of a float when a digit
+  immediately follows; otherwise it lexes as `DOT`, which is what keeps
+  `123.col` a number followed by a qualified identifier instead of being
+  swallowed into `123.`.
 - **Strings**: single-quoted, with backslash escapes (`\n`, `\r`, `\0`,
   `\Z`, `\\`, `\'`) and MySQL's doubled-quote (`''`) escaping. `\%` and
   `\_` are left un-decoded by the lexer (and re-escaped as-is by the
@@ -178,7 +182,11 @@ treatment of every other keyword (there's no non-reserved carve-out for
   hex digits with an even number of digits (`x''` is valid); bit string
   content must consist of only `0`/`1` digits.
 - **Comments**: `--` and `#` line comments and `/* ... */` block comments
-  are skipped like whitespace.
+  are skipped like whitespace. `/*+ ... */` optimizer hints and `/*! ... */`
+  (including version-gated `/*!50700 ... */`) executable comments carry
+  semantic content rather than being purely decorative, so the lexer reports
+  a `LexError` on them instead of silently discarding that content; parse
+  entry points that hit this fall back to returning the input unchanged.
 - **User variables**: `@` followed by an identifier (`@rank`, `@my_var`) is
   lexed as a single `AtVariable` token, whose `Literal` carries the name
   without the leading `@`. Only the single-`@` user-variable form is
@@ -226,7 +234,10 @@ func ParseStatement(input string) (sqlast.Statement, error)
 ```
 
 All fully consume `input`, failing with `*ParseError` if trailing tokens
-remain after the expression/statement. `ParseSelect`, `ParseUpdate`, and
+remain after the expression/statement. Every statement-level entry point
+(everything above except `ParseExpr`) additionally accepts one optional
+trailing `;`; a second `;`, or one preceding the statement, is rejected like
+any other trailing/leading token. `ParseSelect`, `ParseUpdate`, and
 `ParseDelete` each accept an optional leading `WITH` clause; `ParseUnion`
 does too, but fails if the input turns out to be a single `SELECT` with no
 `UNION` (use `ParseSelect` for that case). None of the DDL, transaction/
@@ -254,9 +265,12 @@ where threading `error` through every call would bury the grammar under
 
 - `p.failf(...)` / a lexer failure **panics** with a `*ParseError` /
   `*LexError`.
-- The top-level `ParseExpr`/`ParseSelect` entry points `defer` a
-  `recoverParseError`, which recovers exactly those two panic types into the
-  returned `error` and re-panics anything else (a real bug).
+- Every exported parse entry point recovers exactly those two panic types
+  into its returned `error` (re-panicking anything else, a real bug) — either
+  directly via its own `defer recoverParseError(&err)` (`ParseExpr`,
+  `ParseSelect`, `ParseUpdate`, `ParseDelete`, `ParseInsert`, `ParseUnion`,
+  `ParseStatement`), or through the shared `parseDDLEntry` helper that the
+  DDL, transaction/session, and admin/utility wrappers delegate to.
 
 `Parser` keeps a 3-token lookahead buffer (`tok`, `peekTok`, `peek2Tok`),
 needed to disambiguate constructs like `table.*` vs. a qualified column
@@ -365,9 +379,12 @@ flowchart TD
 **Table references** support comma-joined tables, `JOIN` variants (plain
 `JOIN`/`INNER JOIN`, `LEFT [OUTER] JOIN`, `RIGHT [OUTER] JOIN`,
 `CROSS JOIN`, `NATURAL [LEFT|RIGHT] JOIN`, `STRAIGHT_JOIN`) with an optional
-`ON` condition, parenthesized table lists, derived tables
-(`(SELECT ...) alias`), and index hints (`USE`/`FORCE`/`IGNORE INDEX`, each
-with an optional `FOR JOIN|GROUP BY|ORDER BY`).
+`ON expr` or `USING (col, ...)` condition, parenthesized table lists, derived
+tables (`(SELECT ...) alias`), and index hints (`USE`/`FORCE`/`IGNORE INDEX`,
+each with an optional `FOR JOIN|GROUP BY|ORDER BY`). `LEFT`/`RIGHT [OUTER]
+JOIN` require an `ON` or `USING` clause, matching MySQL; it's optional for
+every other join form (`INNER`/plain `JOIN`, `CROSS JOIN`, `NATURAL` joins,
+`STRAIGHT_JOIN`).
 
 `LIMIT` accepts either `LIMIT row_count [OFFSET offset]` or the older
 `LIMIT offset, row_count` comma form; both are normalized into the same
@@ -519,10 +536,11 @@ failure already gets.
 
 ## Transaction and Session Statement Grammar
 
-Eight statement kinds, implemented in `internal/sqlfmt/parser/session.go`:
+Seven statement forms, implemented in `internal/sqlfmt/parser/session.go`:
 `START TRANSACTION`, `BEGIN`, `COMMIT`, `ROLLBACK` (including `ROLLBACK TO
-[SAVEPOINT]`), `SAVEPOINT`, `RELEASE SAVEPOINT`, and `SET` (dispatching
-further to a variable assignment or `SET NAMES`). `ParseStatement`
+[SAVEPOINT]`), `SAVEPOINT`, `RELEASE SAVEPOINT`, and `SET` — the last of
+which dispatches further to one of two AST node types, `SetVariable` (a
+variable assignment) or `SetNames`. `ParseStatement`
 dispatches to these the same way it dispatches DML/DDL: on the leading
 keyword, via `parseSessionStatement`.
 

@@ -15,13 +15,15 @@ func parseDDLEntry[T sqlast.Statement](input string, parse func(*Parser) T) (res
 	defer recoverParseError(&err)
 
 	p := NewParser(input)
-	result = parse(p)
+	parsed := parse(p)
+
+	p.consume(SEMICOLON)
 
 	if !p.at(EOF) {
 		p.failf("unexpected token %s after statement", p.tok.Type)
 	}
 
-	return result, nil
+	return parsed, nil
 }
 
 // ParseCreateTable parses a CREATE TABLE statement from input.

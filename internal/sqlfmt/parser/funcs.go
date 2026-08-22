@@ -74,9 +74,10 @@ var argumentLessWindowTypes = map[string]sqlast.ArgumentLessWindowExprType{
 }
 
 // parseFuncCall parses the argument list and trailing clauses of a function
-// call whose name and opening '(' have already been seen; the current token
-// is the one immediately after '('. It dispatches to the specific AST node
-// the function name maps to, falling back to a generic FuncExpr.
+// call whose name has already been seen; the current token is the opening
+// '(', which this function consumes before parsing arguments. It dispatches
+// to the specific AST node the function name maps to, falling back to a
+// generic FuncExpr.
 func (p *Parser) parseFuncCall(name string) sqlast.Expr {
 	p.advance() // consume '('
 

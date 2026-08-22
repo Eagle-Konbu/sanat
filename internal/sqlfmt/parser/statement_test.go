@@ -84,6 +84,10 @@ func TestParseStatement_dispatch(t *testing.T) {
 	}
 }
 
+func TestParseStatement_trailingSemicolon(t *testing.T) {
+	assertStatementRoundTrip(t, "SELECT id FROM t;", "SELECT id FROM t", &sqlast.Select{})
+}
+
 func TestParseStatement_errors(t *testing.T) {
 	tests := []string{
 		"",
@@ -123,6 +127,9 @@ func TestParseStatement_errors(t *testing.T) {
 		"EXPLAIN extra tokens",
 		"EXPLAIN FORMAT = XML SELECT 1",
 		"USE db extra tokens",
+		";SELECT 1",
+		"SELECT 1;;",
+		"SELECT 1; SELECT 2",
 	}
 
 	for _, in := range tests {

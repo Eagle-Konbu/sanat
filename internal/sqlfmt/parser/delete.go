@@ -10,13 +10,15 @@ func ParseDelete(input string) (del *sqlast.Delete, err error) {
 	defer recoverParseError(&err)
 
 	p := NewParser(input)
-	del = p.parseDeleteStatement()
+	result := p.parseDeleteStatement()
+
+	p.consume(SEMICOLON)
 
 	if !p.at(EOF) {
 		p.failf("unexpected token %s after statement", p.tok.Type)
 	}
 
-	return del, nil
+	return result, nil
 }
 
 // parseDeleteStatement parses a DELETE statement, optionally preceded by a

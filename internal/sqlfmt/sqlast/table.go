@@ -46,9 +46,15 @@ func (j *JoinTableExpr) String() string {
 	b.WriteString(" ")
 	b.WriteString(j.RightExpr.String())
 
-	if j.Condition != nil && j.Condition.On != nil {
+	switch {
+	case j.Condition == nil:
+	case j.Condition.On != nil:
 		b.WriteString(" ON ")
 		b.WriteString(j.Condition.On.String())
+	case j.Condition.Using != nil:
+		b.WriteString(" USING (")
+		b.WriteString(j.Condition.Using.String())
+		b.WriteString(")")
 	}
 
 	return b.String()

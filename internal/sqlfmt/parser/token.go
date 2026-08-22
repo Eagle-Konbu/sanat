@@ -11,7 +11,10 @@
 // rather than being partially or incorrectly accepted.
 package parser
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
 
 // TokenType identifies the category of a lexical token.
 type TokenType int
@@ -41,12 +44,13 @@ const (
 	SLASH   // /
 	PERCENT // %
 
-	LPAREN   // (
-	RPAREN   // )
-	COMMA    // ,
-	DOT      // .
-	COLON    // :
-	QUESTION // ?
+	LPAREN    // (
+	RPAREN    // )
+	COMMA     // ,
+	DOT       // .
+	COLON     // :
+	QUESTION  // ?
+	SEMICOLON // ;
 
 	keywordBegin
 	SELECT
@@ -208,12 +212,13 @@ var tokenNames = map[TokenType]string{
 	SLASH:   "/",
 	PERCENT: "%",
 
-	LPAREN:   "(",
-	RPAREN:   ")",
-	COMMA:    ",",
-	DOT:      ".",
-	COLON:    ":",
-	QUESTION: "?",
+	LPAREN:    "(",
+	RPAREN:    ")",
+	COMMA:     ",",
+	DOT:       ".",
+	COLON:     ":",
+	QUESTION:  "?",
+	SEMICOLON: ";",
 
 	SELECT:        "SELECT",
 	FROM:          "FROM",
@@ -357,7 +362,8 @@ func (t TokenType) String() string {
 	return "UNKNOWN"
 }
 
-// IsKeyword reports whether t is one of the reserved SQL keywords.
+// IsKeyword reports whether t is any SQL keyword, reserved or not (see
+// IsNonReservedKeyword for the subset usable as an ordinary identifier).
 func (t TokenType) IsKeyword() bool {
 	return t > keywordBegin && t < keywordEnd
 }
@@ -387,8 +393,14 @@ var keywords = buildKeywordTable()
 
 func buildKeywordTable() map[string]TokenType {
 	m := make(map[string]TokenType, keywordEnd-keywordBegin-1)
+
 	for tt := keywordBegin + 1; tt < keywordEnd; tt++ {
-		m[tokenNames[tt]] = tt
+		name, ok := tokenNames[tt]
+		if !ok {
+			panic(fmt.Sprintf("parser: keyword token %d has no tokenNames entry", tt))
+		}
+
+		m[name] = tt
 	}
 
 	return m

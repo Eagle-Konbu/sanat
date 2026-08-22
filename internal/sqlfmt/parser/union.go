@@ -14,13 +14,15 @@ func ParseUnion(input string) (u *sqlast.Union, err error) {
 	defer recoverParseError(&err)
 
 	p := NewParser(input)
-	u = p.parseUnionStatement()
+	result := p.parseUnionStatement()
+
+	p.consume(SEMICOLON)
 
 	if !p.at(EOF) {
 		p.failf("unexpected token %s after statement", p.tok.Type)
 	}
 
-	return u, nil
+	return result, nil
 }
 
 // parseUnionStatement parses a UNION statement, optionally preceded by a

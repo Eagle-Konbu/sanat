@@ -302,14 +302,12 @@ closing paren's line rather than being broken out, since they're key/value
 modifiers rather than a SQL clause with sub-structure.
 
 ```text
-CREATE TABLE                 -- optionally IF NOT EXISTS
-  <table> (
+CREATE TABLE <table> (       -- optionally IF NOT EXISTS before <table>
   <column_or_constraint1>,
   <column_or_constraint2>
 ) <option1> <option2>        -- if present, e.g. ENGINE=InnoDB
 
-ALTER TABLE
-  <table>
+ALTER TABLE <table>
   <action1>,
   <action2>
 
@@ -320,8 +318,7 @@ CREATE INDEX <index> ON <table> (   -- optionally UNIQUE
 
 DROP INDEX <index> ON <table>
 
-DROP TABLE                   -- optionally IF EXISTS
-  <table1>, <table2>
+DROP TABLE <table1>, <table2>   -- optionally IF EXISTS before <table1>
 
 TRUNCATE TABLE <table>
 ```
@@ -888,10 +885,3 @@ SQL syntax analysis uses an in-house lexer/parser (`internal/sqlfmt/parser`, pro
 | SHOW TABLES / CREATE TABLE / COLUMNS / INDEX / DATABASES / VARIABLES / STATUS | o |
 | DESCRIBE / EXPLAIN / USE | o |
 | Other (stored program syntax — `CALL`, `PREPARE`, `EXECUTE`, `DEALLOCATE PREPARE` — `JSON_TABLE`, ...) | Not recognized by the parser — `FormatSQL` returns the input unchanged |
-
-Note: DDL, transaction/session, and admin/utility statement detection in the
-CLI's `MightBeSQL` heuristic (see [detect-spec.md](detect-spec.md)) is
-tracked separately and has not landed yet, so these statement types are
-currently reachable only through the `sqlfmt.FormatSQL`/
-`FormatSQLWithOptions` API directly, not yet through the `sanat` CLI's
-Go-source scan.

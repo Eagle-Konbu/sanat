@@ -81,6 +81,8 @@ func TestParseUpdate_multiTableOrderByLimitRejected(t *testing.T) {
 		"UPDATE a, b SET a.x = 1 LIMIT 10",
 		"UPDATE a JOIN b ON a.id = b.id SET a.x = 1 ORDER BY a.id",
 		"UPDATE a JOIN b ON a.id = b.id SET a.x = 1 LIMIT 10",
+		"UPDATE (a JOIN b ON a.id = b.id) SET a.x = 1 ORDER BY a.id",
+		"UPDATE (a JOIN b ON a.id = b.id) SET a.x = 1 LIMIT 10",
 	}
 
 	for _, in := range tests {

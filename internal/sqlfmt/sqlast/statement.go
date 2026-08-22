@@ -107,13 +107,15 @@ func (u *Update) String() string {
 		b.WriteString(" IGNORE")
 	}
 
-	tables := make([]string, len(u.TableExprs))
-	for i, t := range u.TableExprs {
-		tables[i] = t.String()
-	}
+	if len(u.TableExprs) > 0 {
+		tables := make([]string, len(u.TableExprs))
+		for i, t := range u.TableExprs {
+			tables[i] = t.String()
+		}
 
-	b.WriteString(" ")
-	b.WriteString(strings.Join(tables, ", "))
+		b.WriteString(" ")
+		b.WriteString(strings.Join(tables, ", "))
+	}
 
 	sets := make([]string, len(u.Exprs))
 	for i, e := range u.Exprs {
@@ -187,12 +189,29 @@ func (u *Union) String() string {
 		b.WriteString(" UNION ALL ")
 	}
 
-	b.WriteString(u.Right.String())
+	writeUnionOperand(&b, u.Right)
 	writeOrderBy(&b, u.OrderBy)
 	writeLimit(&b, u.Limit)
 	writeLock(&b, u.Lock, u.LockWait)
 
 	return b.String()
+}
+
+// writeUnionOperand writes stmt as a UNION's right-hand operand, wrapping it
+// in parentheses if it is itself a *Union: without them, a nested Union's own
+// ORDER BY/LIMIT/locking clause would render as if it scoped the whole
+// outer UNION rather than just that operand.
+func writeUnionOperand(b *strings.Builder, stmt Statement) {
+	nested, ok := stmt.(*Union)
+	if !ok {
+		b.WriteString(stmt.String())
+
+		return
+	}
+
+	b.WriteByte('(')
+	b.WriteString(nested.String())
+	b.WriteByte(')')
 }
 
 // With represents a WITH (CTE) clause.
@@ -337,6 +356,10 @@ func writeTargets(b *strings.Builder, targets []TableName) {
 }
 
 func writeTableExprs(b *strings.Builder, exprs []TableExpr) {
+	if len(exprs) == 0 {
+		return
+	}
+
 	strs := make([]string, len(exprs))
 	for i, e := range exprs {
 		strs[i] = e.String()

@@ -90,14 +90,34 @@ func FormatSQLWithOptions(sql string, opts Options) (string, bool) {
 		return sql, false
 	}
 
+	result, ok := formatParsedStatement(opts, stmt)
+	if !ok {
+		return sql, false
+	}
+
+	return restorePlaceholders(result, count), true
+}
+
+// formatParsedStatement renders stmt, recovering a panic from an AST node
+// type the formatter doesn't handle (see the "sqlfmt: unhandled ... type"
+// panics below) into an (ok=false) failure instead of crashing the caller —
+// the same fallback FormatSQLWithOptions already gives a parse failure.
+//
+//nolint:nonamedreturns // the named results are mutated by the deferred recover
+func formatParsedStatement(opts Options, stmt sqlast.Statement) (result string, ok bool) {
+	defer func() {
+		if recover() != nil {
+			result, ok = "", false
+		}
+	}()
+
 	f := newFormatter(opts)
 
 	var b strings.Builder
 
 	f.formatStatement(&b, stmt, 0)
-	result := restorePlaceholders(b.String(), count)
 
-	return result, true
+	return b.String(), true
 }
 
 func replacePlaceholders(sql string) (string, int) {

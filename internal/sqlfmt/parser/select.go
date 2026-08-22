@@ -1,6 +1,10 @@
 package parser
 
-import "github.com/Eagle-Konbu/sanat/internal/sqlfmt/sqlast"
+import (
+	"strings"
+
+	"github.com/Eagle-Konbu/sanat/internal/sqlfmt/sqlast"
+)
 
 // parseSelectStatement parses a SELECT statement, optionally preceded by a
 // WITH clause. The current token must be WITH or SELECT.
@@ -238,14 +242,32 @@ func (p *Parser) isJoinStart() bool {
 func (p *Parser) parseJoin(left sqlast.TableExpr) sqlast.TableExpr {
 	joinType := p.parseJoinType()
 	right := p.parseTableFactor()
+	cond := p.parseOptionalJoinCondition()
 
-	var cond *sqlast.JoinCondition
-
-	if p.consume(ON) {
-		cond = &sqlast.JoinCondition{On: p.parseExpr()}
+	if cond == nil && joinRequiresCondition(joinType) {
+		p.failf("expected ON or USING after %s", strings.ToUpper(joinType.ToString()))
 	}
 
 	return &sqlast.JoinTableExpr{LeftExpr: left, Join: joinType, RightExpr: right, Condition: cond}
+}
+
+// joinRequiresCondition reports whether MySQL requires an ON or USING clause
+// for joinType. INNER/CROSS/STRAIGHT_JOIN and the NATURAL forms may omit
+// one; LEFT and RIGHT (OUTER) JOIN may not.
+func joinRequiresCondition(joinType sqlast.JoinType) bool {
+	return joinType == sqlast.LeftJoinType || joinType == sqlast.RightJoinType
+}
+
+func (p *Parser) parseOptionalJoinCondition() *sqlast.JoinCondition {
+	if p.consume(ON) {
+		return &sqlast.JoinCondition{On: p.parseExpr()}
+	}
+
+	if p.consume(USING) {
+		return &sqlast.JoinCondition{Using: p.parseColumnList()}
+	}
+
+	return nil
 }
 
 func (p *Parser) parseJoinType() sqlast.JoinType {

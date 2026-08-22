@@ -189,6 +189,7 @@ func TestLexer_NumberLiterals(t *testing.T) {
 		{"integer", "123", parser.INT},
 		{"float", "123.45", parser.FLOAT},
 		{"float leading digit only", "0.5", parser.FLOAT},
+		{"float with no leading digit", ".5", parser.FLOAT},
 		{"exponent", "1e10", parser.FLOAT},
 		{"exponent with sign", "1.5e-10", parser.FLOAT},
 		{"exponent uppercase", "2E+3", parser.FLOAT},
@@ -570,12 +571,41 @@ func TestLexer_Comments(t *testing.T) {
 			t.Fatal("expected error for unterminated block comment")
 		}
 	})
+
+	t.Run("optimizer hint is rejected", func(t *testing.T) {
+		l := parser.New("SELECT /*+ MAX_EXECUTION_TIME(1000) */ 1")
+		if _, err := l.Next(); err != nil {
+			t.Fatalf("Next() error = %v, want nil for first token", err)
+		}
+
+		if _, err := l.Next(); err == nil {
+			t.Fatal("expected error for /*+ ... */ optimizer hint")
+		}
+	})
+
+	t.Run("executable comment is rejected", func(t *testing.T) {
+		l := parser.New("SELECT /*!50700 1 */")
+		if _, err := l.Next(); err != nil {
+			t.Fatalf("Next() error = %v, want nil for first token", err)
+		}
+
+		if _, err := l.Next(); err == nil {
+			t.Fatal("expected error for /*! ... */ executable comment")
+		}
+	})
 }
 
 func TestLexer_IllegalCharacter(t *testing.T) {
-	l := parser.New("@")
-	if _, err := l.Next(); err == nil {
+	l := parser.New("~")
+
+	_, err := l.Next()
+	if err == nil {
 		t.Fatal("expected error for illegal character")
+	}
+
+	var lexErr *parser.LexError
+	if !errors.As(err, &lexErr) {
+		t.Fatalf("Next() error type = %T, want *parser.LexError", err)
 	}
 }
 

@@ -65,7 +65,7 @@ func (l *Lexer) Next() (Token, error) {
 		}
 
 		return Token{Type: STRING, Literal: lit, Pos: pos}, nil
-	case isDigit(l.ch):
+	case l.startsNumber():
 		tt, lit := l.readNumber()
 
 		return Token{Type: tt, Literal: lit, Pos: pos}, nil
@@ -170,6 +170,16 @@ func (l *Lexer) skipBlockComment() error {
 	startPos := l.currentPos()
 	l.readChar() // consume '/'
 	l.readChar() // consume '*'
+
+	// /*+ ... */ optimizer hints and /*! ... */ (or /*!50700 ... */
+	// version-gated) executable comments carry semantic content that a
+	// plain comment does not. Discarding them like an ordinary block
+	// comment would silently drop meaning from the formatted output, so
+	// this is reported as a lex error instead: callers fall back to
+	// returning the input unchanged rather than mangling it.
+	if l.ch == '+' || l.ch == '!' {
+		return &LexError{Pos: startPos, Msg: "MySQL optimizer hints and executable comments are not supported"}
+	}
 
 	for {
 		switch {
@@ -388,6 +398,13 @@ func unescape(ch rune) string {
 	}
 }
 
+// startsNumber reports whether l.ch begins a numeric literal: an ordinary
+// leading digit, or a '.' immediately followed by one (a leading-dot literal
+// like ".5", with no integer part).
+func (l *Lexer) startsNumber() bool {
+	return isDigit(l.ch) || (l.ch == '.' && isDigit(l.peek()))
+}
+
 func (l *Lexer) readNumber() (TokenType, string) {
 	if l.ch == '0' {
 		if lit, ok := l.tryReadPrefixedNumber(); ok {
@@ -448,6 +465,10 @@ func (l *Lexer) readDigits() {
 	}
 }
 
+// tryReadFraction reads a fractional part starting at a '.', if present.
+// The '.' must be followed by a digit: this is what disambiguates a
+// leading-dot literal like ".5" (see the matching case in Next()) from a
+// number immediately followed by a DOT-qualified identifier, e.g. "123.col".
 func (l *Lexer) tryReadFraction() bool {
 	if l.ch != '.' || !isDigit(l.peek()) {
 		return false
@@ -574,6 +595,7 @@ var singleCharTokens = map[rune]TokenType{
 	'.': DOT,
 	':': COLON,
 	'?': QUESTION,
+	';': SEMICOLON,
 }
 
 func isSpace(ch rune) bool {

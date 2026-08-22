@@ -31,14 +31,30 @@ func TestAliasedTableExpr_String(t *testing.T) {
 
 func TestJoinTableExpr_String(t *testing.T) {
 	t.Run("with ON", func(t *testing.T) {
+		cond := &sqlast.ComparisonExpr{
+			Operator: sqlast.EqualOp,
+			Left:     &sqlast.ColName{Qualifier: sqlast.TableName{Name: "u"}, Name: "id"},
+			Right:    &sqlast.ColName{Qualifier: sqlast.TableName{Name: "o"}, Name: "user_id"},
+		}
 		e := &sqlast.JoinTableExpr{
 			LeftExpr:  &sqlast.AliasedTableExpr{Expr: sqlast.TableName{Name: "users"}, As: "u"},
 			Join:      sqlast.LeftJoinType,
 			RightExpr: &sqlast.AliasedTableExpr{Expr: sqlast.TableName{Name: "orders"}, As: "o"},
-			Condition: &sqlast.JoinCondition{On: lit("u.id = o.user_id")},
+			Condition: &sqlast.JoinCondition{On: cond},
 		}
 
 		assertEqual(t, "users u LEFT JOIN orders o ON u.id = o.user_id", e.String())
+	})
+
+	t.Run("with USING", func(t *testing.T) {
+		e := &sqlast.JoinTableExpr{
+			LeftExpr:  &sqlast.AliasedTableExpr{Expr: sqlast.TableName{Name: "users"}, As: "u"},
+			Join:      sqlast.NormalJoinType,
+			RightExpr: &sqlast.AliasedTableExpr{Expr: sqlast.TableName{Name: "orders"}, As: "o"},
+			Condition: &sqlast.JoinCondition{Using: sqlast.Columns{"id", "tenant_id"}},
+		}
+
+		assertEqual(t, "users u JOIN orders o USING (id, tenant_id)", e.String())
 	})
 
 	t.Run("without condition", func(t *testing.T) {

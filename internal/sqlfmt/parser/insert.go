@@ -9,13 +9,15 @@ func ParseInsert(input string) (ins *sqlast.Insert, err error) {
 	defer recoverParseError(&err)
 
 	p := NewParser(input)
-	ins = p.parseInsertStatement()
+	result := p.parseInsertStatement()
+
+	p.consume(SEMICOLON)
 
 	if !p.at(EOF) {
 		p.failf("unexpected token %s after statement", p.tok.Type)
 	}
 
-	return ins, nil
+	return result, nil
 }
 
 // parseInsertStatement parses an INSERT or REPLACE statement. The current

@@ -19,13 +19,15 @@ func ParseStatement(input string) (stmt sqlast.Statement, err error) {
 	defer recoverParseError(&err)
 
 	p := NewParser(input)
-	stmt = p.parseStatement()
+	result := p.parseStatement()
+
+	p.consume(SEMICOLON)
 
 	if !p.at(EOF) {
 		p.failf("unexpected token %s after statement", p.tok.Type)
 	}
 
-	return stmt, nil
+	return result, nil
 }
 
 func (p *Parser) parseStatement() sqlast.Statement {
@@ -44,6 +46,10 @@ func (p *Parser) parseStatement() sqlast.Statement {
 		if stmt, ok := p.parseStatementWithoutWith(); ok {
 			return stmt
 		}
+	}
+
+	if with != nil {
+		return failReturn[sqlast.Statement](p, "WITH is not supported before %s", p.tok.Type)
 	}
 
 	msg := "expected SELECT, INSERT, UPDATE, DELETE, REPLACE, CREATE, ALTER, DROP, TRUNCATE, " +

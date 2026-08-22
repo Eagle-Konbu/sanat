@@ -76,6 +76,9 @@ func TestParseSelect_joins(t *testing.T) {
 		{"chained joins", "SELECT * FROM a JOIN b ON a.id = b.id JOIN c ON b.id = c.id",
 			"SELECT * FROM a JOIN b ON a.id = b.id JOIN c ON b.id = c.id"},
 		{"parenthesized join", "SELECT * FROM (a JOIN b ON a.id = b.id)", "SELECT * FROM (a JOIN b ON a.id = b.id)"},
+		{"inner join using", "SELECT * FROM a JOIN b USING (id)", "SELECT * FROM a JOIN b USING (id)"},
+		{"left join using", "SELECT * FROM a LEFT JOIN b USING (id, tenant_id)",
+			"SELECT * FROM a LEFT JOIN b USING (id, tenant_id)"},
 	}
 
 	for _, tt := range tests {
@@ -254,6 +257,8 @@ func TestParseSelect_errors(t *testing.T) {
 		"SELECT a FROM t CROSS 'unterminated",
 		"SELECT a FROM t INNER 'unterminated",
 		"SELECT * FROM t OUTER JOIN u",
+		"SELECT * FROM a LEFT JOIN b",
+		"SELECT * FROM a RIGHT JOIN b",
 	}
 
 	for _, in := range tests {

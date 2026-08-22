@@ -113,6 +113,7 @@ func TestJoinType_ToString(t *testing.T) {
 		{sqlast.NaturalRightJoinType, "natural right join"},
 		{sqlast.CrossJoinType, "cross join"},
 		{sqlast.JoinType(99), "join"},
+		{sqlast.JoinType(-1), "join"},
 	}
 
 	for _, tt := range tests {
@@ -139,6 +140,7 @@ func TestComparisonOperator_ToString(t *testing.T) {
 		{sqlast.RegexpOp, "regexp"},
 		{sqlast.NotRegexpOp, "not regexp"},
 		{sqlast.ComparisonOperator(99), "="},
+		{sqlast.ComparisonOperator(-1), "="},
 	}
 
 	for _, tt := range tests {
@@ -206,7 +208,7 @@ func TestSetExprs_String(t *testing.T) {
 		s    sqlast.SetExprs
 		want string
 	}{
-		{"empty", sqlast.SetExprs(nil), "SET "},
+		{"empty", sqlast.SetExprs(nil), ""},
 		{"single", sqlast.SetExprs{
 			{Name: &sqlast.ColName{Name: "status"}, Expr: lit("1")},
 		}, "SET status = 1"},
@@ -351,6 +353,7 @@ func TestArgumentLessWindowExprType_String(t *testing.T) {
 		{sqlast.RankExprType, "RANK"},
 		{sqlast.RowNumberExprType, "ROW_NUMBER"},
 		{sqlast.ArgumentLessWindowExprType(99), "ROW_NUMBER"},
+		{sqlast.ArgumentLessWindowExprType(-1), "ROW_NUMBER"},
 	}
 
 	for _, tt := range tests {

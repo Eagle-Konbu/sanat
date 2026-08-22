@@ -122,6 +122,7 @@ func TestArithmeticExpr_String(t *testing.T) {
 
 func TestArithmeticOperator_ToString(t *testing.T) {
 	assertEqual(t, "+", sqlast.ArithmeticOperator(99).ToString())
+	assertEqual(t, "+", sqlast.ArithmeticOperator(-1).ToString())
 }
 
 func TestUnaryExpr_String(t *testing.T) {

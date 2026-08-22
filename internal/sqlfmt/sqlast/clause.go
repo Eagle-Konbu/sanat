@@ -85,7 +85,7 @@ type Limit struct {
 
 // String returns Limit's SQL text.
 func (l *Limit) String() string {
-	if l == nil {
+	if l == nil || l.Rowcount == nil {
 		return ""
 	}
 
@@ -201,16 +201,18 @@ var joinTypeStrings = [...]string{
 
 // ToString returns JoinType's lower-case SQL join text; String upper-cases the result.
 func (jt JoinType) ToString() string {
-	if int(jt) < len(joinTypeStrings) {
+	if jt >= 0 && int(jt) < len(joinTypeStrings) {
 		return joinTypeStrings[jt]
 	}
 
 	return joinStr
 }
 
-// JoinCondition represents the ON condition of a JOIN.
+// JoinCondition represents the ON or USING condition of a JOIN. Exactly one
+// of On/Using is set, matching the mutually exclusive MySQL grammar.
 type JoinCondition struct {
-	On Expr
+	On    Expr
+	Using Columns
 }
 
 // ComparisonOperator represents a comparison operator.
@@ -250,7 +252,7 @@ var comparisonOpStrings = [...]string{
 
 // ToString returns ComparisonOperator's SQL operator text; String upper-cases the result.
 func (op ComparisonOperator) ToString() string {
-	if int(op) < len(comparisonOpStrings) {
+	if op >= 0 && int(op) < len(comparisonOpStrings) {
 		return comparisonOpStrings[op]
 	}
 
@@ -379,6 +381,10 @@ type SetExprs []*UpdateExpr
 
 // String returns SetExprs's SQL text.
 func (s SetExprs) String() string {
+	if len(s) == 0 {
+		return ""
+	}
+
 	strs := make([]string, len(s))
 	for i, e := range s {
 		strs[i] = e.String()
@@ -481,7 +487,7 @@ type FrameClause struct {
 
 // String returns FrameClause's SQL text.
 func (f *FrameClause) String() string {
-	if f == nil {
+	if f == nil || f.Start == nil {
 		return ""
 	}
 
@@ -565,7 +571,7 @@ var arglessWindowExprStrings = [...]string{
 
 // String returns ArgumentLessWindowExprType's SQL text.
 func (t ArgumentLessWindowExprType) String() string {
-	if int(t) < len(arglessWindowExprStrings) {
+	if t >= 0 && int(t) < len(arglessWindowExprStrings) {
 		return arglessWindowExprStrings[t]
 	}
 
