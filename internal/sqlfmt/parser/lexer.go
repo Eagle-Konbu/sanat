@@ -607,7 +607,7 @@ func isSpace(ch rune) bool {
 // EOF doesn't count — a bare trailing "--" with nothing after it is not a
 // comment start, matching MySQL's stricter enforcement of this rule.
 func isCommentBoundary(ch rune) bool {
-	return isSpace(ch)
+	return isSpace(ch) || ch == '\f' || ch == '\v'
 }
 
 func isDigit(ch rune) bool {
