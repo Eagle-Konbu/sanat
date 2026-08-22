@@ -102,6 +102,56 @@ EOF
   [[ "$stderr" == *"keyword_case"* ]]
 }
 
+@test "sql_mode: no_backslash_escapes in the config file preserves a doubled quote" {
+  cat > "${BATS_TEST_TMPDIR}/.sanat.yml" <<'EOF'
+version: 1
+sql_mode: no_backslash_escapes
+EOF
+
+  cat > "${BATS_TEST_TMPDIR}/quote.go" <<'EOF'
+package sample
+
+import "database/sql"
+
+func query(db *sql.DB) {
+	db.Query(`select 'it''s' from t`)
+}
+EOF
+
+  (cd "${BATS_TEST_TMPDIR}" && "${SANAT_BIN}" quote.go > got.go)
+
+  grep -qF "  'it''s'" "${BATS_TEST_TMPDIR}/got.go"
+}
+
+@test "--sql-mode flag overrides the config file value" {
+  cat > "${BATS_TEST_TMPDIR}/.sanat.yml" <<'EOF'
+version: 1
+sql_mode: no_backslash_escapes
+EOF
+
+  cat > "${BATS_TEST_TMPDIR}/quote.go" <<'EOF'
+package sample
+
+import "database/sql"
+
+func query(db *sql.DB) {
+	db.Query(`select 'it''s' from t`)
+}
+EOF
+
+  (cd "${BATS_TEST_TMPDIR}" && "${SANAT_BIN}" --sql-mode default quote.go > got.go)
+
+  grep -qF "  'it\'s'" "${BATS_TEST_TMPDIR}/got.go"
+}
+
+@test "an invalid --sql-mode flag value fails with a clear error" {
+  run --separate-stderr "${SANAT_BIN}" --sql-mode sideways "${BATS_TEST_TMPDIR}/sample.go"
+
+  [ "$status" -ne 0 ]
+  [[ "$stderr" == *"sql_mode"* ]]
+  [[ "$stderr" == *"sideways"* ]]
+}
+
 @test "an unsupported config version fails with a clear error" {
   cat > "${BATS_TEST_TMPDIR}/.sanat.yml" <<'EOF'
 version: 99

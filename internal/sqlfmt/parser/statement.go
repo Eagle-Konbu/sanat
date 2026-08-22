@@ -12,13 +12,24 @@ import "github.com/Eagle-Konbu/sanat/internal/sqlfmt/sqlast"
 // INSERT/REPLACE or any DDL/transaction/session/admin statement, none of
 // which MySQL allows WITH before — EXPLAIN's wrapped select_stmt accepts its
 // own WITH clause instead) — dispatching on the statement's leading keyword.
-// This is the formatter's entry point.
+// This is the formatter's entry point, using ModeDefault. See
+// ParseStatementWithMode for mode-sensitive string-literal handling.
 //
 //nolint:nonamedreturns // the named results are mutated by the deferred recover
 func ParseStatement(input string) (stmt sqlast.Statement, err error) {
+	return ParseStatementWithMode(input, ModeDefault)
+}
+
+// ParseStatementWithMode parses a single top-level SQL statement like
+// ParseStatement, decoding string literals per mode. This is the formatter's
+// entry point when a caller has selected a non-default SQL mode (e.g.
+// NO_BACKSLASH_ESCAPES).
+//
+//nolint:nonamedreturns // the named results are mutated by the deferred recover
+func ParseStatementWithMode(input string, mode SQLMode) (stmt sqlast.Statement, err error) {
 	defer recoverParseError(&err)
 
-	p := NewParser(input)
+	p := NewParserWithMode(input, mode)
 	result := p.parseStatement()
 
 	p.consume(SEMICOLON)

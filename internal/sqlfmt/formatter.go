@@ -16,6 +16,9 @@ const (
 
 	CommaStyleTrailing = "trailing"
 	CommaStyleLeading  = "leading"
+
+	SQLModeDefault            = "default"
+	SQLModeNoBackslashEscapes = "no_backslash_escapes"
 )
 
 var (
@@ -49,6 +52,16 @@ type Options struct {
 	// columns, INSERT columns/values, SET assignments, ...). Defaults to
 	// CommaStyleTrailing.
 	CommaStyle string
+
+	// SQLMode selects MySQL sql_mode-dependent string-literal parsing
+	// behavior. Defaults to SQLModeDefault, which matches MySQL without
+	// NO_BACKSLASH_ESCAPES set: backslash is a string-literal escape
+	// character. FormatSQL and FormatSQLWithOptions format one statement at
+	// a time with no session or connection state, so callers whose
+	// connection has NO_BACKSLASH_ESCAPES enabled must set SQLMode to
+	// SQLModeNoBackslashEscapes explicitly — sanat cannot infer it from the
+	// input SQL.
+	SQLMode string
 }
 
 // formatter holds the resolved rendering options for a single FormatSQL call.
@@ -83,9 +96,14 @@ func FormatSQL(sql string, indent int) (string, bool) {
 }
 
 func FormatSQLWithOptions(sql string, opts Options) (string, bool) {
+	mode, ok := parserSQLMode(opts.SQLMode)
+	if !ok {
+		return sql, false
+	}
+
 	replaced, count := replacePlaceholders(sql)
 
-	stmt, err := parser.ParseStatement(replaced)
+	stmt, err := parser.ParseStatementWithMode(replaced, mode)
 	if err != nil {
 		return sql, false
 	}
@@ -96,6 +114,22 @@ func FormatSQLWithOptions(sql string, opts Options) (string, bool) {
 	}
 
 	return restorePlaceholders(result, count), true
+}
+
+// parserSQLMode translates an Options.SQLMode value into the parser
+// package's SQLMode, reporting whether sqlMode was a recognized value.
+// The empty string and SQLModeDefault both map to parser.ModeDefault;
+// SQLModeNoBackslashEscapes maps to parser.ModeNoBackslashEscapes; any other
+// value is rejected with ok == false.
+func parserSQLMode(sqlMode string) (parser.SQLMode, bool) {
+	switch sqlMode {
+	case "", SQLModeDefault:
+		return parser.ModeDefault, true
+	case SQLModeNoBackslashEscapes:
+		return parser.ModeNoBackslashEscapes, true
+	default:
+		return parser.ModeDefault, false
+	}
 }
 
 // formatParsedStatement renders stmt, recovering a panic from an AST node

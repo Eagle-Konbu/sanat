@@ -642,6 +642,50 @@ FROM
   users
 ```
 
+### SQL Mode
+
+sanat's parser formats one statement at a time, with no session or connection
+state — it cannot see a prior `SET sql_mode = ...` or a connection-level
+default. String-literal handling is MySQL-mode-sensitive (specifically,
+whether `NO_BACKSLASH_ESCAPES` is set), so callers whose connection uses
+`NO_BACKSLASH_ESCAPES` must select it explicitly via the `sql_mode` option;
+sanat cannot infer it from the SQL text.
+
+| Value | Behavior |
+|-------|----------|
+| `default` (default) | Backslash is a string-literal escape character (`\n`, `\'`, `\\`, ...), matching MySQL's default sql_mode |
+| `no_backslash_escapes` | Backslash has no special meaning in a string literal; a literal quote can only be embedded by doubling it, matching MySQL's `NO_BACKSLASH_ESCAPES` sql_mode |
+
+This affects both how sanat *parses* input SQL and how it *re-renders*
+string literals, so the mode must match the mode the SQL was written for —
+otherwise reformatting can change a literal's meaning. For example, given
+`SET sql_mode = 'NO_BACKSLASH_ESCAPES'` and `SELECT 'it''s'`:
+
+**`sql_mode: default` (wrong mode for this input):**
+
+```sql
+SELECT
+  'it\'s'
+```
+
+This re-encodes the doubled quote with a backslash escape, which is only
+valid because the *default* mode still supports it — under the
+`NO_BACKSLASH_ESCAPES` connection this string actually came from, `\'` would
+not close the string, corrupting the query when it's rendered back into
+source and later sent to that connection.
+
+**`sql_mode: no_backslash_escapes` (correct mode for this input):**
+
+```sql
+SELECT
+  'it''s'
+```
+
+The doubled quote round-trips as a doubled quote, and a literal newline
+inside a string round-trips as a literal newline (not the two characters
+`\n`) — both are the only ways `NO_BACKSLASH_ESCAPES` allows those meanings
+to be expressed.
+
 ### Locking Clauses
 
 Locking clauses are placed on their own line after LIMIT (or after the last clause if no LIMIT). Supported clauses: `FOR UPDATE`, `FOR SHARE`, `LOCK IN SHARE MODE`, `FOR UPDATE SKIP LOCKED`, `FOR UPDATE NOWAIT`, `FOR SHARE SKIP LOCKED`, `FOR SHARE NOWAIT`.
@@ -754,6 +798,7 @@ Configuration files are searched in the following order (first match is used):
 | `newline` | bool | no | `true` | Whether to insert a newline after the opening backtick |
 | `keyword_case` | `upper` \| `lower` \| `preserve` | no | `upper` | Casing for operator/predicate keywords. See [Keyword Casing](#keyword-casing). |
 | `comma_style` | `trailing` \| `leading` | no | `trailing` | Comma placement in rendered lists. See [Comma Style](#comma-style). |
+| `sql_mode` | `default` \| `no_backslash_escapes` | no | `default` | SQL mode controlling string-literal parsing and rendering. See [SQL Mode](#sql-mode). |
 
 ### Configuration Examples
 
@@ -766,6 +811,7 @@ indent: 4
 newline: true
 keyword_case: upper
 comma_style: trailing
+sql_mode: default
 ```
 
 **TOML:**
@@ -777,6 +823,7 @@ indent = 4
 newline = true
 keyword_case = "upper"
 comma_style = "trailing"
+sql_mode = "default"
 ```
 
 ### Config Versioning
@@ -811,6 +858,7 @@ sanat [flags] [pattern ...]
 | `--newline` | | `true` | Newline after opening backtick |
 | `--keyword-case` | | `upper` | Casing for operator/predicate keywords (`upper`, `lower`, `preserve`) |
 | `--comma-style` | | `trailing` | Comma placement in lists (`trailing`, `leading`) |
+| `--sql-mode` | | `default` | SQL mode controlling string-literal parsing and rendering (`default`, `no_backslash_escapes`) |
 | `--config` | `-c` | | Configuration file path |
 
 ### Input Methods

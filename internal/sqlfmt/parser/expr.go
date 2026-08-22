@@ -311,7 +311,7 @@ func (p *Parser) parseStringLiteral() sqlast.Expr {
 	tok := p.tok
 	p.advance()
 
-	return &sqlast.Literal{Val: "'" + escapeStringLiteral(tok.Literal) + "'"}
+	return &sqlast.Literal{Val: "'" + escapeStringLiteral(tok.Literal, p.mode) + "'"}
 }
 
 var stringEscapes = map[rune]string{
@@ -326,10 +326,22 @@ var stringEscapes = map[rune]string{
 }
 
 // escapeStringLiteral re-encodes a lexer-decoded string literal so it can be
-// embedded between single quotes again. \% and \_ are round-tripped as-is
-// since the lexer deliberately leaves them un-decoded (they are only
-// meaningful within LIKE pattern matching).
-func escapeStringLiteral(s string) string {
+// embedded between single quotes again, per mode.
+//
+// Under ModeDefault, \% and \_ are round-tripped as-is since the lexer
+// deliberately leaves them un-decoded (they are only meaningful within LIKE
+// pattern matching).
+//
+// Under ModeNoBackslashEscapes, the lexer never treats backslash as an
+// escape character (see Lexer.readString), so the decoded value already
+// contains every backslash, control character, and literal newline verbatim.
+// Backslash therefore isn't special on the way back out either — doubling
+// the quote character is the only escaping NO_BACKSLASH_ESCAPES supports.
+func escapeStringLiteral(s string, mode SQLMode) string {
+	if mode == ModeNoBackslashEscapes {
+		return strings.ReplaceAll(s, "'", "''")
+	}
+
 	runes := []rune(s)
 
 	var b strings.Builder

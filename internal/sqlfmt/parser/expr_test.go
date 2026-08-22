@@ -78,6 +78,37 @@ func TestParseExpr_stringLiteral(t *testing.T) {
 	}
 }
 
+// TestParseExpr_stringLiteral_NoBackslashEscapes covers round-tripping a
+// string literal under parser.ModeNoBackslashEscapes: a doubled quote must
+// stay doubled (backslash-escaping it would change its meaning once
+// NO_BACKSLASH_ESCAPES is set), and a literal newline must stay a literal
+// newline rather than becoming the two characters backslash-n.
+func TestParseExpr_stringLiteral_NoBackslashEscapes(t *testing.T) {
+	tests := []struct {
+		name, in, want string
+	}{
+		{"plain", `'abc'`, `'abc'`},
+		{"doubled quote roundtrips as doubled quote", `'it''s'`, `'it''s'`},
+		{"backslash is not an escape character", `'a\nb'`, `'a\nb'`},
+		{"literal newline roundtrips as a literal newline", "'a\nb'", "'a\nb'"},
+		{"backslash adjacent to a doubled quote", `'a\b''s'`, `'a\b''s'`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parser.ParseExprWithMode(tt.in, parser.ModeNoBackslashEscapes)
+			if err != nil {
+				t.Fatalf("ParseExprWithMode(%q) error = %v", tt.in, err)
+			}
+
+			want := &sqlast.Literal{Val: tt.want}
+			if !reflect.DeepEqual(got, want) {
+				t.Errorf("ParseExprWithMode(%q) =\n  %#v\nwant\n  %#v", tt.in, got, want)
+			}
+		})
+	}
+}
+
 func TestParseExpr_columnRefs(t *testing.T) {
 	assertExpr(t, "id", col("id"))
 	assertExpr(t, "t.id", &sqlast.ColName{Qualifier: sqlast.TableName{Name: "t"}, Name: "id"})

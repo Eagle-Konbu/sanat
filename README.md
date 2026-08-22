@@ -86,6 +86,7 @@ cat file.go | sanat > formatted.go
 | `--newline` | `true` | Add newline after opening backtick |
 | `--keyword-case` | `upper` | Casing for operator/predicate keywords (`upper`, `lower`, `preserve`) |
 | `--comma-style` | `trailing` | Comma placement in lists (`trailing`, `leading`) |
+| `--sql-mode` | `default` | SQL mode controlling string-literal parsing and rendering (`default`, `no_backslash_escapes`) |
 | `-c, --config` | | Path to config file |
 
 ## Configuration File
@@ -113,6 +114,7 @@ indent: 4
 newline: false
 keyword_case: upper
 comma_style: trailing
+sql_mode: default
 ```
 
 ### TOML example (`.sanat.toml`)
@@ -124,6 +126,7 @@ indent = 4
 newline = false
 keyword_case = "upper"
 comma_style = "trailing"
+sql_mode = "default"
 ```
 
 See [docs/formatter-spec.md](docs/formatter-spec.md#configuration) for the full list of configuration options.

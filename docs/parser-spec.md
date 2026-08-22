@@ -174,7 +174,9 @@ treatment of every other keyword (there's no non-reserved carve-out for
   `\Z`, `\\`, `\'`) and MySQL's doubled-quote (`''`) escaping. `\%` and
   `\_` are left un-decoded by the lexer (and re-escaped as-is by the
   parser's `escapeStringLiteral`) since they are only meaningful inside a
-  `LIKE` pattern. `x'1A'`/`X'1A'` (hex) and `b'101'`/`B'101'` (bit) string
+  `LIKE` pattern. This backslash-escape handling applies under `ModeDefault`
+  only; see [SQL Mode](#sql-mode) for `ModeNoBackslashEscapes`, which
+  disables it. `x'1A'`/`X'1A'` (hex) and `b'101'`/`B'101'` (bit) string
   literals are also recognized; the quote must immediately follow the
   `x`/`b` letter with no space, which is how the lexer tells them apart
   from a plain identifier named `x`/`b`. Unlike the `0x`/`0b` integer forms,
@@ -259,6 +261,61 @@ whichever of `SELECT`/`INSERT`/`REPLACE`/`UPDATE`/`DELETE`/`UNION`/`CREATE`/
 becomes an `*sqlast.Insert` with `Action: ReplaceAct`), and `WITH` is not
 accepted before `INSERT`/`REPLACE` or any DDL/transaction/session/admin
 statement, matching MySQL.
+
+### SQL Mode
+
+```go
+type SQLMode int
+
+const (
+	ModeDefault SQLMode = iota
+	ModeNoBackslashEscapes
+)
+```
+
+The lexer and parser format one statement with no session or connection
+state — they have no way to know a prior `SET sql_mode = ...` (or a
+connection-level default) put the session in `NO_BACKSLASH_ESCAPES` mode.
+Callers who need that behavior select it explicitly via `SQLMode`, threaded
+through mode-aware constructors and entry points:
+
+```go
+func NewWithMode(input string, mode SQLMode) *Lexer
+func NewParserWithMode(input string, mode SQLMode) *Parser
+func ParseExprWithMode(input string, mode SQLMode) (sqlast.Expr, error)
+func ParseSelectWithMode(input string, mode SQLMode) (*sqlast.Select, error)
+func ParseStatementWithMode(input string, mode SQLMode) (sqlast.Statement, error)
+```
+
+`New`, `NewParser`, `ParseExpr`, `ParseSelect`, and `ParseStatement` are thin
+wrappers around their `WithMode` counterparts, passing `ModeDefault` — the
+documented default when a caller doesn't select a mode, and the only mode
+before `SQLMode` was introduced.
+
+`ParseStatementWithMode` is what `sqlfmt.FormatSQLWithOptions` calls,
+selecting the mode from `Options.SQLMode` (see
+[formatter-spec.md](formatter-spec.md#sql-mode)); `ParseStatement` (and by
+extension `sqlfmt.FormatSQL`) is equivalent to `ParseStatementWithMode(input,
+ModeDefault)`.
+
+`ModeNoBackslashEscapes` affects only string-literal handling, mirroring
+MySQL's `NO_BACKSLASH_ESCAPES` sql_mode:
+
+- **Lexing** (`Lexer.readString`): backslash has no special meaning — it is
+  read like any other character instead of introducing an escape sequence.
+  Doubled-quote (`''`) escaping is unaffected, since MySQL doesn't gate it on
+  `NO_BACKSLASH_ESCAPES` either.
+- **Re-encoding** (`escapeStringLiteral`, used by `parseStringLiteral` and
+  `parseTypeParams`' `STRING` case): since the lexer never decoded a
+  backslash escape in this mode, the decoded value already holds every
+  backslash, control character, and literal newline verbatim, so re-encoding
+  only needs to double embedded quote characters — backslash isn't written
+  as an escape on the way back out either.
+
+Concretely, under `ModeNoBackslashEscapes`, `'it''s'` round-trips as
+`'it''s'` (not `'it\'s'`, which would be malformed once the connection
+actually has `NO_BACKSLASH_ESCAPES` set), and a literal newline inside a
+string round-trips as a literal newline (not the two characters `\n`).
 
 ### Error Handling Model
 
@@ -715,10 +772,12 @@ methods are intentionally empty (see the comment at the top of that file).
 
 ## Relationship to the Formatter
 
-`internal/sqlfmt/formatter.go` parses via `parser.ParseStatement` and walks
-the resulting `sqlast.Statement` directly — there is no intermediate or
-fallback representation, and no Vitess dependency remains in the module.
-`detect.go`'s `MightBeSQL` heuristic is unrelated to this package: it is a
+`internal/sqlfmt/formatter.go` parses via `parser.ParseStatementWithMode`
+(selecting the mode from `Options.SQLMode`; see
+[SQL Mode](#sql-mode) above) and walks the resulting `sqlast.Statement`
+directly — there is no intermediate or fallback representation, and no
+Vitess dependency remains in the module. `detect.go`'s `MightBeSQL`
+heuristic is unrelated to this package: it is a
 cheap prefix/keyword check used to decide whether a string is worth handing
 to the parser at all, not a parser itself. See
 [formatter-spec.md](formatter-spec.md) for how the formatter renders each

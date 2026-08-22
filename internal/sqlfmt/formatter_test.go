@@ -1561,6 +1561,83 @@ func TestFormatSQLWithOptions_CommaStyle_With(t *testing.T) {
 	assertSQL(t, got, want)
 }
 
+// TestFormatSQLWithOptions_SQLMode covers the two string-literal cases where
+// NO_BACKSLASH_ESCAPES changes meaning: a doubled quote (which the default
+// mode re-encodes with a backslash, mangling it once NO_BACKSLASH_ESCAPES is
+// set) and a literal newline (which the default mode re-encodes as
+// backslash-n, changing a multi-line value into a single-line one under
+// NO_BACKSLASH_ESCAPES).
+func TestFormatSQLWithOptions_SQLMode(t *testing.T) {
+	tests := []struct {
+		name    string
+		sqlMode string
+		in      string
+		want    string
+		wantOK  bool
+	}{
+		{
+			name:    "default (unset) re-encodes doubled quote with backslash",
+			sqlMode: "",
+			in:      "select 'it''s' from t",
+			want:    join("SELECT", `  'it\'s'`, "FROM", "  t"),
+			wantOK:  true,
+		},
+		{
+			name:    "SQLModeDefault re-encodes doubled quote with backslash",
+			sqlMode: sqlfmt.SQLModeDefault,
+			in:      "select 'it''s' from t",
+			want:    join("SELECT", `  'it\'s'`, "FROM", "  t"),
+			wantOK:  true,
+		},
+		{
+			name:    "NoBackslashEscapes keeps doubled quote doubled",
+			sqlMode: sqlfmt.SQLModeNoBackslashEscapes,
+			in:      "select 'it''s' from t",
+			want:    join("SELECT", `  'it''s'`, "FROM", "  t"),
+			wantOK:  true,
+		},
+		{
+			name:    "default re-encodes a literal newline as backslash-n",
+			sqlMode: sqlfmt.SQLModeDefault,
+			in:      "select 'a\nb' from t",
+			want:    join("SELECT", `  'a\nb'`, "FROM", "  t"),
+			wantOK:  true,
+		},
+		{
+			name:    "NoBackslashEscapes preserves a literal newline",
+			sqlMode: sqlfmt.SQLModeNoBackslashEscapes,
+			in:      "select 'a\nb' from t",
+			want:    join("SELECT", "  'a\nb'", "FROM", "  t"),
+			wantOK:  true,
+		},
+		{
+			name:    "default formats a backslash-escaped quote",
+			sqlMode: sqlfmt.SQLModeDefault,
+			in:      `select 'it\'s' from t`,
+			want:    join("SELECT", `  'it\'s'`, "FROM", "  t"),
+			wantOK:  true,
+		},
+		{
+			name:    "NoBackslashEscapes rejects a backslash-escaped quote",
+			sqlMode: sqlfmt.SQLModeNoBackslashEscapes,
+			in:      `select 'it\'s' from t`,
+			want:    `select 'it\'s' from t`,
+			wantOK:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := sqlfmt.FormatSQLWithOptions(tt.in, sqlfmt.Options{Indent: 2, SQLMode: tt.sqlMode})
+			if ok != tt.wantOK {
+				t.Fatalf("ok = %v, want %v", ok, tt.wantOK)
+			}
+
+			assertSQL(t, got, tt.want)
+		})
+	}
+}
+
 func assertSQL(t *testing.T, got, want string) {
 	t.Helper()
 

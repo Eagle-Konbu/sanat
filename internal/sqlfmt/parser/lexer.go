@@ -30,11 +30,17 @@ type Lexer struct {
 	ch      rune
 	line    int
 	col     int // rune column of ch, 1-based
+	mode    SQLMode
 }
 
-// New creates a Lexer over input.
+// New creates a Lexer over input, using ModeDefault.
 func New(input string) *Lexer {
-	l := &Lexer{input: input, line: 1}
+	return NewWithMode(input, ModeDefault)
+}
+
+// NewWithMode creates a Lexer over input, decoding string literals per mode.
+func NewWithMode(input string, mode SQLMode) *Lexer {
+	l := &Lexer{input: input, line: 1, mode: mode}
 	l.readChar()
 
 	return l
@@ -327,7 +333,10 @@ func (l *Lexer) readQuotedIdent(startPos Position) (string, error) {
 }
 
 // readString reads a single-quoted string literal. It supports MySQL's
-// doubled-quote escaping as well as backslash escape sequences.
+// doubled-quote escaping unconditionally, plus backslash escape sequences
+// when l.mode is ModeDefault. Under ModeNoBackslashEscapes, backslash has no
+// special meaning and is read like any other character (falling through to
+// the default case below).
 func (l *Lexer) readString(startPos Position) (string, error) {
 	l.readChar() // consume opening '
 
@@ -345,7 +354,7 @@ func (l *Lexer) readString(startPos Position) (string, error) {
 			l.readChar() // consume closing '
 
 			return sb.String(), nil
-		case l.ch == '\\':
+		case l.ch == '\\' && l.mode == ModeDefault:
 			s, err := l.readEscapedString(startPos)
 			if err != nil {
 				return "", err

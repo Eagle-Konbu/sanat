@@ -6,15 +6,16 @@ import (
 	"github.com/Eagle-Konbu/sanat/internal/sqlfmt/sqlast"
 )
 
-// parseDDLEntry runs parse to completion over input, then verifies input was
-// fully consumed — the same shape every ParseXxx DDL entry point below
-// needs, factored out to avoid repeating it six times.
+// parseDDLEntry runs parse to completion over input, decoding string
+// literals per mode, then verifies input was fully consumed — the same
+// shape every ParseXxx DDL entry point below needs, factored out to avoid
+// repeating it six times.
 //
 //nolint:nonamedreturns // the named results are mutated by the deferred recover
-func parseDDLEntry[T sqlast.Statement](input string, parse func(*Parser) T) (result T, err error) {
+func parseDDLEntry[T sqlast.Statement](input string, mode SQLMode, parse func(*Parser) T) (result T, err error) {
 	defer recoverParseError(&err)
 
-	p := NewParser(input)
+	p := NewParserWithMode(input, mode)
 	parsed := parse(p)
 
 	p.consume(SEMICOLON)
@@ -26,34 +27,76 @@ func parseDDLEntry[T sqlast.Statement](input string, parse func(*Parser) T) (res
 	return parsed, nil
 }
 
-// ParseCreateTable parses a CREATE TABLE statement from input.
+// ParseCreateTable parses a CREATE TABLE statement from input, using
+// ModeDefault.
 func ParseCreateTable(input string) (*sqlast.CreateTable, error) {
-	return parseDDLEntry(input, (*Parser).parseCreateTableStatement)
+	return ParseCreateTableWithMode(input, ModeDefault)
 }
 
-// ParseAlterTable parses an ALTER TABLE statement from input.
+// ParseCreateTableWithMode parses a CREATE TABLE statement from input,
+// decoding string literals per mode.
+func ParseCreateTableWithMode(input string, mode SQLMode) (*sqlast.CreateTable, error) {
+	return parseDDLEntry(input, mode, (*Parser).parseCreateTableStatement)
+}
+
+// ParseAlterTable parses an ALTER TABLE statement from input, using
+// ModeDefault.
 func ParseAlterTable(input string) (*sqlast.AlterTable, error) {
-	return parseDDLEntry(input, (*Parser).parseAlterTableStatement)
+	return ParseAlterTableWithMode(input, ModeDefault)
 }
 
-// ParseCreateIndex parses a CREATE INDEX statement from input.
+// ParseAlterTableWithMode parses an ALTER TABLE statement from input,
+// decoding string literals per mode.
+func ParseAlterTableWithMode(input string, mode SQLMode) (*sqlast.AlterTable, error) {
+	return parseDDLEntry(input, mode, (*Parser).parseAlterTableStatement)
+}
+
+// ParseCreateIndex parses a CREATE INDEX statement from input, using
+// ModeDefault.
 func ParseCreateIndex(input string) (*sqlast.CreateIndex, error) {
-	return parseDDLEntry(input, (*Parser).parseCreateIndexStatement)
+	return ParseCreateIndexWithMode(input, ModeDefault)
 }
 
-// ParseDropIndex parses a DROP INDEX statement from input.
+// ParseCreateIndexWithMode parses a CREATE INDEX statement from input,
+// decoding string literals per mode.
+func ParseCreateIndexWithMode(input string, mode SQLMode) (*sqlast.CreateIndex, error) {
+	return parseDDLEntry(input, mode, (*Parser).parseCreateIndexStatement)
+}
+
+// ParseDropIndex parses a DROP INDEX statement from input, using
+// ModeDefault.
 func ParseDropIndex(input string) (*sqlast.DropIndex, error) {
-	return parseDDLEntry(input, (*Parser).parseDropIndexStatement)
+	return ParseDropIndexWithMode(input, ModeDefault)
 }
 
-// ParseDropTable parses a DROP TABLE statement from input.
+// ParseDropIndexWithMode parses a DROP INDEX statement from input, decoding
+// string literals per mode.
+func ParseDropIndexWithMode(input string, mode SQLMode) (*sqlast.DropIndex, error) {
+	return parseDDLEntry(input, mode, (*Parser).parseDropIndexStatement)
+}
+
+// ParseDropTable parses a DROP TABLE statement from input, using
+// ModeDefault.
 func ParseDropTable(input string) (*sqlast.DropTable, error) {
-	return parseDDLEntry(input, (*Parser).parseDropTableStatement)
+	return ParseDropTableWithMode(input, ModeDefault)
 }
 
-// ParseTruncateTable parses a TRUNCATE TABLE statement from input.
+// ParseDropTableWithMode parses a DROP TABLE statement from input, decoding
+// string literals per mode.
+func ParseDropTableWithMode(input string, mode SQLMode) (*sqlast.DropTable, error) {
+	return parseDDLEntry(input, mode, (*Parser).parseDropTableStatement)
+}
+
+// ParseTruncateTable parses a TRUNCATE TABLE statement from input, using
+// ModeDefault.
 func ParseTruncateTable(input string) (*sqlast.TruncateTable, error) {
-	return parseDDLEntry(input, (*Parser).parseTruncateTableStatement)
+	return ParseTruncateTableWithMode(input, ModeDefault)
+}
+
+// ParseTruncateTableWithMode parses a TRUNCATE TABLE statement from input,
+// decoding string literals per mode.
+func ParseTruncateTableWithMode(input string, mode SQLMode) (*sqlast.TruncateTable, error) {
+	return parseDDLEntry(input, mode, (*Parser).parseTruncateTableStatement)
 }
 
 // parseCreateStatement dispatches a leading CREATE to CREATE TABLE or
@@ -254,7 +297,7 @@ func (p *Parser) parseTypeParams() []string {
 			params = append(params, p.tok.Literal)
 			p.advance()
 		case STRING:
-			params = append(params, "'"+escapeStringLiteral(p.tok.Literal)+"'")
+			params = append(params, "'"+escapeStringLiteral(p.tok.Literal, p.mode)+"'")
 			p.advance()
 		default:
 			return failReturn[[]string](p, "expected type parameter, got %s", p.tok.Type)
