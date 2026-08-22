@@ -1,0 +1,370 @@
+package sqlast
+
+import (
+	"fmt"
+	"strings"
+)
+
+// Select represents a SELECT statement.
+type Select struct {
+	With        *With
+	Distinct    bool
+	SelectExprs []SelectExpr
+	From        []TableExpr
+	Where       *Where
+	GroupBy     *GroupBy
+	Having      *Where
+	OrderBy     OrderBy
+	Limit       *Limit
+	Lock        Lock
+	LockWait    LockWaitType
+}
+
+// String returns Select's SQL text.
+func (s *Select) String() string {
+	var b strings.Builder
+
+	writeOptionalPrefix(&b, s.With)
+
+	b.WriteString("SELECT ")
+
+	if s.Distinct {
+		b.WriteString("DISTINCT ")
+	}
+
+	writeSelectExprs(&b, s.SelectExprs)
+	writeFromClause(&b, s.From)
+	writeWhereClause(&b, "WHERE", s.Where)
+	writeGroupBy(&b, s.GroupBy)
+	writeWhereClause(&b, "HAVING", s.Having)
+	writeOrderBy(&b, s.OrderBy)
+	writeLimit(&b, s.Limit)
+	writeLock(&b, s.Lock, s.LockWait)
+
+	return b.String()
+}
+
+// Insert represents an INSERT or REPLACE statement.
+type Insert struct {
+	Action  InsertAction
+	Ignore  bool
+	Table   TableName
+	Columns Columns
+	Rows    InsertRows
+	OnDup   OnDup
+}
+
+// String returns Insert's SQL text.
+func (ins *Insert) String() string {
+	var b strings.Builder
+
+	b.WriteString(ins.Action.String())
+
+	if ins.Ignore {
+		b.WriteString(" IGNORE")
+	}
+
+	b.WriteString(" INTO ")
+	b.WriteString(ins.Table.String())
+
+	if len(ins.Columns) > 0 {
+		b.WriteString(" (")
+		b.WriteString(ins.Columns.String())
+		b.WriteString(")")
+	}
+
+	b.WriteString(" ")
+	b.WriteString(ins.Rows.String())
+
+	if len(ins.OnDup) > 0 {
+		b.WriteString(" ")
+		b.WriteString(ins.OnDup.String())
+	}
+
+	return b.String()
+}
+
+// Update represents an UPDATE statement.
+type Update struct {
+	With       *With
+	Ignore     bool
+	TableExprs []TableExpr
+	Exprs      []*UpdateExpr
+	Where      *Where
+	OrderBy    OrderBy
+	Limit      *Limit
+}
+
+// String returns Update's SQL text.
+func (u *Update) String() string {
+	var b strings.Builder
+
+	writeOptionalPrefix(&b, u.With)
+
+	b.WriteString("UPDATE")
+
+	if u.Ignore {
+		b.WriteString(" IGNORE")
+	}
+
+	if len(u.TableExprs) > 0 {
+		tables := make([]string, len(u.TableExprs))
+		for i, t := range u.TableExprs {
+			tables[i] = t.String()
+		}
+
+		b.WriteString(" ")
+		b.WriteString(strings.Join(tables, ", "))
+	}
+
+	sets := make([]string, len(u.Exprs))
+	for i, e := range u.Exprs {
+		sets[i] = e.String()
+	}
+
+	b.WriteString(" SET ")
+	b.WriteString(strings.Join(sets, ", "))
+	writeWhereClause(&b, "WHERE", u.Where)
+	writeOrderBy(&b, u.OrderBy)
+	writeLimit(&b, u.Limit)
+
+	return b.String()
+}
+
+// Delete represents a DELETE statement.
+type Delete struct {
+	With       *With
+	Ignore     bool
+	Targets    []TableName
+	TableExprs []TableExpr
+	Where      *Where
+	OrderBy    OrderBy
+	Limit      *Limit
+}
+
+// String returns Delete's SQL text.
+func (d *Delete) String() string {
+	var b strings.Builder
+
+	writeOptionalPrefix(&b, d.With)
+
+	b.WriteString("DELETE")
+
+	if d.Ignore {
+		b.WriteString(" IGNORE")
+	}
+
+	writeTargets(&b, d.Targets)
+	writeTableExprs(&b, d.TableExprs)
+	writeWhereClause(&b, "WHERE", d.Where)
+	writeOrderBy(&b, d.OrderBy)
+	writeLimit(&b, d.Limit)
+
+	return b.String()
+}
+
+// Union represents a UNION statement.
+type Union struct {
+	With     *With
+	Left     Statement
+	Right    Statement
+	Distinct bool
+	OrderBy  OrderBy
+	Limit    *Limit
+	Lock     Lock
+	LockWait LockWaitType
+}
+
+// String returns Union's SQL text.
+func (u *Union) String() string {
+	var b strings.Builder
+
+	writeOptionalPrefix(&b, u.With)
+
+	b.WriteString(u.Left.String())
+
+	if u.Distinct {
+		b.WriteString(" UNION ")
+	} else {
+		b.WriteString(" UNION ALL ")
+	}
+
+	writeUnionOperand(&b, u.Right)
+	writeOrderBy(&b, u.OrderBy)
+	writeLimit(&b, u.Limit)
+	writeLock(&b, u.Lock, u.LockWait)
+
+	return b.String()
+}
+
+// writeUnionOperand writes stmt as a UNION's right-hand operand, wrapping it
+// in parentheses if it is itself a *Union: without them, a nested Union's own
+// ORDER BY/LIMIT/locking clause would render as if it scoped the whole
+// outer UNION rather than just that operand.
+func writeUnionOperand(b *strings.Builder, stmt Statement) {
+	nested, ok := stmt.(*Union)
+	if !ok {
+		b.WriteString(stmt.String())
+
+		return
+	}
+
+	b.WriteByte('(')
+	b.WriteString(nested.String())
+	b.WriteByte(')')
+}
+
+// With represents a WITH (CTE) clause.
+type With struct {
+	CTEs      []*CommonTableExpr
+	Recursive bool
+}
+
+// String returns With's SQL text.
+func (w *With) String() string {
+	if w == nil {
+		return ""
+	}
+
+	keyword := "WITH"
+	if w.Recursive {
+		keyword = "WITH RECURSIVE"
+	}
+
+	ctes := make([]string, len(w.CTEs))
+	for i, cte := range w.CTEs {
+		ctes[i] = cte.String()
+	}
+
+	return fmt.Sprintf("%s %s", keyword, strings.Join(ctes, ", "))
+}
+
+// CommonTableExpr represents a single CTE definition.
+type CommonTableExpr struct {
+	ID       TableIdent
+	Columns  Columns
+	Subquery Statement
+}
+
+// String returns CommonTableExpr's SQL text.
+func (c *CommonTableExpr) String() string {
+	name := c.ID.String()
+	if len(c.Columns) > 0 {
+		name += " (" + c.Columns.String() + ")"
+	}
+
+	return name + " AS (" + c.Subquery.String() + ")"
+}
+
+// --- helpers to reduce cyclomatic complexity ---
+
+func writeOptionalPrefix(b *strings.Builder, w SQLNode) {
+	s := w.String()
+	if s != "" {
+		b.WriteString(s)
+		b.WriteString(" ")
+	}
+}
+
+func writeSelectExprs(b *strings.Builder, exprs []SelectExpr) {
+	strs := make([]string, len(exprs))
+	for i, e := range exprs {
+		strs[i] = e.String()
+	}
+
+	b.WriteString(strings.Join(strs, ", "))
+}
+
+func writeFromClause(b *strings.Builder, from []TableExpr) {
+	if len(from) == 0 {
+		return
+	}
+
+	strs := make([]string, len(from))
+	for i, f := range from {
+		strs[i] = f.String()
+	}
+
+	b.WriteString(" FROM ")
+	b.WriteString(strings.Join(strs, ", "))
+}
+
+func writeWhereClause(b *strings.Builder, keyword string, w *Where) {
+	if w == nil || w.Expr == nil {
+		return
+	}
+
+	b.WriteString(" ")
+	b.WriteString(keyword)
+	b.WriteString(" ")
+	b.WriteString(w.String())
+}
+
+func writeGroupBy(b *strings.Builder, g *GroupBy) {
+	if g == nil || len(g.Exprs) == 0 {
+		return
+	}
+
+	b.WriteString(" ")
+	b.WriteString(g.String())
+}
+
+func writeOrderBy(b *strings.Builder, o OrderBy) {
+	if len(o) == 0 {
+		return
+	}
+
+	b.WriteString(" ")
+	b.WriteString(o.String())
+}
+
+func writeLimit(b *strings.Builder, l *Limit) {
+	if l == nil {
+		return
+	}
+
+	b.WriteString(" ")
+	b.WriteString(l.String())
+}
+
+func writeLock(b *strings.Builder, l Lock, wait LockWaitType) {
+	if l == NoLock {
+		return
+	}
+
+	b.WriteString(" ")
+	b.WriteString(l.String())
+
+	if s := wait.String(); s != "" {
+		b.WriteString(" ")
+		b.WriteString(s)
+	}
+}
+
+func writeTargets(b *strings.Builder, targets []TableName) {
+	if len(targets) == 0 {
+		return
+	}
+
+	strs := make([]string, len(targets))
+	for i, t := range targets {
+		strs[i] = t.String()
+	}
+
+	b.WriteString(" ")
+	b.WriteString(strings.Join(strs, ", "))
+}
+
+func writeTableExprs(b *strings.Builder, exprs []TableExpr) {
+	if len(exprs) == 0 {
+		return
+	}
+
+	strs := make([]string, len(exprs))
+	for i, e := range exprs {
+		strs[i] = e.String()
+	}
+
+	b.WriteString(" FROM ")
+	b.WriteString(strings.Join(strs, ", "))
+}
