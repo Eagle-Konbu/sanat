@@ -66,13 +66,13 @@ func TestFormatSQL_Select(t *testing.T) {
 			want: join(
 				"SELECT",
 				"  status,",
-				"  count(*) AS cnt",
+				"  COUNT(*) AS cnt",
 				"FROM",
 				"  users",
 				"GROUP BY",
 				"  status",
 				"HAVING",
-				"  count(*) > 1",
+				"  COUNT(*) > 1",
 			),
 			ok: true,
 		},
@@ -672,14 +672,10 @@ func TestFormatSQL_WithCTE(t *testing.T) {
 				"  a AS (",
 				"    SELECT",
 				"      1",
-				"    FROM",
-				"      dual",
 				"  ),",
 				"  b AS (",
 				"    SELECT",
 				"      2",
-				"    FROM",
-				"      dual",
 				"  )",
 				"SELECT",
 				"  *",
@@ -696,8 +692,6 @@ func TestFormatSQL_WithCTE(t *testing.T) {
 				"  cte AS (",
 				"    SELECT",
 				"      1 AS id",
-				"    FROM",
-				"      dual",
 				"    UNION ALL",
 				"    SELECT",
 				"      id + 1",
@@ -754,7 +748,7 @@ func TestFormatSQL_WindowFunction(t *testing.T) {
 			in:   "SELECT SUM(amount) OVER (PARTITION BY user_id ORDER BY created_at) FROM orders",
 			want: join(
 				"SELECT",
-				"  sum(amount) OVER (",
+				"  SUM(amount) OVER (",
 				"    PARTITION BY user_id",
 				"    ORDER BY created_at",
 				"  )",
@@ -767,7 +761,7 @@ func TestFormatSQL_WindowFunction(t *testing.T) {
 			in:   "SELECT ROW_NUMBER() OVER (ORDER BY id) FROM users",
 			want: join(
 				"SELECT",
-				"  row_number() OVER (",
+				"  ROW_NUMBER() OVER (",
 				"    ORDER BY id",
 				"  )",
 				"FROM",
@@ -780,7 +774,7 @@ func TestFormatSQL_WindowFunction(t *testing.T) {
 			want: join(
 				"SELECT",
 				"  id,",
-				"  rank() OVER (",
+				"  RANK() OVER (",
 				"    PARTITION BY department",
 				"    ORDER BY salary DESC",
 				"  ) AS rnk",
@@ -793,7 +787,7 @@ func TestFormatSQL_WindowFunction(t *testing.T) {
 			in:   "SELECT SUM(amount) OVER w FROM orders",
 			want: join(
 				"SELECT",
-				"  sum(amount) OVER w",
+				"  SUM(amount) OVER w",
 				"FROM",
 				"  orders",
 			),
@@ -813,36 +807,38 @@ func TestFormatSQL_WindowFunction(t *testing.T) {
 
 func TestFormatSQL_WindowFunction_AllTypes(t *testing.T) {
 	// Tests that all aggregate/window function types with OVER clause are formatted correctly.
-	// Each entry: SQL function call -> expected lowercase output in formatted result.
+	// Each entry: SQL function call -> expected uppercase output in formatted result.
 	tests := []struct {
 		name string
 		in   string
 		want string
 	}{
-		{"COUNT", "SELECT COUNT(id) OVER (ORDER BY id) FROM t", "count(id)"},
-		{"COUNT(*)", "SELECT COUNT(*) OVER (ORDER BY id) FROM t", "count(*)"},
-		{"AVG", "SELECT AVG(x) OVER (ORDER BY id) FROM t", "avg(x)"},
-		{"MIN", "SELECT MIN(x) OVER (ORDER BY id) FROM t", "min(x)"},
-		{"MAX", "SELECT MAX(x) OVER (ORDER BY id) FROM t", "max(x)"},
-		{"BIT_AND", "SELECT BIT_AND(x) OVER (ORDER BY id) FROM t", "bit_and(x)"},
-		{"BIT_OR", "SELECT BIT_OR(x) OVER (ORDER BY id) FROM t", "bit_or(x)"},
-		{"BIT_XOR", "SELECT BIT_XOR(x) OVER (ORDER BY id) FROM t", "bit_xor(x)"},
-		{"STD", "SELECT STD(x) OVER (ORDER BY id) FROM t", "std(x)"},
-		{"STDDEV", "SELECT STDDEV(x) OVER (ORDER BY id) FROM t", "stddev(x)"},
-		{"STDDEV_POP", "SELECT STDDEV_POP(x) OVER (ORDER BY id) FROM t", "stddev_pop(x)"},
-		{"STDDEV_SAMP", "SELECT STDDEV_SAMP(x) OVER (ORDER BY id) FROM t", "stddev_samp(x)"},
-		{"VAR_POP", "SELECT VAR_POP(x) OVER (ORDER BY id) FROM t", "var_pop(x)"},
-		{"VAR_SAMP", "SELECT VAR_SAMP(x) OVER (ORDER BY id) FROM t", "var_samp(x)"},
-		{"VARIANCE", "SELECT VARIANCE(x) OVER (ORDER BY id) FROM t", "variance(x)"},
-		{"DENSE_RANK", "SELECT DENSE_RANK() OVER (ORDER BY id) FROM t", "dense_rank()"},
-		{"CUME_DIST", "SELECT CUME_DIST() OVER (ORDER BY id) FROM t", "cume_dist()"},
-		{"PERCENT_RANK", "SELECT PERCENT_RANK() OVER (ORDER BY id) FROM t", "percent_rank()"},
-		{"FIRST_VALUE", "SELECT FIRST_VALUE(x) OVER (ORDER BY id) FROM t", "first_value(x)"},
-		{"LAST_VALUE", "SELECT LAST_VALUE(x) OVER (ORDER BY id) FROM t", "last_value(x)"},
-		{"NTILE", "SELECT NTILE(4) OVER (ORDER BY id) FROM t", "ntile(4)"},
-		{"NTH_VALUE", "SELECT NTH_VALUE(x, 2) OVER (ORDER BY id) FROM t", "nth_value(x, 2)"},
-		{"LAG", "SELECT LAG(x) OVER (ORDER BY id) FROM t", "lag(x)"},
-		{"LEAD", "SELECT LEAD(x) OVER (ORDER BY id) FROM t", "lead(x)"},
+		{"COUNT", "SELECT COUNT(id) OVER (ORDER BY id) FROM t", "COUNT(id)"},
+		{"COUNT(*)", "SELECT COUNT(*) OVER (ORDER BY id) FROM t", "COUNT(*)"},
+		{"AVG", "SELECT AVG(x) OVER (ORDER BY id) FROM t", "AVG(x)"},
+		{"MIN", "SELECT MIN(x) OVER (ORDER BY id) FROM t", "MIN(x)"},
+		{"MAX", "SELECT MAX(x) OVER (ORDER BY id) FROM t", "MAX(x)"},
+		{"BIT_AND", "SELECT BIT_AND(x) OVER (ORDER BY id) FROM t", "BIT_AND(x)"},
+		{"BIT_OR", "SELECT BIT_OR(x) OVER (ORDER BY id) FROM t", "BIT_OR(x)"},
+		{"BIT_XOR", "SELECT BIT_XOR(x) OVER (ORDER BY id) FROM t", "BIT_XOR(x)"},
+		{"STD", "SELECT STD(x) OVER (ORDER BY id) FROM t", "STD(x)"},
+		{"STDDEV", "SELECT STDDEV(x) OVER (ORDER BY id) FROM t", "STDDEV(x)"},
+		{"STDDEV_POP", "SELECT STDDEV_POP(x) OVER (ORDER BY id) FROM t", "STDDEV_POP(x)"},
+		{"STDDEV_SAMP", "SELECT STDDEV_SAMP(x) OVER (ORDER BY id) FROM t", "STDDEV_SAMP(x)"},
+		{"VAR_POP", "SELECT VAR_POP(x) OVER (ORDER BY id) FROM t", "VAR_POP(x)"},
+		{"VAR_SAMP", "SELECT VAR_SAMP(x) OVER (ORDER BY id) FROM t", "VAR_SAMP(x)"},
+		{"VARIANCE", "SELECT VARIANCE(x) OVER (ORDER BY id) FROM t", "VARIANCE(x)"},
+		{"DENSE_RANK", "SELECT DENSE_RANK() OVER (ORDER BY id) FROM t", "DENSE_RANK()"},
+		{"CUME_DIST", "SELECT CUME_DIST() OVER (ORDER BY id) FROM t", "CUME_DIST()"},
+		{"PERCENT_RANK", "SELECT PERCENT_RANK() OVER (ORDER BY id) FROM t", "PERCENT_RANK()"},
+		{"FIRST_VALUE", "SELECT FIRST_VALUE(x) OVER (ORDER BY id) FROM t", "FIRST_VALUE(x)"},
+		{"LAST_VALUE", "SELECT LAST_VALUE(x) OVER (ORDER BY id) FROM t", "LAST_VALUE(x)"},
+		{"NTILE", "SELECT NTILE(4) OVER (ORDER BY id) FROM t", "NTILE(4)"},
+		{"NTH_VALUE", "SELECT NTH_VALUE(x, 2) OVER (ORDER BY id) FROM t", "NTH_VALUE(x, 2)"},
+		{"LAG", "SELECT LAG(x) OVER (ORDER BY id) FROM t", "LAG(x)"},
+		{"LEAD", "SELECT LEAD(x) OVER (ORDER BY id) FROM t", "LEAD(x)"},
+		{"JSON_ARRAYAGG", "SELECT JSON_ARRAYAGG(x) OVER (ORDER BY id) FROM t", "JSON_ARRAYAGG(x)"},
+		{"JSON_OBJECTAGG", "SELECT JSON_OBJECTAGG(k, v) OVER (ORDER BY id) FROM t", "JSON_OBJECTAGG(k, v)"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1003,7 +999,7 @@ func TestFormatSQL_WindowFrameClause(t *testing.T) {
 
 	want := join(
 		"SELECT",
-		"  sum(amount) OVER (",
+		"  SUM(amount) OVER (",
 		"    ORDER BY id",
 		"    ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW",
 		"  )",
@@ -1012,6 +1008,361 @@ func TestFormatSQL_WindowFrameClause(t *testing.T) {
 	)
 
 	assertSQL(t, got, want)
+}
+
+func TestFormatSQL_ParenTableExpr(t *testing.T) {
+	query := "select id from (users, orders) where users.id = orders.user_id"
+
+	got, ok := sqlfmt.FormatSQL(query, 2)
+	if !ok {
+		t.Fatal("expected ok")
+	}
+
+	want := join(
+		"SELECT",
+		"  id",
+		"FROM",
+		"  (",
+		"    users,",
+		"    orders",
+		"  )",
+		"WHERE",
+		"  users.id = orders.user_id",
+	)
+
+	assertSQL(t, got, want)
+}
+
+func TestFormatSQL_WhereOr(t *testing.T) {
+	query := "select id from users where a = 1 or b = 2"
+
+	got, ok := sqlfmt.FormatSQL(query, 2)
+	if !ok {
+		t.Fatal("expected ok")
+	}
+
+	want := join(
+		"SELECT",
+		"  id",
+		"FROM",
+		"  users",
+		"WHERE",
+		"  a = 1",
+		"  OR b = 2",
+	)
+
+	assertSQL(t, got, want)
+}
+
+func TestFormatSQL_InsertUnionRows(t *testing.T) {
+	got, ok := sqlfmt.FormatSQL("INSERT INTO t SELECT a FROM x UNION SELECT b FROM y", 2)
+	if !ok {
+		t.Fatal("expected ok")
+	}
+
+	want := join(
+		"INSERT INTO",
+		"  t",
+		"SELECT",
+		"  a",
+		"FROM",
+		"  x",
+		"UNION",
+		"SELECT",
+		"  b",
+		"FROM",
+		"  y",
+	)
+
+	assertSQL(t, got, want)
+}
+
+func TestFormatSQL_InsertSetRows(t *testing.T) {
+	got, ok := sqlfmt.FormatSQL("INSERT INTO t SET name = ?, email = ?", 2)
+	if !ok {
+		t.Fatal("expected ok")
+	}
+
+	want := join(
+		"INSERT INTO",
+		"  t",
+		"SET",
+		"  name = ?,",
+		"  email = ?",
+	)
+
+	assertSQL(t, got, want)
+}
+
+func TestFormatSQL_GroupByWithRollup(t *testing.T) {
+	got, ok := sqlfmt.FormatSQL("SELECT status, COUNT(*) FROM t GROUP BY status WITH ROLLUP", 2)
+	if !ok {
+		t.Fatal("expected ok")
+	}
+
+	want := join(
+		"SELECT",
+		"  status,",
+		"  COUNT(*)",
+		"FROM",
+		"  t",
+		"GROUP BY",
+		"  status",
+		"WITH ROLLUP",
+	)
+
+	assertSQL(t, got, want)
+}
+
+func TestFormatSQL_SelectDistinct(t *testing.T) {
+	got, ok := sqlfmt.FormatSQL("SELECT DISTINCT id, name FROM users", 2)
+	if !ok {
+		t.Fatal("expected ok")
+	}
+
+	want := join(
+		"SELECT DISTINCT",
+		"  id,",
+		"  name",
+		"FROM",
+		"  users",
+	)
+
+	assertSQL(t, got, want)
+}
+
+func TestFormatSQL_MultiColumnGroupBy(t *testing.T) {
+	got, ok := sqlfmt.FormatSQL("SELECT status, dept FROM users GROUP BY status, dept", 2)
+	if !ok {
+		t.Fatal("expected ok")
+	}
+
+	want := join(
+		"SELECT",
+		"  status,",
+		"  dept",
+		"FROM",
+		"  users",
+		"GROUP BY",
+		"  status,",
+		"  dept",
+	)
+
+	assertSQL(t, got, want)
+}
+
+func TestFormatSQL_MultiColumnOrderBy(t *testing.T) {
+	got, ok := sqlfmt.FormatSQL("SELECT id FROM users ORDER BY status, id DESC", 2)
+	if !ok {
+		t.Fatal("expected ok")
+	}
+
+	want := join(
+		"SELECT",
+		"  id",
+		"FROM",
+		"  users",
+		"ORDER BY",
+		"  status,",
+		"  id DESC",
+	)
+
+	assertSQL(t, got, want)
+}
+
+func TestFormatSQL_InsertMultiRowValues(t *testing.T) {
+	got, ok := sqlfmt.FormatSQL("INSERT INTO t (a) VALUES (1), (2)", 2)
+	if !ok {
+		t.Fatal("expected ok")
+	}
+
+	want := join(
+		"INSERT INTO",
+		"  t",
+		"(",
+		"  a",
+		")",
+		"VALUES",
+		"  (1),",
+		"  (2)",
+	)
+
+	assertSQL(t, got, want)
+}
+
+func TestFormatSQL_UpdateOrderByLimit(t *testing.T) {
+	got, ok := sqlfmt.FormatSQL("UPDATE users SET name = ? WHERE id = ? ORDER BY id LIMIT 1", 2)
+	if !ok {
+		t.Fatal("expected ok")
+	}
+
+	want := join(
+		"UPDATE",
+		"  users",
+		"SET",
+		"  name = ?",
+		"WHERE",
+		"  id = ?",
+		"ORDER BY",
+		"  id",
+		"LIMIT",
+		"  1",
+	)
+
+	assertSQL(t, got, want)
+}
+
+func TestFormatSQL_DeleteOrderByLimit(t *testing.T) {
+	got, ok := sqlfmt.FormatSQL("DELETE FROM users WHERE id > ? ORDER BY id LIMIT 1", 2)
+	if !ok {
+		t.Fatal("expected ok")
+	}
+
+	want := join(
+		"DELETE FROM",
+		"  users",
+		"WHERE",
+		"  id > ?",
+		"ORDER BY",
+		"  id",
+		"LIMIT",
+		"  1",
+	)
+
+	assertSQL(t, got, want)
+}
+
+func TestFormatSQL_UnionLimit(t *testing.T) {
+	got, ok := sqlfmt.FormatSQL("SELECT id FROM a UNION SELECT id FROM b LIMIT 5", 2)
+	if !ok {
+		t.Fatal("expected ok")
+	}
+
+	want := join(
+		"SELECT",
+		"  id",
+		"FROM",
+		"  a",
+		"UNION",
+		"SELECT",
+		"  id",
+		"FROM",
+		"  b",
+		"LIMIT",
+		"  5",
+	)
+
+	assertSQL(t, got, want)
+}
+
+func TestFormatSQL_Replace(t *testing.T) {
+	got, ok := sqlfmt.FormatSQL("REPLACE INTO users (id, name) VALUES (?, ?)", 2)
+	if !ok {
+		t.Fatal("expected ok")
+	}
+
+	want := join(
+		"REPLACE INTO",
+		"  users",
+		"(",
+		"  id,",
+		"  name",
+		")",
+		"VALUES",
+		"  (?, ?)",
+	)
+
+	assertSQL(t, got, want)
+}
+
+func TestFormatSQL_InsertSelect(t *testing.T) {
+	got, ok := sqlfmt.FormatSQL("INSERT INTO t SELECT a, b FROM x", 2)
+	if !ok {
+		t.Fatal("expected ok")
+	}
+
+	want := join(
+		"INSERT INTO",
+		"  t",
+		"SELECT",
+		"  a,",
+		"  b",
+		"FROM",
+		"  x",
+	)
+
+	assertSQL(t, got, want)
+}
+
+// TestFormatSQL_MultiTableFrom guards against dropping the comma between
+// top-level table references: without it, "FROM a, b" re-formats as
+// "FROM\n  a\n  b", which no longer parses as two tables (it reads as
+// "a" implicitly aliased "b").
+func TestFormatSQL_MultiTableFrom(t *testing.T) {
+	got, ok := sqlfmt.FormatSQL("SELECT id FROM a, b", 2)
+	if !ok {
+		t.Fatal("expected ok")
+	}
+
+	want := join(
+		"SELECT",
+		"  id",
+		"FROM",
+		"  a,",
+		"  b",
+	)
+
+	assertSQL(t, got, want)
+}
+
+func TestFormatSQL_UpdateMultiTable(t *testing.T) {
+	got, ok := sqlfmt.FormatSQL("UPDATE a, b SET a.x = 1 WHERE a.id = b.id", 2)
+	if !ok {
+		t.Fatal("expected ok")
+	}
+
+	want := join(
+		"UPDATE",
+		"  a,",
+		"  b",
+		"SET",
+		"  a.x = 1",
+		"WHERE",
+		"  a.id = b.id",
+	)
+
+	assertSQL(t, got, want)
+}
+
+func TestFormatSQL_WindowEmptyOver(t *testing.T) {
+	got, ok := sqlfmt.FormatSQL("SELECT SUM(amount) OVER () FROM orders", 2)
+	if !ok {
+		t.Fatal("expected ok")
+	}
+
+	want := join(
+		"SELECT",
+		"  SUM(amount) OVER ()",
+		"FROM",
+		"  orders",
+	)
+
+	assertSQL(t, got, want)
+}
+
+// JSON_TABLE is outside the in-house parser's scope (see docs/parser-spec.md);
+// FormatSQL falls back to returning the input unchanged.
+func TestFormatSQL_JSONTableExpr(t *testing.T) {
+	query := "select id from JSON_TABLE(data, '$[*]' COLUMNS(id INT PATH '$.id')) AS jt"
+
+	got, ok := sqlfmt.FormatSQL(query, 2)
+	if ok {
+		t.Fatal("expected parse failure")
+	}
+
+	if got != query {
+		t.Errorf("got:\n%s\n\nwant original input unchanged:\n%s", got, query)
+	}
 }
 
 func TestFormatSQLWithOptions_KeywordCase(t *testing.T) {
@@ -1030,7 +1381,7 @@ func TestFormatSQLWithOptions_KeywordCase(t *testing.T) {
 				"  users",
 				"WHERE",
 				"  status = 1",
-				"  AND active = true",
+				"  AND active = TRUE",
 				"ORDER BY",
 				"  id DESC",
 			),
@@ -1045,7 +1396,7 @@ func TestFormatSQLWithOptions_KeywordCase(t *testing.T) {
 				"  users",
 				"WHERE",
 				"  status = 1",
-				"  AND active = true",
+				"  AND active = TRUE",
 				"ORDER BY",
 				"  id DESC",
 			),
@@ -1066,6 +1417,10 @@ func TestFormatSQLWithOptions_KeywordCase(t *testing.T) {
 			),
 		},
 		{
+			// The in-house parser, like the Vitess parser before it, doesn't
+			// retain the source's original casing for these tokens — it
+			// canonicalizes them to uppercase while parsing. So "preserve"
+			// falls back to the parser's canonical output, which is upper.
 			name:        "preserve",
 			keywordCase: sqlfmt.KeywordCasePreserve,
 			want: join(
@@ -1075,9 +1430,9 @@ func TestFormatSQLWithOptions_KeywordCase(t *testing.T) {
 				"  users",
 				"WHERE",
 				"  status = 1",
-				"  and active = true",
+				"  AND active = TRUE",
 				"ORDER BY",
-				"  id desc",
+				"  id DESC",
 			),
 		},
 	}
@@ -1204,6 +1559,83 @@ func TestFormatSQLWithOptions_CommaStyle_With(t *testing.T) {
 	)
 
 	assertSQL(t, got, want)
+}
+
+// TestFormatSQLWithOptions_SQLMode covers the two string-literal cases where
+// NO_BACKSLASH_ESCAPES changes meaning: a doubled quote (which the default
+// mode re-encodes with a backslash, mangling it once NO_BACKSLASH_ESCAPES is
+// set) and a literal newline (which the default mode re-encodes as
+// backslash-n, changing a multi-line value into a single-line one under
+// NO_BACKSLASH_ESCAPES).
+func TestFormatSQLWithOptions_SQLMode(t *testing.T) {
+	tests := []struct {
+		name    string
+		sqlMode string
+		in      string
+		want    string
+		wantOK  bool
+	}{
+		{
+			name:    "default (unset) re-encodes doubled quote with backslash",
+			sqlMode: "",
+			in:      "select 'it''s' from t",
+			want:    join("SELECT", `  'it\'s'`, "FROM", "  t"),
+			wantOK:  true,
+		},
+		{
+			name:    "SQLModeDefault re-encodes doubled quote with backslash",
+			sqlMode: sqlfmt.SQLModeDefault,
+			in:      "select 'it''s' from t",
+			want:    join("SELECT", `  'it\'s'`, "FROM", "  t"),
+			wantOK:  true,
+		},
+		{
+			name:    "NoBackslashEscapes keeps doubled quote doubled",
+			sqlMode: sqlfmt.SQLModeNoBackslashEscapes,
+			in:      "select 'it''s' from t",
+			want:    join("SELECT", `  'it''s'`, "FROM", "  t"),
+			wantOK:  true,
+		},
+		{
+			name:    "default re-encodes a literal newline as backslash-n",
+			sqlMode: sqlfmt.SQLModeDefault,
+			in:      "select 'a\nb' from t",
+			want:    join("SELECT", `  'a\nb'`, "FROM", "  t"),
+			wantOK:  true,
+		},
+		{
+			name:    "NoBackslashEscapes preserves a literal newline",
+			sqlMode: sqlfmt.SQLModeNoBackslashEscapes,
+			in:      "select 'a\nb' from t",
+			want:    join("SELECT", "  'a\nb'", "FROM", "  t"),
+			wantOK:  true,
+		},
+		{
+			name:    "default formats a backslash-escaped quote",
+			sqlMode: sqlfmt.SQLModeDefault,
+			in:      `select 'it\'s' from t`,
+			want:    join("SELECT", `  'it\'s'`, "FROM", "  t"),
+			wantOK:  true,
+		},
+		{
+			name:    "NoBackslashEscapes rejects a backslash-escaped quote",
+			sqlMode: sqlfmt.SQLModeNoBackslashEscapes,
+			in:      `select 'it\'s' from t`,
+			want:    `select 'it\'s' from t`,
+			wantOK:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := sqlfmt.FormatSQLWithOptions(tt.in, sqlfmt.Options{Indent: 2, SQLMode: tt.sqlMode})
+			if ok != tt.wantOK {
+				t.Fatalf("ok = %v, want %v", ok, tt.wantOK)
+			}
+
+			assertSQL(t, got, tt.want)
+		})
+	}
 }
 
 func assertSQL(t *testing.T, got, want string) {

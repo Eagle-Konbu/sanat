@@ -1,6 +1,6 @@
 # SQL Detection Specification (MightBeSQL)
 
-Heuristically determines whether a string extracted from a raw string literal is SQL. This is a lightweight pre-filter that runs before the Vitess SQL parser.
+Heuristically determines whether a string extracted from a raw string literal is SQL. This is a lightweight pre-filter that runs before the in-house SQL parser (see [parser-spec.md](parser-spec.md)).
 
 ## Scope
 
@@ -89,7 +89,7 @@ Inner content after backtick stripping: `SELECT %s FROM %s WHERE id = %d`
 The following regex pattern is used to detect a leading keyword (case-insensitive).
 
 ```
-(?i)^\s*(SELECT|INSERT|UPDATE|DELETE)\b
+(?i)^\s*(SELECT|INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|TRUNCATE|START|BEGIN|COMMIT|ROLLBACK|SAVEPOINT|RELEASE|SET|SHOW|DESCRIBE|EXPLAIN|USE)\b
 ```
 
 ### Target Keywords
@@ -100,6 +100,23 @@ The following regex pattern is used to detect a leading keyword (case-insensitiv
 | `INSERT` | Data insertion |
 | `UPDATE` | Data modification |
 | `DELETE` | Data deletion |
+| `CREATE` | DDL: create table/index |
+| `ALTER` | DDL: alter table |
+| `DROP` | DDL: drop table/index |
+| `TRUNCATE` | DDL: truncate table |
+| `START` | Transaction: start transaction |
+| `BEGIN` | Transaction: begin |
+| `COMMIT` | Transaction: commit |
+| `ROLLBACK` | Transaction: rollback |
+| `SAVEPOINT` | Transaction: create savepoint |
+| `RELEASE` | Transaction: release savepoint |
+| `SET` | Session: set variable |
+| `SHOW` | Admin: show tables/columns/etc. |
+| `DESCRIBE` | Admin: describe table |
+| `EXPLAIN` | Admin: explain statement |
+| `USE` | Admin: use database |
+
+Every keyword listed here has a corresponding statement parser in `internal/sqlfmt/parser` (see [parser-spec.md](parser-spec.md)). Statement kinds the parser does not yet support — stored program syntax (`CALL`, `PREPARE`, `EXECUTE`, `DEALLOCATE PREPARE`) and the `DESC` alias for `DESCRIBE` — are deliberately excluded: detecting a statement the formatter cannot format would just send it to `FormatSQLWithOptions`, which would fail and leave the literal untouched, so there is no benefit to detecting it.
 
 Leading whitespace is allowed, but a word boundary (`\b`) is required after the keyword.
 
@@ -240,10 +257,29 @@ Inner content: `  SELECT id FROM users`
 | `https://example.com/select/users` | Not SQL | Does not start with a SQL keyword |
 | `the SELECT statement` | Not SQL | `SELECT` is not at the start |
 | _(empty string)_ | Not SQL | Empty string |
-| `CREATE TABLE users (...)` | Not SQL | `CREATE` is not a target keyword |
+| `CREATE TABLE users (...)` | SQL | Starts with `CREATE` |
+| `ALTER TABLE users ADD COLUMN name VARCHAR(255)` | SQL | Starts with `ALTER` |
+| `DROP TABLE users` | SQL | Starts with `DROP` |
+| `TRUNCATE TABLE users` | SQL | Starts with `TRUNCATE` |
+| `START TRANSACTION` | SQL | Starts with `START` |
+| `BEGIN` | SQL | Starts with `BEGIN` |
+| `COMMIT` | SQL | Starts with `COMMIT` |
+| `ROLLBACK` | SQL | Starts with `ROLLBACK` |
+| `SAVEPOINT sp1` | SQL | Starts with `SAVEPOINT` |
+| `RELEASE SAVEPOINT sp1` | SQL | Starts with `RELEASE` |
+| `SET @x = 1` | SQL | Starts with `SET` |
+| `SHOW TABLES` | SQL | Starts with `SHOW` |
+| `DESCRIBE users` | SQL | Starts with `DESCRIBE` |
+| `EXPLAIN SELECT * FROM users` | SQL | Starts with `EXPLAIN` |
+| `USE mydb` | SQL | Starts with `USE` |
+| `CALL my_proc()` | Not SQL | `CALL` is not a target keyword — parser does not support it |
+| `PREPARE stmt FROM 'SELECT 1'` | Not SQL | `PREPARE` is not a target keyword — parser does not support it |
+| `EXECUTE stmt` | Not SQL | `EXECUTE` is not a target keyword — parser does not support it |
+| `DEALLOCATE PREPARE stmt` | Not SQL | `DEALLOCATE` is not a target keyword — parser does not support it |
+| `DESC users` | Not SQL | `DESC` is not a target keyword — MySQL accepts it as a synonym for `DESCRIBE`, but the parser does not support it as a statement prefix (it only recognizes `DESC` as an `ORDER BY` direction) |
 
 ## Design Rationale
 
 - **Minimize false positives**: Avoid misdetecting strings that resemble SQL, such as fmt templates and URLs
-- **Lightweight pre-filter**: Reduce unnecessary input to the Vitess parser to maintain performance
-- **Conservative detection**: Limit targets to 4 DML types (SELECT/INSERT/UPDATE/DELETE), excluding DDL and others
+- **Lightweight pre-filter**: Reduce unnecessary input to the in-house parser to maintain performance
+- **Conservative detection**: Limit target keywords to statement kinds the in-house parser can actually format (DML, DDL, transaction/session, and admin/utility statements); excludes statement kinds outside the parser's grammar, such as stored program syntax (`CALL`/`PREPARE`/`EXECUTE`/`DEALLOCATE`), since detecting a statement the formatter can't format only wastes a parse attempt

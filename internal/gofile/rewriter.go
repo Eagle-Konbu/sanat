@@ -15,6 +15,7 @@ type Options struct {
 	Newline     bool
 	KeywordCase string
 	CommaStyle  string
+	SQLMode     string
 }
 
 func RewriteFile(fset *token.FileSet, file *ast.File, literals []SQLLiteral, opts Options) ([]byte, error) {
@@ -27,6 +28,7 @@ func RewriteFile(fset *token.FileSet, file *ast.File, literals []SQLLiteral, opt
 			Indent:      opts.Indent,
 			KeywordCase: opts.KeywordCase,
 			CommaStyle:  opts.CommaStyle,
+			SQLMode:     opts.SQLMode,
 		})
 		if !ok {
 			continue

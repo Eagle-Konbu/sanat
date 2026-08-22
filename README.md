@@ -86,6 +86,7 @@ cat file.go | sanat > formatted.go
 | `--newline` | `true` | Add newline after opening backtick |
 | `--keyword-case` | `upper` | Casing for operator/predicate keywords (`upper`, `lower`, `preserve`) |
 | `--comma-style` | `trailing` | Comma placement in lists (`trailing`, `leading`) |
+| `--sql-mode` | `default` | SQL mode controlling string-literal parsing and rendering (`default`, `no_backslash_escapes`) |
 | `-c, --config` | | Path to config file |
 
 ## Configuration File
@@ -113,6 +114,7 @@ indent: 4
 newline: false
 keyword_case: upper
 comma_style: trailing
+sql_mode: default
 ```
 
 ### TOML example (`.sanat.toml`)
@@ -124,6 +126,7 @@ indent = 4
 newline = false
 keyword_case = "upper"
 comma_style = "trailing"
+sql_mode = "default"
 ```
 
 See [docs/formatter-spec.md](docs/formatter-spec.md#configuration) for the full list of configuration options.
@@ -143,7 +146,7 @@ Strings that don't parse as valid SQL are left unchanged.
 1. Parses Go source files using `go/parser`
 2. Finds raw string literals (backtick strings)
 3. Detects SQL by checking for keywords (SELECT, INSERT, UPDATE, DELETE)
-4. Parses SQL using [Vitess](https://vitess.io/) SQL parser
+4. Parses SQL using an in-house SQL parser (`internal/sqlfmt/parser`)
 5. Reformats SQL with consistent indentation
 6. Outputs modified Go source
 

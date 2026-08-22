@@ -242,13 +242,23 @@ func TestLoad_Indent_Invalid(t *testing.T) {
 	}
 }
 
-func TestLoad_KeywordCase(t *testing.T) {
-	valid := []string{config.KeywordCaseUpper, config.KeywordCaseLower, config.KeywordCasePreserve}
+// assertValidatedStringField exercises a config field that's validated
+// against a fixed set of valid string values: every value in valid must load
+// successfully and populate the field (read via get), and an unrecognized
+// value must fail loading with wantErr.
+func assertValidatedStringField(
+	t *testing.T,
+	field string,
+	valid []string,
+	get func(config.Config) *string,
+	wantErr error,
+) {
+	t.Helper()
 
 	for _, v := range valid {
 		t.Run(v, func(t *testing.T) {
 			dir := t.TempDir()
-			content := "keyword_case: " + v + "\n"
+			content := field + ": " + v + "\n"
 
 			if err := os.WriteFile(filepath.Join(dir, ".sanat.yml"), []byte(content), 0644); err != nil {
 				t.Fatal(err)
@@ -259,59 +269,46 @@ func TestLoad_KeywordCase(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			if cfg.KeywordCase == nil || *cfg.KeywordCase != v {
-				t.Errorf("keyword_case: got %v, want %q", cfg.KeywordCase, v)
+			if got := get(cfg); got == nil || *got != v {
+				t.Errorf("%s: got %v, want %q", field, got, v)
 			}
 		})
 	}
 
 	t.Run("invalid", func(t *testing.T) {
 		dir := t.TempDir()
-		if err := os.WriteFile(filepath.Join(dir, ".sanat.yml"), []byte("keyword_case: sideways\n"), 0644); err != nil {
+		content := field + ": sideways\n"
+
+		if err := os.WriteFile(filepath.Join(dir, ".sanat.yml"), []byte(content), 0644); err != nil {
 			t.Fatal(err)
 		}
 
 		_, err := config.Load(dir)
-		if !errors.Is(err, config.ErrInvalidKeywordCase) {
-			t.Errorf("got %v, want ErrInvalidKeywordCase", err)
+		if !errors.Is(err, wantErr) {
+			t.Errorf("got %v, want %v", err, wantErr)
 		}
 	})
 }
 
+func TestLoad_KeywordCase(t *testing.T) {
+	valid := []string{config.KeywordCaseUpper, config.KeywordCaseLower, config.KeywordCasePreserve}
+	get := func(cfg config.Config) *string { return cfg.KeywordCase }
+
+	assertValidatedStringField(t, "keyword_case", valid, get, config.ErrInvalidKeywordCase)
+}
+
 func TestLoad_CommaStyle(t *testing.T) {
 	valid := []string{config.CommaStyleTrailing, config.CommaStyleLeading}
+	get := func(cfg config.Config) *string { return cfg.CommaStyle }
 
-	for _, v := range valid {
-		t.Run(v, func(t *testing.T) {
-			dir := t.TempDir()
-			content := "comma_style: " + v + "\n"
+	assertValidatedStringField(t, "comma_style", valid, get, config.ErrInvalidCommaStyle)
+}
 
-			if err := os.WriteFile(filepath.Join(dir, ".sanat.yml"), []byte(content), 0644); err != nil {
-				t.Fatal(err)
-			}
+func TestLoad_SQLMode(t *testing.T) {
+	valid := []string{config.SQLModeDefault, config.SQLModeNoBackslashEscapes}
+	get := func(cfg config.Config) *string { return cfg.SQLMode }
 
-			cfg, err := config.Load(dir)
-			if err != nil {
-				t.Fatal(err)
-			}
-
-			if cfg.CommaStyle == nil || *cfg.CommaStyle != v {
-				t.Errorf("comma_style: got %v, want %q", cfg.CommaStyle, v)
-			}
-		})
-	}
-
-	t.Run("invalid", func(t *testing.T) {
-		dir := t.TempDir()
-		if err := os.WriteFile(filepath.Join(dir, ".sanat.yml"), []byte("comma_style: sideways\n"), 0644); err != nil {
-			t.Fatal(err)
-		}
-
-		_, err := config.Load(dir)
-		if !errors.Is(err, config.ErrInvalidCommaStyle) {
-			t.Errorf("got %v, want ErrInvalidCommaStyle", err)
-		}
-	})
+	assertValidatedStringField(t, "sql_mode", valid, get, config.ErrInvalidSQLMode)
 }
 
 func TestLoad_UnknownField_WarnsButSucceeds(t *testing.T) {

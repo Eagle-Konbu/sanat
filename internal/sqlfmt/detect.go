@@ -6,8 +6,11 @@ import (
 )
 
 var (
-	sqlPrefixRe = regexp.MustCompile(`(?i)^\s*(SELECT|INSERT|UPDATE|DELETE)\b`)
-	fmtVerbRe   = regexp.MustCompile(`%[+\-# 0]*[*]?[0-9]*[.*]?[0-9]*[vTtbcdoOqxXUeEfFgGsp]`)
+	sqlPrefixRe = regexp.MustCompile(`(?i)^\s*(SELECT|INSERT|UPDATE|DELETE|` +
+		`CREATE|ALTER|DROP|TRUNCATE|` +
+		`START|BEGIN|COMMIT|ROLLBACK|SAVEPOINT|RELEASE|SET|` +
+		`SHOW|DESCRIBE|EXPLAIN|USE)\b`)
+	fmtVerbRe = regexp.MustCompile(`%[+\-# 0]*[*]?[0-9]*[.*]?[0-9]*[vTtbcdoOqxXUeEfFgGsp]`)
 )
 
 func MightBeSQL(s string) bool {

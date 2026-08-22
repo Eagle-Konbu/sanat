@@ -1,0 +1,129 @@
+package sqlast
+
+// This file gathers the marker methods that seal the Expr, Statement,
+// TableExpr, SelectExpr, SimpleTableExpr, and InsertRows interfaces to
+// types defined in this package. Each method body is intentionally empty,
+// so grouping them here keeps the exclusion in codecov.yml scoped to this
+// file instead of hiding real gaps in the String() implementations they
+// sit next to in expr.go, statement.go, table.go, node.go, and clause.go.
+
+// --- Expr ---
+
+func (*ComparisonExpr) iExpr()         {}
+func (*RangeCond) iExpr()              {}
+func (*IsExpr) iExpr()                 {}
+func (ValTuple) iExpr()                {}
+func (*ArithmeticExpr) iExpr()         {}
+func (*UnaryExpr) iExpr()              {}
+func (*AndExpr) iExpr()                {}
+func (*OrExpr) iExpr()                 {}
+func (*NotExpr) iExpr()                {}
+func (*CaseExpr) iExpr()               {}
+func (*ExistsExpr) iExpr()             {}
+func (*Subquery) iExpr()               {}
+func (*ColName) iExpr()                {}
+func (*Literal) iExpr()                {}
+func (*FuncExpr) iExpr()               {}
+func (*ParenExpr) iExpr()              {}
+func (*Count) iExpr()                  {}
+func (*CountStar) iExpr()              {}
+func (*Sum) iExpr()                    {}
+func (*Avg) iExpr()                    {}
+func (*Min) iExpr()                    {}
+func (*Max) iExpr()                    {}
+func (*BitAnd) iExpr()                 {}
+func (*BitOr) iExpr()                  {}
+func (*BitXor) iExpr()                 {}
+func (*Std) iExpr()                    {}
+func (*StdDev) iExpr()                 {}
+func (*StdPop) iExpr()                 {}
+func (*StdSamp) iExpr()                {}
+func (*Variance) iExpr()               {}
+func (*VarPop) iExpr()                 {}
+func (*VarSamp) iExpr()                {}
+func (*ArgumentLessWindowExpr) iExpr() {}
+func (*FirstOrLastValueExpr) iExpr()   {}
+func (*NtileExpr) iExpr()              {}
+func (*NTHValueExpr) iExpr()           {}
+func (*LagLeadExpr) iExpr()            {}
+func (*JSONArrayAgg) iExpr()           {}
+func (*JSONObjectAgg) iExpr()          {}
+
+// --- Statement ---
+
+func (*Select) iStatement()           {}
+func (*Insert) iStatement()           {}
+func (*Update) iStatement()           {}
+func (*Delete) iStatement()           {}
+func (*Union) iStatement()            {}
+func (*CreateTable) iStatement()      {}
+func (*AlterTable) iStatement()       {}
+func (*CreateIndex) iStatement()      {}
+func (*DropIndex) iStatement()        {}
+func (*DropTable) iStatement()        {}
+func (*TruncateTable) iStatement()    {}
+func (*StartTransaction) iStatement() {}
+func (*Begin) iStatement()            {}
+func (*Commit) iStatement()           {}
+func (*Rollback) iStatement()         {}
+func (*Savepoint) iStatement()        {}
+func (*ReleaseSavepoint) iStatement() {}
+func (*SetVariable) iStatement()      {}
+func (*SetNames) iStatement()         {}
+func (*ShowTables) iStatement()       {}
+func (*ShowCreateTable) iStatement()  {}
+func (*ShowColumns) iStatement()      {}
+func (*ShowIndex) iStatement()        {}
+func (*ShowDatabases) iStatement()    {}
+func (*ShowVariables) iStatement()    {}
+func (*ShowStatus) iStatement()       {}
+func (*Describe) iStatement()         {}
+func (*Explain) iStatement()          {}
+func (*Use) iStatement()              {}
+
+// --- InsertRows ---
+
+func (*Select) iInsertRows()  {}
+func (*Union) iInsertRows()   {}
+func (Values) iInsertRows()   {}
+func (SetExprs) iInsertRows() {}
+
+// --- TableExpr ---
+
+func (*AliasedTableExpr) iTableExpr() {}
+func (*JoinTableExpr) iTableExpr()    {}
+func (*ParenTableExpr) iTableExpr()   {}
+
+// --- SimpleTableExpr ---
+
+func (*DerivedTable) iSimpleTableExpr() {}
+func (TableName) iSimpleTableExpr()     {}
+
+// --- SelectExpr ---
+
+func (*AliasedExpr) iSelectExpr() {}
+func (*StarExpr) iSelectExpr()    {}
+
+// --- TableElement ---
+
+func (*ColumnDef) iTableElement()            {}
+func (*PrimaryKeyConstraint) iTableElement() {}
+func (*UniqueConstraint) iTableElement()     {}
+func (*IndexConstraint) iTableElement()      {}
+func (*ForeignKeyConstraint) iTableElement() {}
+
+// --- TableConstraint ---
+
+func (*PrimaryKeyConstraint) iTableConstraint() {}
+func (*UniqueConstraint) iTableConstraint()     {}
+func (*IndexConstraint) iTableConstraint()      {}
+func (*ForeignKeyConstraint) iTableConstraint() {}
+
+// --- AlterAction ---
+
+func (*AddColumnAction) iAlterAction()     {}
+func (*AddConstraintAction) iAlterAction() {}
+func (*DropColumnAction) iAlterAction()    {}
+func (*DropIndexAction) iAlterAction()     {}
+func (*ModifyColumnAction) iAlterAction()  {}
+func (*RenameTableAction) iAlterAction()   {}

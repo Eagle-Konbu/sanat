@@ -16,6 +16,7 @@ linters:
     - paralleltest
     - mnd
     - exhaustruct
+    - exhaustruct_v5
 
   settings:
     tagliatelle:
@@ -65,6 +66,10 @@ linters:
           - funlen
           - lll
           - gosec
+          - goconst
+      - path: internal/sqlfmt/parser/
+        linters:
+          - ireturn # a recursive-descent AST parser must return sqlast's node interfaces
 
 formatters:
   enable:

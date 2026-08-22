@@ -22,6 +22,7 @@ var (
 	newlineFlag     bool
 	keywordCaseFlag string
 	commaStyleFlag  string
+	sqlModeFlag     string
 	configFlag      string
 )
 
@@ -47,6 +48,8 @@ func init() {
 		"casing for operator/predicate keywords (upper, lower, preserve)")
 	rootCmd.Flags().StringVar(&commaStyleFlag, "comma-style", config.CommaStyleTrailing,
 		"comma placement in lists (trailing, leading)")
+	rootCmd.Flags().StringVar(&sqlModeFlag, "sql-mode", config.SQLModeDefault,
+		"SQL mode for string-literal parsing (default, no_backslash_escapes)")
 	rootCmd.Flags().StringVarP(&configFlag, "config", "c", "", "path to config file")
 }
 
@@ -111,6 +114,11 @@ func mergeConfig(cmd *cobra.Command, cfg config.Config) {
 				commaStyleFlag = *cfg.CommaStyle
 			}
 		}},
+		{"sql-mode", func() {
+			if cfg.SQLMode != nil {
+				sqlModeFlag = *cfg.SQLMode
+			}
+		}},
 	}
 
 	for _, a := range assignments {
@@ -133,6 +141,12 @@ func validateFlags() error {
 		return fmt.Errorf("%w: %q", config.ErrInvalidCommaStyle, commaStyleFlag)
 	}
 
+	switch sqlModeFlag {
+	case config.SQLModeDefault, config.SQLModeNoBackslashEscapes:
+	default:
+		return fmt.Errorf("%w: %q", config.ErrInvalidSQLMode, sqlModeFlag)
+	}
+
 	return nil
 }
 
@@ -142,6 +156,7 @@ func opts() gofile.Options {
 		Newline:     newlineFlag,
 		KeywordCase: keywordCaseFlag,
 		CommaStyle:  commaStyleFlag,
+		SQLMode:     sqlModeFlag,
 	}
 }
 

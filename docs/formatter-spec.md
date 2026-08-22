@@ -15,13 +15,12 @@ flowchart TD
     C --> D{MightBeSQL?}
     D -- No --> E[Skip]
     D -- Yes --> F[Placeholder substitution<br/>? → :_sqla_ph_N]
-    F --> G[Parse with Vitess SQL parser]
+    F --> G[Parse with in-house SQL parser]
     G --> H{Parse success?}
     H -- No --> I[Keep original string]
     H -- Yes --> J[Format according to SQL statement type]
     J --> K[Restore placeholders<br/>:_sqla_ph_N → ?]
-    K --> L[Remove backtick identifiers]
-    L --> M[Replace AST node with<br/>formatted string]
+    K --> M[Replace AST node with<br/>formatted string]
     M --> N[Output with go/format]
 ```
 
@@ -47,7 +46,7 @@ db.Exec("select id from users where id = ?", 1)
 Since the SQL parser cannot handle `?` correctly, substitution and restoration are performed before and after parsing.
 
 1. **Substitution**: `?` → `:_sqla_ph_0`, `:_sqla_ph_1`, ... (indexed in order of appearance)
-2. **Parsing**: Syntax analysis with the Vitess SQL parser
+2. **Parsing**: Syntax analysis with the in-house SQL parser (see [parser-spec.md](parser-spec.md))
 3. **Restoration**: `:_sqla_ph_N` → `?`
 
 ## Format Rules
@@ -57,7 +56,7 @@ Since the SQL parser cannot handle `?` correctly, substitution and restoration a
 - Clause keywords and aggregate/window function names are converted to **UPPERCASE**; operator/predicate keywords follow the [`keyword_case`](#keyword-casing) option instead
 - Each clause is placed on a **separate line**
 - Clause contents are **indented** (default: 2 spaces)
-- Backtick identifiers (MySQL style) are removed after formatting
+- Backtick-quoted identifiers (MySQL style) are parsed and re-rendered unquoted
 - If parsing fails, the **original string is returned as-is**
 
 ### Keyword Casing
@@ -76,7 +75,7 @@ sanat renders three distinct categories of "keyword-shaped" text:
 | `lower` | Operator/predicate keywords are lowercased |
 | `preserve` | Operator/predicate keywords are left as emitted by the parser |
 
-> **Note:** sanat currently formats SQL with the [Vitess](https://vitess.io/) parser (see [Parser](#parser)), which does not retain the source's original keyword casing — every statement is re-serialized in the parser's own lowercase form before formatting. As a result, `preserve` currently behaves the same as `lower`. True preservation of the source's original casing is expected once sanat migrates to an in-house parser that retains token literals.
+> **Note:** sanat parses SQL with its in-house parser (see [Parser](#parser)), which does not retain the source's original keyword casing for operator/predicate keywords either — these tokens are canonicalized to uppercase while parsing, regardless of how they were written in the source. As a result, `preserve` currently behaves the same as `upper` (the parser's canonical output). True preservation of the source's original casing would require the parser to retain each keyword token's original literal text, which it does not currently do.
 
 ### Indentation
 
@@ -141,7 +140,7 @@ WHERE
 GROUP BY
   u.status
 HAVING
-  count(*) > 1
+  COUNT(*) > 1
 ORDER BY
   u.id DESC
 LIMIT
@@ -291,6 +290,150 @@ FROM
   admins
 ```
 
+### DDL Statements
+
+`CREATE TABLE`'s column/constraint list and `CREATE INDEX`'s column list
+follow the same rule as every other bracketed list in this formatter (see
+the INSERT column list above): one element per line, indented, even when
+there's only one. `ALTER TABLE`'s action list follows the same rule as
+`UPDATE`'s `SET` list: one action per line, even for a single action.
+Trailing table options (`ENGINE`, `DEFAULT CHARSET`, ...) stay on the
+closing paren's line rather than being broken out, since they're key/value
+modifiers rather than a SQL clause with sub-structure.
+
+```text
+CREATE TABLE <table> (       -- optionally IF NOT EXISTS before <table>
+  <column_or_constraint1>,
+  <column_or_constraint2>
+) <option1> <option2>        -- if present, e.g. ENGINE=InnoDB
+
+ALTER TABLE <table>
+  <action1>,
+  <action2>
+
+CREATE INDEX <index> ON <table> (   -- optionally UNIQUE
+  <column1>,
+  <column2>
+)
+
+DROP INDEX <index> ON <table>
+
+DROP TABLE <table1>, <table2>   -- optionally IF EXISTS before <table1>
+
+TRUNCATE TABLE <table>
+```
+
+**Example output:**
+
+```sql
+CREATE TABLE IF NOT EXISTS users (
+  id INT NOT NULL AUTO_INCREMENT,
+  email VARCHAR(255) NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_email (email)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+```
+
+```sql
+ALTER TABLE users
+  ADD COLUMN age INT,
+  DROP COLUMN legacy_flag
+```
+
+Data type names (`INT`, `varchar`, ...) are not canonicalized to a fixed
+case — like an unrecognized function name, a type name's casing is
+preserved exactly as written in the source, since `sqlast.DataType` models
+MySQL's type vocabulary generically rather than as a fixed enum (see
+[parser-spec.md](parser-spec.md#ddl-statement-grammar)). Every other
+DDL keyword (`CREATE`, `TABLE`, `ADD`, `PRIMARY KEY`, `NOT NULL`,
+`AUTO_INCREMENT`, `ENGINE`, ...) is a clause keyword and therefore always
+uppercase, unaffected by `keyword_case`, the same treatment `SELECT`/`FROM`
+already get.
+
+### Transaction and Session Statements
+
+`START TRANSACTION`, `BEGIN`, `COMMIT`, `ROLLBACK`, `SAVEPOINT`, `RELEASE
+SAVEPOINT`, and `SET` are all single-line statements with no bracketed list
+to explode, so formatting is limited to keyword uppercasing, the optional
+`WORK` noise word being dropped, and normalizing whitespace:
+
+```text
+START TRANSACTION [READ ONLY | READ WRITE]
+
+BEGIN
+
+COMMIT
+
+ROLLBACK
+ROLLBACK TO SAVEPOINT <savepoint>
+
+SAVEPOINT <savepoint>
+
+RELEASE SAVEPOINT <savepoint>
+
+SET [SESSION | GLOBAL] <var> = <expr>   -- <var> is @-prefixed for a user variable
+SET NAMES <charset> [COLLATE <collation>]
+```
+
+**Example output:**
+
+```sql
+START TRANSACTION READ ONLY
+```
+
+```sql
+SET SESSION sql_mode = 'STRICT_TRANS_TABLES'
+```
+
+Like every other DDL keyword, these statements' clause keywords (`START
+TRANSACTION`, `ROLLBACK TO SAVEPOINT`, `SET NAMES`, ...) are always
+uppercase, unaffected by `keyword_case`. A `SET` statement's assigned value
+reuses the full expression grammar (`parseExpr`). A `SET NAMES` statement's
+charset/collation is more restricted — the `DEFAULT` keyword, a bare
+identifier (`utf8mb4`), or a quoted string (`'utf8mb4'`), matching what
+MySQL itself accepts there — but either form is preserved exactly as
+written.
+
+### Admin/Utility Statements
+
+The seven `SHOW` variants, `DESCRIBE`, and `USE` are single-line statements,
+formatted the same way transaction/session statements are — keyword
+uppercasing and whitespace normalization, with no bracketed list to
+explode:
+
+```text
+SHOW TABLES [FROM <database>] [LIKE '<pattern>']
+SHOW CREATE TABLE <table>
+SHOW COLUMNS FROM <table>
+SHOW INDEX FROM <table>
+SHOW DATABASES
+SHOW VARIABLES [LIKE '<pattern>']
+SHOW STATUS [LIKE '<pattern>']
+
+DESCRIBE <table> [<column>]
+
+USE <database>
+```
+
+`EXPLAIN` is the one admin/utility statement with sub-structure: it writes
+`EXPLAIN` (plus a `FORMAT = <fmt>` clause, if present) on its own line, then
+formats the wrapped statement one level deeper — the same nesting
+convention a `WITH` clause uses for a CTE's subquery body.
+
+**Example output:**
+
+```sql
+SHOW TABLES FROM mydb LIKE 'user%'
+```
+
+```sql
+EXPLAIN
+  SELECT
+    id
+  FROM
+    users
+```
+
 ## Expression Formatting
 
 ### WHERE Clause Conditions
@@ -378,7 +521,7 @@ WHERE
 ```sql
   (
     SELECT
-      count(*)
+      COUNT(*)
     FROM
       orders
   )
@@ -436,7 +579,7 @@ Aggregate and window functions with OVER clauses are formatted with the window s
 
 ```sql
 SELECT
-  sum(amount) OVER (
+  SUM(amount) OVER (
     PARTITION BY user_id
     ORDER BY created_at
   )
@@ -448,12 +591,12 @@ FROM
 
 ```sql
 SELECT
-  sum(amount) OVER w
+  SUM(amount) OVER w
 FROM
   orders
 ```
 
-Supported function types: COUNT, COUNT(*), SUM, AVG, MIN, MAX, BIT_AND, BIT_OR, BIT_XOR, STD, STDDEV, STDDEV_POP, STDDEV_SAMP, VAR_POP, VAR_SAMP, VARIANCE, ROW_NUMBER, RANK, DENSE_RANK, PERCENT_RANK, CUME_DIST, FIRST_VALUE, LAST_VALUE, NTILE, NTH_VALUE, LAG, LEAD, JSON_ARRAYAGG, JSON_OBJECTAGG.
+Supported function types: COUNT, COUNT(*), SUM, AVG, MIN, MAX, BIT_AND, BIT_OR, BIT_XOR, STD, STDDEV, STDDEV_POP, STDDEV_SAMP, VAR_POP, VAR_SAMP, VARIANCE, ROW_NUMBER, RANK, DENSE_RANK, PERCENT_RANK, CUME_DIST, FIRST_VALUE, LAST_VALUE, NTILE, NTH_VALUE, LAG, LEAD, JSON_ARRAYAGG, JSON_OBJECTAGG. These aggregate/window names always render uppercase regardless of the source casing; a generic (non-aggregate) function call preserves whatever casing it was written with.
 
 ### SELECT Expressions
 
@@ -465,7 +608,7 @@ Supported function types: COUNT, COUNT(*), SUM, AVG, MIN, MAX, BIT_AND, BIT_OR, 
 SELECT
   u.id,
   u.name AS user_name,
-  count(*) AS cnt
+  COUNT(*) AS cnt
 ```
 
 ### Comma Style
@@ -498,6 +641,50 @@ SELECT
 FROM
   users
 ```
+
+### SQL Mode
+
+sanat's parser formats one statement at a time, with no session or connection
+state — it cannot see a prior `SET sql_mode = ...` or a connection-level
+default. String-literal handling is MySQL-mode-sensitive (specifically,
+whether `NO_BACKSLASH_ESCAPES` is set), so callers whose connection uses
+`NO_BACKSLASH_ESCAPES` must select it explicitly via the `sql_mode` option;
+sanat cannot infer it from the SQL text.
+
+| Value | Behavior |
+|-------|----------|
+| `default` (default) | Backslash is a string-literal escape character (`\n`, `\'`, `\\`, ...), matching MySQL's default sql_mode |
+| `no_backslash_escapes` | Backslash has no special meaning in a string literal; a literal quote can only be embedded by doubling it, matching MySQL's `NO_BACKSLASH_ESCAPES` sql_mode |
+
+This affects both how sanat *parses* input SQL and how it *re-renders*
+string literals, so the mode must match the mode the SQL was written for —
+otherwise reformatting can change a literal's meaning. For example, given
+`SET sql_mode = 'NO_BACKSLASH_ESCAPES'` and `SELECT 'it''s'`:
+
+**`sql_mode: default` (wrong mode for this input):**
+
+```sql
+SELECT
+  'it\'s'
+```
+
+This re-encodes the doubled quote with a backslash escape, which is only
+valid because the *default* mode still supports it — under the
+`NO_BACKSLASH_ESCAPES` connection this string actually came from, `\'` would
+not close the string, corrupting the query when it's rendered back into
+source and later sent to that connection.
+
+**`sql_mode: no_backslash_escapes` (correct mode for this input):**
+
+```sql
+SELECT
+  'it''s'
+```
+
+The doubled quote round-trips as a doubled quote, and a literal newline
+inside a string round-trips as a literal newline (not the two characters
+`\n`) — both are the only ways `NO_BACKSLASH_ESCAPES` allows those meanings
+to be expressed.
 
 ### Locking Clauses
 
@@ -611,6 +798,7 @@ Configuration files are searched in the following order (first match is used):
 | `newline` | bool | no | `true` | Whether to insert a newline after the opening backtick |
 | `keyword_case` | `upper` \| `lower` \| `preserve` | no | `upper` | Casing for operator/predicate keywords. See [Keyword Casing](#keyword-casing). |
 | `comma_style` | `trailing` \| `leading` | no | `trailing` | Comma placement in rendered lists. See [Comma Style](#comma-style). |
+| `sql_mode` | `default` \| `no_backslash_escapes` | no | `default` | SQL mode controlling string-literal parsing and rendering. See [SQL Mode](#sql-mode). |
 
 ### Configuration Examples
 
@@ -623,6 +811,7 @@ indent: 4
 newline: true
 keyword_case: upper
 comma_style: trailing
+sql_mode: default
 ```
 
 **TOML:**
@@ -634,6 +823,7 @@ indent = 4
 newline = true
 keyword_case = "upper"
 comma_style = "trailing"
+sql_mode = "default"
 ```
 
 ### Config Versioning
@@ -668,6 +858,7 @@ sanat [flags] [pattern ...]
 | `--newline` | | `true` | Newline after opening backtick |
 | `--keyword-case` | | `upper` | Casing for operator/predicate keywords (`upper`, `lower`, `preserve`) |
 | `--comma-style` | | `trailing` | Comma placement in lists (`trailing`, `leading`) |
+| `--sql-mode` | | `default` | SQL mode controlling string-literal parsing and rendering (`default`, `no_backslash_escapes`) |
 | `--config` | `-c` | | Configuration file path |
 
 ### Input Methods
@@ -720,7 +911,7 @@ FROM
 
 ## Parser
 
-The [Vitess](https://vitess.io/) SQL parser (`vitess.io/vitess/go/vt/sqlparser`) is used for SQL syntax analysis. It supports MySQL-compatible SQL syntax.
+SQL syntax analysis uses an in-house lexer/parser (`internal/sqlfmt/parser`, producing the `internal/sqlfmt/sqlast` AST) scoped to the MySQL DML and DDL this formatter supports. See [parser-spec.md](parser-spec.md) for the full grammar and node reference.
 
 ### Supported SQL Statements
 
@@ -732,4 +923,13 @@ The [Vitess](https://vitess.io/) SQL parser (`vitess.io/vitess/go/vt/sqlparser`)
 | UPDATE | o |
 | DELETE | o |
 | UNION / UNION ALL | o |
-| Other | Falls back to Vitess default output |
+| CREATE TABLE | o |
+| ALTER TABLE | o |
+| CREATE INDEX / DROP INDEX | o |
+| DROP TABLE | o |
+| TRUNCATE TABLE | o |
+| START TRANSACTION / BEGIN / COMMIT / ROLLBACK / SAVEPOINT / RELEASE SAVEPOINT | o |
+| SET (variable assignment, `SET NAMES`) | o |
+| SHOW TABLES / CREATE TABLE / COLUMNS / INDEX / DATABASES / VARIABLES / STATUS | o |
+| DESCRIBE / EXPLAIN / USE | o |
+| Other (stored program syntax — `CALL`, `PREPARE`, `EXECUTE`, `DEALLOCATE PREPARE` — `JSON_TABLE`, ...) | Not recognized by the parser — `FormatSQL` returns the input unchanged |

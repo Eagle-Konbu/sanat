@@ -21,6 +21,9 @@ const (
 
 	CommaStyleTrailing = "trailing"
 	CommaStyleLeading  = "leading"
+
+	SQLModeDefault            = "default"
+	SQLModeNoBackslashEscapes = "no_backslash_escapes"
 )
 
 var (
@@ -28,6 +31,7 @@ var (
 	ErrInvalidIndent      = errors.New("indent must be a positive integer")
 	ErrInvalidKeywordCase = errors.New("keyword_case must be one of: upper, lower, preserve")
 	ErrInvalidCommaStyle  = errors.New("comma_style must be one of: trailing, leading")
+	ErrInvalidSQLMode     = errors.New("sql_mode must be one of: default, no_backslash_escapes")
 )
 
 var knownFields = map[string]bool{
@@ -37,6 +41,7 @@ var knownFields = map[string]bool{
 	"newline":      true,
 	"keyword_case": true,
 	"comma_style":  true,
+	"sql_mode":     true,
 }
 
 type Config struct {
@@ -46,6 +51,7 @@ type Config struct {
 	Newline     *bool   `toml:"newline,omitempty"      yaml:"newline,omitempty"`
 	KeywordCase *string `toml:"keyword_case,omitempty" yaml:"keyword_case,omitempty"`
 	CommaStyle  *string `toml:"comma_style,omitempty"  yaml:"comma_style,omitempty"`
+	SQLMode     *string `toml:"sql_mode,omitempty"     yaml:"sql_mode,omitempty"`
 }
 
 var configFiles = []string{
@@ -116,6 +122,7 @@ func validate(cfg Config) error {
 		validateIndent,
 		validateKeywordCase,
 		validateCommaStyle,
+		validateSQLMode,
 	} {
 		if err := check(cfg); err != nil {
 			return err
@@ -164,6 +171,19 @@ func validateCommaStyle(cfg Config) error {
 		return nil
 	default:
 		return fmt.Errorf("%w: %q", ErrInvalidCommaStyle, *cfg.CommaStyle)
+	}
+}
+
+func validateSQLMode(cfg Config) error {
+	if cfg.SQLMode == nil {
+		return nil
+	}
+
+	switch *cfg.SQLMode {
+	case SQLModeDefault, SQLModeNoBackslashEscapes:
+		return nil
+	default:
+		return fmt.Errorf("%w: %q", ErrInvalidSQLMode, *cfg.SQLMode)
 	}
 }
 
