@@ -3,13 +3,21 @@ package parser
 import "github.com/Eagle-Konbu/sanat/internal/sqlfmt/sqlast"
 
 // ParseUpdate parses an UPDATE statement (optionally preceded by a WITH
-// clause) from input.
+// clause) from input, using ModeDefault.
 //
 //nolint:nonamedreturns // the named results are mutated by the deferred recover
 func ParseUpdate(input string) (upd *sqlast.Update, err error) {
+	return ParseUpdateWithMode(input, ModeDefault)
+}
+
+// ParseUpdateWithMode parses an UPDATE statement (optionally preceded by a
+// WITH clause) from input, decoding string literals per mode.
+//
+//nolint:nonamedreturns // the named results are mutated by the deferred recover
+func ParseUpdateWithMode(input string, mode SQLMode) (upd *sqlast.Update, err error) {
 	defer recoverParseError(&err)
 
-	p := NewParser(input)
+	p := NewParserWithMode(input, mode)
 	result := p.parseUpdateStatement()
 
 	p.consume(SEMICOLON)

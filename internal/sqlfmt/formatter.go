@@ -96,9 +96,14 @@ func FormatSQL(sql string, indent int) (string, bool) {
 }
 
 func FormatSQLWithOptions(sql string, opts Options) (string, bool) {
+	mode, ok := parserSQLMode(opts.SQLMode)
+	if !ok {
+		return sql, false
+	}
+
 	replaced, count := replacePlaceholders(sql)
 
-	stmt, err := parser.ParseStatementWithMode(replaced, parserSQLMode(opts.SQLMode))
+	stmt, err := parser.ParseStatementWithMode(replaced, mode)
 	if err != nil {
 		return sql, false
 	}
@@ -112,14 +117,19 @@ func FormatSQLWithOptions(sql string, opts Options) (string, bool) {
 }
 
 // parserSQLMode translates an Options.SQLMode value into the parser
-// package's SQLMode, defaulting to parser.ModeDefault for both the empty
-// string and any value other than SQLModeNoBackslashEscapes.
-func parserSQLMode(sqlMode string) parser.SQLMode {
-	if sqlMode == SQLModeNoBackslashEscapes {
-		return parser.ModeNoBackslashEscapes
+// package's SQLMode, reporting whether sqlMode was a recognized value.
+// The empty string and SQLModeDefault both map to parser.ModeDefault;
+// SQLModeNoBackslashEscapes maps to parser.ModeNoBackslashEscapes; any other
+// value is rejected with ok == false.
+func parserSQLMode(sqlMode string) (parser.SQLMode, bool) {
+	switch sqlMode {
+	case "", SQLModeDefault:
+		return parser.ModeDefault, true
+	case SQLModeNoBackslashEscapes:
+		return parser.ModeNoBackslashEscapes, true
+	default:
+		return parser.ModeDefault, false
 	}
-
-	return parser.ModeDefault
 }
 
 // formatParsedStatement renders stmt, recovering a panic from an AST node

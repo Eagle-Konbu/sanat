@@ -3,13 +3,21 @@ package parser
 import "github.com/Eagle-Konbu/sanat/internal/sqlfmt/sqlast"
 
 // ParseDelete parses a DELETE statement (optionally preceded by a WITH
-// clause) from input.
+// clause) from input, using ModeDefault.
 //
 //nolint:nonamedreturns // the named results are mutated by the deferred recover
 func ParseDelete(input string) (del *sqlast.Delete, err error) {
+	return ParseDeleteWithMode(input, ModeDefault)
+}
+
+// ParseDeleteWithMode parses a DELETE statement (optionally preceded by a
+// WITH clause) from input, decoding string literals per mode.
+//
+//nolint:nonamedreturns // the named results are mutated by the deferred recover
+func ParseDeleteWithMode(input string, mode SQLMode) (del *sqlast.Delete, err error) {
 	defer recoverParseError(&err)
 
-	p := NewParser(input)
+	p := NewParserWithMode(input, mode)
 	result := p.parseDeleteStatement()
 
 	p.consume(SEMICOLON)

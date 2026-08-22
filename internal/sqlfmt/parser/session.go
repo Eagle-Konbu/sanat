@@ -4,43 +4,43 @@ import "github.com/Eagle-Konbu/sanat/internal/sqlfmt/sqlast"
 
 // ParseStartTransaction parses a START TRANSACTION statement from input.
 func ParseStartTransaction(input string) (*sqlast.StartTransaction, error) {
-	return parseDDLEntry(input, (*Parser).parseStartTransactionStatement)
+	return parseDDLEntry(input, ModeDefault, (*Parser).parseStartTransactionStatement)
 }
 
 // ParseBegin parses a BEGIN statement from input.
 func ParseBegin(input string) (*sqlast.Begin, error) {
-	return parseDDLEntry(input, (*Parser).parseBeginStatement)
+	return parseDDLEntry(input, ModeDefault, (*Parser).parseBeginStatement)
 }
 
 // ParseCommit parses a COMMIT statement from input.
 func ParseCommit(input string) (*sqlast.Commit, error) {
-	return parseDDLEntry(input, (*Parser).parseCommitStatement)
+	return parseDDLEntry(input, ModeDefault, (*Parser).parseCommitStatement)
 }
 
 // ParseRollback parses a ROLLBACK or ROLLBACK TO [SAVEPOINT] statement from input.
 func ParseRollback(input string) (*sqlast.Rollback, error) {
-	return parseDDLEntry(input, (*Parser).parseRollbackStatement)
+	return parseDDLEntry(input, ModeDefault, (*Parser).parseRollbackStatement)
 }
 
 // ParseSavepoint parses a SAVEPOINT statement from input.
 func ParseSavepoint(input string) (*sqlast.Savepoint, error) {
-	return parseDDLEntry(input, (*Parser).parseSavepointStatement)
+	return parseDDLEntry(input, ModeDefault, (*Parser).parseSavepointStatement)
 }
 
 // ParseReleaseSavepoint parses a RELEASE SAVEPOINT statement from input.
 func ParseReleaseSavepoint(input string) (*sqlast.ReleaseSavepoint, error) {
-	return parseDDLEntry(input, (*Parser).parseReleaseSavepointStatement)
+	return parseDDLEntry(input, ModeDefault, (*Parser).parseReleaseSavepointStatement)
 }
 
 // ParseSetVariable parses a SET statement assigning a user-defined or
 // session/global system variable from input.
 func ParseSetVariable(input string) (*sqlast.SetVariable, error) {
-	return parseDDLEntry(input, (*Parser).parseSetVariableStatement)
+	return parseDDLEntry(input, ModeDefault, (*Parser).parseSetVariableStatement)
 }
 
 // ParseSetNames parses a SET NAMES statement from input.
 func ParseSetNames(input string) (*sqlast.SetNames, error) {
-	return parseDDLEntry(input, (*Parser).parseSetNamesStatement)
+	return parseDDLEntry(input, ModeDefault, (*Parser).parseSetNamesStatement)
 }
 
 // parseSessionStatement dispatches a leading START, BEGIN, COMMIT, ROLLBACK,

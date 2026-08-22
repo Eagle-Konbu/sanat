@@ -8,52 +8,52 @@ import (
 
 // ParseShowTables parses a SHOW TABLES statement from input.
 func ParseShowTables(input string) (*sqlast.ShowTables, error) {
-	return parseDDLEntry(input, (*Parser).parseShowTablesStatement)
+	return parseDDLEntry(input, ModeDefault, (*Parser).parseShowTablesStatement)
 }
 
 // ParseShowCreateTable parses a SHOW CREATE TABLE statement from input.
 func ParseShowCreateTable(input string) (*sqlast.ShowCreateTable, error) {
-	return parseDDLEntry(input, (*Parser).parseShowCreateTableStatement)
+	return parseDDLEntry(input, ModeDefault, (*Parser).parseShowCreateTableStatement)
 }
 
 // ParseShowColumns parses a SHOW COLUMNS FROM statement from input.
 func ParseShowColumns(input string) (*sqlast.ShowColumns, error) {
-	return parseDDLEntry(input, (*Parser).parseShowColumnsStatement)
+	return parseDDLEntry(input, ModeDefault, (*Parser).parseShowColumnsStatement)
 }
 
 // ParseShowIndex parses a SHOW INDEX FROM statement from input.
 func ParseShowIndex(input string) (*sqlast.ShowIndex, error) {
-	return parseDDLEntry(input, (*Parser).parseShowIndexStatement)
+	return parseDDLEntry(input, ModeDefault, (*Parser).parseShowIndexStatement)
 }
 
 // ParseShowDatabases parses a SHOW DATABASES statement from input.
 func ParseShowDatabases(input string) (*sqlast.ShowDatabases, error) {
-	return parseDDLEntry(input, (*Parser).parseShowDatabasesStatement)
+	return parseDDLEntry(input, ModeDefault, (*Parser).parseShowDatabasesStatement)
 }
 
 // ParseShowVariables parses a SHOW VARIABLES statement from input.
 func ParseShowVariables(input string) (*sqlast.ShowVariables, error) {
-	return parseDDLEntry(input, (*Parser).parseShowVariablesStatement)
+	return parseDDLEntry(input, ModeDefault, (*Parser).parseShowVariablesStatement)
 }
 
 // ParseShowStatus parses a SHOW STATUS statement from input.
 func ParseShowStatus(input string) (*sqlast.ShowStatus, error) {
-	return parseDDLEntry(input, (*Parser).parseShowStatusStatement)
+	return parseDDLEntry(input, ModeDefault, (*Parser).parseShowStatusStatement)
 }
 
 // ParseDescribe parses a DESCRIBE statement from input.
 func ParseDescribe(input string) (*sqlast.Describe, error) {
-	return parseDDLEntry(input, (*Parser).parseDescribeStatement)
+	return parseDDLEntry(input, ModeDefault, (*Parser).parseDescribeStatement)
 }
 
 // ParseExplain parses an EXPLAIN statement from input.
 func ParseExplain(input string) (*sqlast.Explain, error) {
-	return parseDDLEntry(input, (*Parser).parseExplainStatement)
+	return parseDDLEntry(input, ModeDefault, (*Parser).parseExplainStatement)
 }
 
 // ParseUse parses a USE statement from input.
 func ParseUse(input string) (*sqlast.Use, error) {
-	return parseDDLEntry(input, (*Parser).parseUseStatement)
+	return parseDDLEntry(input, ModeDefault, (*Parser).parseUseStatement)
 }
 
 // parseAdminStatement dispatches a leading SHOW, DESCRIBE, EXPLAIN, or USE

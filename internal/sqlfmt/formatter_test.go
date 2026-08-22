@@ -1573,44 +1573,64 @@ func TestFormatSQLWithOptions_SQLMode(t *testing.T) {
 		sqlMode string
 		in      string
 		want    string
+		wantOK  bool
 	}{
 		{
 			name:    "default (unset) re-encodes doubled quote with backslash",
 			sqlMode: "",
 			in:      "select 'it''s' from t",
 			want:    join("SELECT", `  'it\'s'`, "FROM", "  t"),
+			wantOK:  true,
 		},
 		{
 			name:    "SQLModeDefault re-encodes doubled quote with backslash",
 			sqlMode: sqlfmt.SQLModeDefault,
 			in:      "select 'it''s' from t",
 			want:    join("SELECT", `  'it\'s'`, "FROM", "  t"),
+			wantOK:  true,
 		},
 		{
 			name:    "NoBackslashEscapes keeps doubled quote doubled",
 			sqlMode: sqlfmt.SQLModeNoBackslashEscapes,
 			in:      "select 'it''s' from t",
 			want:    join("SELECT", `  'it''s'`, "FROM", "  t"),
+			wantOK:  true,
 		},
 		{
 			name:    "default re-encodes a literal newline as backslash-n",
 			sqlMode: sqlfmt.SQLModeDefault,
 			in:      "select 'a\nb' from t",
 			want:    join("SELECT", `  'a\nb'`, "FROM", "  t"),
+			wantOK:  true,
 		},
 		{
 			name:    "NoBackslashEscapes preserves a literal newline",
 			sqlMode: sqlfmt.SQLModeNoBackslashEscapes,
 			in:      "select 'a\nb' from t",
 			want:    join("SELECT", "  'a\nb'", "FROM", "  t"),
+			wantOK:  true,
+		},
+		{
+			name:    "default formats a backslash-escaped quote",
+			sqlMode: sqlfmt.SQLModeDefault,
+			in:      `select 'it\'s' from t`,
+			want:    join("SELECT", `  'it\'s'`, "FROM", "  t"),
+			wantOK:  true,
+		},
+		{
+			name:    "NoBackslashEscapes rejects a backslash-escaped quote",
+			sqlMode: sqlfmt.SQLModeNoBackslashEscapes,
+			in:      `select 'it\'s' from t`,
+			want:    `select 'it\'s' from t`,
+			wantOK:  false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, ok := sqlfmt.FormatSQLWithOptions(tt.in, sqlfmt.Options{Indent: 2, SQLMode: tt.sqlMode})
-			if !ok {
-				t.Fatal("expected ok")
+			if ok != tt.wantOK {
+				t.Fatalf("ok = %v, want %v", ok, tt.wantOK)
 			}
 
 			assertSQL(t, got, tt.want)

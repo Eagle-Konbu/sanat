@@ -149,6 +149,7 @@ EOF
 
   [ "$status" -ne 0 ]
   [[ "$stderr" == *"sql_mode"* ]]
+  [[ "$stderr" == *"sideways"* ]]
 }
 
 @test "an unsupported config version fails with a clear error" {

@@ -2,13 +2,22 @@ package parser
 
 import "github.com/Eagle-Konbu/sanat/internal/sqlfmt/sqlast"
 
-// ParseInsert parses an INSERT or REPLACE statement from input.
+// ParseInsert parses an INSERT or REPLACE statement from input, using
+// ModeDefault.
 //
 //nolint:nonamedreturns // the named results are mutated by the deferred recover
 func ParseInsert(input string) (ins *sqlast.Insert, err error) {
+	return ParseInsertWithMode(input, ModeDefault)
+}
+
+// ParseInsertWithMode parses an INSERT or REPLACE statement from input,
+// decoding string literals per mode.
+//
+//nolint:nonamedreturns // the named results are mutated by the deferred recover
+func ParseInsertWithMode(input string, mode SQLMode) (ins *sqlast.Insert, err error) {
 	defer recoverParseError(&err)
 
-	p := NewParser(input)
+	p := NewParserWithMode(input, mode)
 	result := p.parseInsertStatement()
 
 	p.consume(SEMICOLON)

@@ -798,7 +798,7 @@ Configuration files are searched in the following order (first match is used):
 | `newline` | bool | no | `true` | Whether to insert a newline after the opening backtick |
 | `keyword_case` | `upper` \| `lower` \| `preserve` | no | `upper` | Casing for operator/predicate keywords. See [Keyword Casing](#keyword-casing). |
 | `comma_style` | `trailing` \| `leading` | no | `trailing` | Comma placement in rendered lists. See [Comma Style](#comma-style). |
-| `sql_mode` | `default` \| `no_backslash_escapes` | no | `default` | SQL mode for string-literal parsing. See [SQL Mode](#sql-mode). |
+| `sql_mode` | `default` \| `no_backslash_escapes` | no | `default` | SQL mode controlling string-literal parsing and rendering. See [SQL Mode](#sql-mode). |
 
 ### Configuration Examples
 
@@ -858,7 +858,7 @@ sanat [flags] [pattern ...]
 | `--newline` | | `true` | Newline after opening backtick |
 | `--keyword-case` | | `upper` | Casing for operator/predicate keywords (`upper`, `lower`, `preserve`) |
 | `--comma-style` | | `trailing` | Comma placement in lists (`trailing`, `leading`) |
-| `--sql-mode` | | `default` | SQL mode for string-literal parsing (`default`, `no_backslash_escapes`) |
+| `--sql-mode` | | `default` | SQL mode controlling string-literal parsing and rendering (`default`, `no_backslash_escapes`) |
 | `--config` | `-c` | | Configuration file path |
 
 ### Input Methods

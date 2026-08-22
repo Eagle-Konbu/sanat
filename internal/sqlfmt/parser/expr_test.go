@@ -91,6 +91,7 @@ func TestParseExpr_stringLiteral_NoBackslashEscapes(t *testing.T) {
 		{"doubled quote roundtrips as doubled quote", `'it''s'`, `'it''s'`},
 		{"backslash is not an escape character", `'a\nb'`, `'a\nb'`},
 		{"literal newline roundtrips as a literal newline", "'a\nb'", "'a\nb'"},
+		{"backslash adjacent to a doubled quote", `'a\b''s'`, `'a\b''s'`},
 	}
 
 	for _, tt := range tests {
