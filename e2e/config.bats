@@ -30,10 +30,68 @@ EOF
   grep -q '^  id,$' "${BATS_TEST_TMPDIR}/got.go"
 }
 
+@test ".sanat.toml in the working directory is picked up automatically" {
+  cat > "${BATS_TEST_TMPDIR}/.sanat.toml" <<'EOF'
+indent = 4
+newline = false
+EOF
+
+  (cd "${BATS_TEST_TMPDIR}" && "${SANAT_BIN}" sample.go > got.go)
+
+  grep -q '^    id,$' "${BATS_TEST_TMPDIR}/got.go"
+  ! grep -q '^`$' "${BATS_TEST_TMPDIR}/got.go"
+}
+
+@test "an explicit flag overrides the toml config file value for that setting" {
+  cat > "${BATS_TEST_TMPDIR}/.sanat.toml" <<'EOF'
+indent = 4
+newline = false
+EOF
+
+  (cd "${BATS_TEST_TMPDIR}" && "${SANAT_BIN}" --indent 2 sample.go > got.go)
+
+  grep -q '^  id,$' "${BATS_TEST_TMPDIR}/got.go"
+}
+
+@test ".sanat.yml takes priority over .sanat.toml when both are present" {
+  cat > "${BATS_TEST_TMPDIR}/.sanat.yml" <<'EOF'
+indent: 2
+EOF
+
+  cat > "${BATS_TEST_TMPDIR}/.sanat.toml" <<'EOF'
+indent = 4
+EOF
+
+  (cd "${BATS_TEST_TMPDIR}" && "${SANAT_BIN}" sample.go > got.go)
+
+  grep -q '^  id,$' "${BATS_TEST_TMPDIR}/got.go"
+}
+
 @test "keyword_case: lower in the config file lowercases operator/predicate keywords" {
   cat > "${BATS_TEST_TMPDIR}/.sanat.yml" <<'EOF'
 version: 1
 keyword_case: lower
+EOF
+
+  cat > "${BATS_TEST_TMPDIR}/where.go" <<'EOF'
+package sample
+
+import "database/sql"
+
+func query(db *sql.DB) {
+	db.Query(`select id from users where active = ? and id > 1`, true)
+}
+EOF
+
+  (cd "${BATS_TEST_TMPDIR}" && "${SANAT_BIN}" where.go > got.go)
+
+  grep -q '^  and id > 1$' "${BATS_TEST_TMPDIR}/got.go"
+}
+
+@test "keyword_case: lower in the toml config file lowercases operator/predicate keywords" {
+  cat > "${BATS_TEST_TMPDIR}/.sanat.toml" <<'EOF'
+version = 1
+keyword_case = "lower"
 EOF
 
   cat > "${BATS_TEST_TMPDIR}/where.go" <<'EOF'
@@ -100,6 +158,29 @@ EOF
 
   [ "$status" -ne 0 ]
   [[ "$stderr" == *"keyword_case"* ]]
+}
+
+@test "an invalid keyword_case value in the toml config file fails with a clear error" {
+  cat > "${BATS_TEST_TMPDIR}/.sanat.toml" <<'EOF'
+version = 1
+keyword_case = "sideways"
+EOF
+
+  run --separate-stderr bash -c 'cd "$1" && exec "$2" sample.go' -- "${BATS_TEST_TMPDIR}" "${SANAT_BIN}"
+
+  [ "$status" -ne 0 ]
+  [[ "$stderr" == *"keyword_case"* ]]
+}
+
+@test "an unsupported config version in the toml config file fails with a clear error" {
+  cat > "${BATS_TEST_TMPDIR}/.sanat.toml" <<'EOF'
+version = 99
+EOF
+
+  run --separate-stderr bash -c 'cd "$1" && exec "$2" sample.go' -- "${BATS_TEST_TMPDIR}" "${SANAT_BIN}"
+
+  [ "$status" -ne 0 ]
+  [[ "$stderr" == *"version"* ]]
 }
 
 @test "sql_mode: no_backslash_escapes in the config file preserves a doubled quote" {
