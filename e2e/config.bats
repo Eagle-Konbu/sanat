@@ -100,7 +100,7 @@ package sample
 import "database/sql"
 
 func query(db *sql.DB) {
-	db.Query(`select id from users where active = ? and id > 1`, true)
+	db.Query(`SELECT id FROM users WHERE active = ? AND id > 1`, true)
 }
 EOF
 
