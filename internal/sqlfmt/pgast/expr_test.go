@@ -277,6 +277,11 @@ func TestFuncExpr_String(t *testing.T) {
 			},
 			"row_number() OVER (ORDER BY id)",
 		},
+		{
+			"over bare window name, no parens",
+			&pgast.FuncExpr{Name: "row_number", Over: &pgast.WindowSpec{Name: "w"}},
+			"row_number() OVER w",
+		},
 	}
 
 	for _, tt := range tests {
