@@ -70,6 +70,9 @@ linters:
       - path: internal/sqlfmt/parser/
         linters:
           - ireturn # a recursive-descent AST parser must return sqlast's node interfaces
+      - path: internal/sqlfmt/pgparser/
+        linters:
+          - ireturn # a recursive-descent AST parser must return pgast's node interfaces
 
 formatters:
   enable:
