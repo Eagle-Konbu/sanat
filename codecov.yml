@@ -19,3 +19,4 @@ ignore:
   - "testdata/"
   - "**/*_test.go"
   - "internal/sqlfmt/sqlast/markers.go"
+  - "internal/sqlfmt/pgast/markers.go"
