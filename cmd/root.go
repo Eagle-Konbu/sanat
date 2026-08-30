@@ -23,6 +23,7 @@ var (
 	keywordCaseFlag string
 	commaStyleFlag  string
 	sqlModeFlag     string
+	dialectFlag     string
 	configFlag      string
 )
 
@@ -50,6 +51,8 @@ func init() {
 		"comma placement in lists (trailing, leading)")
 	rootCmd.Flags().StringVar(&sqlModeFlag, "sql-mode", config.SQLModeDefault,
 		"SQL mode for string-literal parsing (default, no_backslash_escapes)")
+	rootCmd.Flags().StringVar(&dialectFlag, "dialect", config.DialectMySQL,
+		"SQL dialect to parse (mysql, postgresql)")
 	rootCmd.Flags().StringVarP(&configFlag, "config", "c", "", "path to config file")
 }
 
@@ -119,6 +122,11 @@ func mergeConfig(cmd *cobra.Command, cfg config.Config) {
 				sqlModeFlag = *cfg.SQLMode
 			}
 		}},
+		{"dialect", func() {
+			if cfg.Dialect != nil {
+				dialectFlag = *cfg.Dialect
+			}
+		}},
 	}
 
 	for _, a := range assignments {
@@ -147,16 +155,23 @@ func validateFlags() error {
 		return fmt.Errorf("%w: %q", config.ErrInvalidSQLMode, sqlModeFlag)
 	}
 
+	switch dialectFlag {
+	case config.DialectMySQL, config.DialectPostgreSQL:
+	default:
+		return fmt.Errorf("%w: %q", config.ErrInvalidDialect, dialectFlag)
+	}
+
 	return nil
 }
 
-func opts() gofile.Options {
-	return gofile.Options{
+func opts() *gofile.Options {
+	return &gofile.Options{
 		Indent:      indentFlag,
 		Newline:     newlineFlag,
 		KeywordCase: keywordCaseFlag,
 		CommaStyle:  commaStyleFlag,
 		SQLMode:     sqlModeFlag,
+		Dialect:     dialectFlag,
 	}
 }
 

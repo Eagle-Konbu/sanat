@@ -799,6 +799,7 @@ Configuration files are searched in the following order (first match is used):
 | `keyword_case` | `upper` \| `lower` \| `preserve` | no | `upper` | Casing for operator/predicate keywords. See [Keyword Casing](#keyword-casing). |
 | `comma_style` | `trailing` \| `leading` | no | `trailing` | Comma placement in rendered lists. See [Comma Style](#comma-style). |
 | `sql_mode` | `default` \| `no_backslash_escapes` | no | `default` | SQL mode controlling string-literal parsing and rendering. See [SQL Mode](#sql-mode). |
+| `dialect` | `mysql` \| `postgresql` | no | `mysql` | SQL dialect to parse. `postgresql` is not yet supported and fails formatting explicitly. |
 
 ### Configuration Examples
 
@@ -812,6 +813,7 @@ newline: true
 keyword_case: upper
 comma_style: trailing
 sql_mode: default
+dialect: mysql
 ```
 
 **TOML:**
@@ -824,6 +826,7 @@ newline = true
 keyword_case = "upper"
 comma_style = "trailing"
 sql_mode = "default"
+dialect = "mysql"
 ```
 
 ### Config Versioning
@@ -859,6 +862,7 @@ sanat [flags] [pattern ...]
 | `--keyword-case` | | `upper` | Casing for operator/predicate keywords (`upper`, `lower`, `preserve`) |
 | `--comma-style` | | `trailing` | Comma placement in lists (`trailing`, `leading`) |
 | `--sql-mode` | | `default` | SQL mode controlling string-literal parsing and rendering (`default`, `no_backslash_escapes`) |
+| `--dialect` | | `mysql` | SQL dialect to parse (`mysql`, `postgresql`) |
 | `--config` | `-c` | | Configuration file path |
 
 ### Input Methods

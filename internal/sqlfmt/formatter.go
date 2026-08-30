@@ -19,6 +19,9 @@ const (
 
 	SQLModeDefault            = "default"
 	SQLModeNoBackslashEscapes = "no_backslash_escapes"
+
+	DialectMySQL      = "mysql"
+	DialectPostgreSQL = "postgresql"
 )
 
 var (
@@ -62,6 +65,12 @@ type Options struct {
 	// SQLModeNoBackslashEscapes explicitly — sanat cannot infer it from the
 	// input SQL.
 	SQLMode string
+
+	// Dialect selects which SQL dialect's parser formats the input.
+	// Defaults to DialectMySQL. DialectPostgreSQL is not supported yet —
+	// FormatSQLWithOptions reports ok == false rather than silently falling
+	// back to MySQL parsing.
+	Dialect string
 }
 
 // formatter holds the resolved rendering options for a single FormatSQL call.
@@ -96,6 +105,10 @@ func FormatSQL(sql string, indent int) (string, bool) {
 }
 
 func FormatSQLWithOptions(sql string, opts Options) (string, bool) {
+	if !dialectSupported(opts.Dialect) {
+		return sql, false
+	}
+
 	mode, ok := parserSQLMode(opts.SQLMode)
 	if !ok {
 		return sql, false
@@ -114,6 +127,21 @@ func FormatSQLWithOptions(sql string, opts Options) (string, bool) {
 	}
 
 	return restorePlaceholders(result, count), true
+}
+
+// dialectSupported reports whether opts.Dialect names a dialect
+// FormatSQLWithOptions can currently format. The empty string means
+// DialectMySQL, today's only behavior. DialectPostgreSQL is recognized but
+// not yet implemented (pgparser doesn't exist), so it's rejected the same
+// as an unknown dialect string rather than silently falling back to MySQL
+// parsing — once pgparser lands, this will dispatch to it instead.
+func dialectSupported(dialect string) bool {
+	switch dialect {
+	case "", DialectMySQL:
+		return true
+	default:
+		return false
+	}
 }
 
 // parserSQLMode translates an Options.SQLMode value into the parser
