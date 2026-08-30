@@ -56,8 +56,9 @@ func (p *Parser) advance() {
 	p.peek2Tok = tok
 }
 
-func (p *Parser) at(tt TokenType) bool     { return p.tok.Type == tt }
-func (p *Parser) peekAt(tt TokenType) bool { return p.peekTok.Type == tt }
+func (p *Parser) at(tt TokenType) bool      { return p.tok.Type == tt }
+func (p *Parser) peekAt(tt TokenType) bool  { return p.peekTok.Type == tt }
+func (p *Parser) peek2At(tt TokenType) bool { return p.peek2Tok.Type == tt }
 
 func (p *Parser) errorf(format string, args ...any) *ParseError {
 	return &ParseError{Pos: p.tok.Pos, Msg: fmt.Sprintf(format, args...)}
@@ -132,6 +133,24 @@ func ParseExpr(input string) (expr pgast.Expr, err error) {
 
 	if !p.at(EOF) {
 		p.failf("unexpected token %s after expression", p.tok.Type)
+	}
+
+	return result, nil
+}
+
+// ParseSelect parses a SELECT statement from input.
+//
+//nolint:nonamedreturns // the named results are mutated by the deferred recover
+func ParseSelect(input string) (sel *pgast.Select, err error) {
+	defer recoverParseError(&err)
+
+	p := NewParser(input)
+	result := p.parseSelectStatement()
+
+	p.consume(SEMICOLON)
+
+	if !p.at(EOF) {
+		p.failf("unexpected token %s after statement", p.tok.Type)
 	}
 
 	return result, nil

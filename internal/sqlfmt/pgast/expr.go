@@ -365,9 +365,8 @@ func (f *FuncExpr) String() string {
 	}
 
 	if f.Over != nil {
-		b.WriteString(" OVER (")
-		b.WriteString(f.Over.String())
-		b.WriteString(")")
+		b.WriteString(" OVER ")
+		b.WriteString(f.Over.overString())
 	}
 
 	return b.String()

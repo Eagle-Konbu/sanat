@@ -369,6 +369,18 @@ func (w *WindowSpec) String() string {
 	return strings.Join(parts, " ")
 }
 
+// overString renders w for a function call's OVER clause: a bare window
+// name with no parentheses when w is nothing but a name reference (matching
+// the common "OVER w" form, as opposed to a top-level WINDOW clause entry,
+// which always parenthesizes its body), parenthesized otherwise.
+func (w *WindowSpec) overString() string {
+	if w != nil && !w.Name.IsEmpty() && len(w.PartitionBy) == 0 && len(w.OrderBy) == 0 && w.Frame == nil {
+		return w.Name.String()
+	}
+
+	return "(" + w.String() + ")"
+}
+
 // FrameUnit represents ROWS, RANGE, or GROUPS.
 type FrameUnit int8
 

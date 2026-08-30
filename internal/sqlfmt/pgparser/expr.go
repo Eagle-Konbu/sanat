@@ -637,6 +637,8 @@ func (p *Parser) parseFuncCall(qualifier, name string) pgast.Expr {
 		p.expect(RPAREN)
 	}
 
+	f.Over = p.parseOptionalOver()
+
 	return f
 }
 
