@@ -19,6 +19,7 @@
     "devcontainer",
     "sqlfmt",
     "sqla",
+    "pgparser",
     "gofile",
     "fset",
     "cspell",

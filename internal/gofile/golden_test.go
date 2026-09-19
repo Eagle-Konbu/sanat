@@ -42,7 +42,7 @@ func TestGoldenFiles(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			got, err := gofile.RewriteFile(fset, file, literals, gofile.Options{Indent: 2, Newline: true})
+			got, err := gofile.RewriteFile(fset, file, literals, &gofile.Options{Indent: 2, Newline: true})
 			if err != nil {
 				t.Fatal(err)
 			}

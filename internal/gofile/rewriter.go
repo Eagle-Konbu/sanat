@@ -16,9 +16,10 @@ type Options struct {
 	KeywordCase string
 	CommaStyle  string
 	SQLMode     string
+	Dialect     string
 }
 
-func RewriteFile(fset *token.FileSet, file *ast.File, literals []SQLLiteral, opts Options) ([]byte, error) {
+func RewriteFile(fset *token.FileSet, file *ast.File, literals []SQLLiteral, opts *Options) ([]byte, error) {
 	for _, lit := range literals {
 		if !sqlfmt.MightBeSQL(lit.Original) {
 			continue
@@ -29,6 +30,7 @@ func RewriteFile(fset *token.FileSet, file *ast.File, literals []SQLLiteral, opt
 			KeywordCase: opts.KeywordCase,
 			CommaStyle:  opts.CommaStyle,
 			SQLMode:     opts.SQLMode,
+			Dialect:     opts.Dialect,
 		})
 		if !ok {
 			continue
