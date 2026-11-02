@@ -134,7 +134,7 @@ See [docs/formatter-spec.md](docs/formatter-spec.md#configuration) for the full 
 
 ## golangci-lint Plugin
 
-sanat can run inside [golangci-lint](https://golangci-lint.run/) as a [module plugin](https://golangci-lint.run/plugins/module-plugins/). It reports every SQL raw string literal that `sanat` would reformat with the message `SQL literal is not formatted`, and attaches the formatted literal as a suggested fix (`golangci-lint run --fix`).
+sanat can run inside [golangci-lint](https://golangci-lint.run/) as a [module plugin](https://golangci-lint.run/plugins/module-plugins/). It reports every SQL raw string literal that `sanat` would reformat with the message `SQL literal is not formatted`, and attaches the formatted literal as a suggested fix (`./custom-gcl run --fix`).
 
 ### Requirements
 
@@ -144,14 +144,14 @@ sanat can run inside [golangci-lint](https://golangci-lint.run/) as a [module pl
 
 ### 1. Build the custom binary
 
-Create `.custom-gcl.yml` in your project root:
+No sanat release includes the plugin package yet, so build it from a local checkout of this repository. Clone sanat next to your project and create `.custom-gcl.yml` in your project root:
 
 ```yaml
 version: v2.15.0
 plugins:
   - module: github.com/Eagle-Konbu/sanat
     import: github.com/Eagle-Konbu/sanat/plugin
-    version: vX.Y.Z # a sanat release that includes the plugin package
+    path: ../sanat # path to your sanat checkout, relative to where `golangci-lint custom` runs
 ```
 
 Then build it with a stock golangci-lint v2 binary:
@@ -208,7 +208,7 @@ Notes:
 
 - `.sanat.*` files are **not** discovered automatically by the plugin; set `config` to share settings with the CLI. A relative `config` path is resolved against the directory `golangci-lint` is run from.
 - The `write` option of a config file is ignored by the plugin.
-- Unknown keys, invalid values, and an unreadable or invalid `config` file make golangci-lint fail at startup.
+- Unknown keys in `settings`, invalid values, and an unreadable or invalid `config` file make golangci-lint fail at startup. Unknown keys inside the referenced `config` file do not: they only print a warning and are ignored, so those options fall back to the defaults.
 - golangci-lint's cache does not track the file referenced by `config`. After editing it, run `golangci-lint cache clean` (or `./custom-gcl cache clean`) so that cached results are not reused.
 
 ## Supported SQL
