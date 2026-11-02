@@ -95,7 +95,10 @@
     "prealloc",
     "unparam",
     "varnamelen",
-    "wrapcheck"
+    "wrapcheck",
+    "analysistest",
+    "nilnil",
+    "sqlc"
   ],
   "ignorePaths": [
     ".git",
