@@ -27,7 +27,7 @@ type FormattedLiteral struct {
 // enclosing backticks, and whether it differs from the current source text.
 // Strings that are not SQL, or that the formatter cannot parse, are reported
 // as unchanged rather than as needing formatting.
-func FormatLiteral(lit SQLLiteral, opts *Options) (formatted string, changed bool) {
+func FormatLiteral(lit SQLLiteral, opts *Options) (string, bool) {
 	if !sqlfmt.MightBeSQL(lit.Original) {
 		return lit.Node.Value, false
 	}
@@ -47,7 +47,7 @@ func FormatLiteral(lit SQLLiteral, opts *Options) (formatted string, changed boo
 		sql = "\n" + sql + "\n"
 	}
 
-	formatted = "`" + sql + "`"
+	formatted := "`" + sql + "`"
 
 	return formatted, formatted != lit.Node.Value
 }
