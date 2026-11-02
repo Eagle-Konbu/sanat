@@ -309,18 +309,18 @@ func TestLint_AnalysisFailures(t *testing.T) {
 			name:       "invalid flag value",
 			files:      map[string]string{"clean.go": formattedSource},
 			args:       []string{"--keyword-case", "sideways"},
-			wantStderr: "",
+			wantStderr: `keyword_case must be one of: upper, lower, preserve: "sideways"`,
 		},
 		{
 			name:       "invalid config file",
 			files:      map[string]string{"clean.go": formattedSource, sanatYML: "version: 99\n"},
-			wantStderr: "",
+			wantStderr: "unsupported config version: 99",
 		},
 		{
 			name:       "unknown flag",
 			files:      map[string]string{"clean.go": formattedSource},
 			args:       []string{"--write"},
-			wantStderr: "",
+			wantStderr: "unknown flag: --write",
 		},
 	}
 

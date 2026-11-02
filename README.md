@@ -111,11 +111,13 @@ internal/db/users.go:12:15: SQL literal is not formatted (sanat)
 | `1` | Unformatted SQL literals were found |
 | `2` | Analysis failed (invalid flags or config, or packages that fail to load or compile) |
 
-Run `sanat -w ./...` to fix the reported literals.
+To fix the reported literals, run `sanat -w` on the reported files (for example, `sanat -w internal/db/users.go`). Note that `sanat -w ./...` rewrites every SQL literal in all Go files under the directory, including `_test.go` files and files `lint` did not analyze.
 
 ### CI example (GitHub Actions)
 
 ```yaml
+- uses: actions/checkout@v4
+
 - uses: actions/setup-go@v5
   with:
     go-version: stable

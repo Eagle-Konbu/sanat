@@ -78,7 +78,9 @@ func runLint(cmd *cobra.Command, args []string) error {
 
 	out := cmd.OutOrStdout()
 	for _, f := range findings {
-		fmt.Fprintf(out, "%s: %s (%s)\n", f.position, f.message, f.analyzer)
+		if _, err := fmt.Fprintf(out, "%s: %s (%s)\n", f.position, f.message, f.analyzer); err != nil {
+			return &exitError{code: exitCodeError, err: err}
+		}
 	}
 
 	if len(findings) > 0 {

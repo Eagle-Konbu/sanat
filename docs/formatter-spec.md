@@ -921,7 +921,7 @@ The path is relative to the current directory when the file is inside it, and ab
 | `1` | One or more unformatted SQL literals were found |
 | `2` | Analysis failed: invalid flags or configuration, a pattern matched no packages, or a package failed to load, parse, or type-check |
 
-As with `go vet`, packages that do not compile are an analysis failure rather than being skipped. The formatter command keeps exiting with `1` on any error.
+As with `go vet`, packages that do not compile are an analysis failure rather than being skipped. The formatter command exits with `1` when an error stops it, such as invalid flags or configuration, an unresolvable pattern, or unparsable standard input. Read, parse, or write errors for individual files are printed to stderr and the remaining files are still processed, so they do not change the exit status.
 
 ## Newline Option
 
