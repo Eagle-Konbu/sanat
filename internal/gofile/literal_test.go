@@ -71,6 +71,20 @@ func TestFormatLiteral(t *testing.T) {
 			wantChanged: false,
 		},
 		{
+			name:        "already formatted SQL with CRLF line endings",
+			content:     "\r\nSELECT\r\n  id\r\nFROM\r\n  users\r\n",
+			opts:        gofile.Options{Indent: 2, Newline: true},
+			wantContent: "\nSELECT\n  id\nFROM\n  users\n",
+			wantChanged: false,
+		},
+		{
+			name:        "unformatted SQL with CRLF line endings",
+			content:     "select id\r\nfrom users",
+			opts:        gofile.Options{Indent: 2, Newline: true},
+			wantContent: "\nSELECT\n  id\nFROM\n  users\n",
+			wantChanged: true,
+		},
+		{
 			name:    "lower keyword case",
 			content: "select id from users where status = 1 and active = true",
 			opts: gofile.Options{
@@ -195,6 +209,21 @@ func TestCollectSQLLiterals_ReturnsNodesOfGivenAST(t *testing.T) {
 	}
 
 	if literals[0].Original != "select id from users" {
+		t.Errorf("unexpected original: %q", literals[0].Original)
+	}
+}
+
+func TestCollectSQLLiterals_DiscardsCarriageReturns(t *testing.T) {
+	_, _, literals, err := gofile.FindSQLLiterals(rawLiteralSource("select id\r\nfrom users"), "test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(literals) != 1 {
+		t.Fatalf("expected 1 literal, got %d", len(literals))
+	}
+
+	if literals[0].Original != "select id\nfrom users" {
 		t.Errorf("unexpected original: %q", literals[0].Original)
 	}
 }
