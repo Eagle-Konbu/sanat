@@ -150,8 +150,8 @@ func validateFlags() error {
 	return nil
 }
 
-func opts() *gofile.Options {
-	return &gofile.Options{
+func opts() gofile.Options {
+	return gofile.Options{
 		Indent:      indentFlag,
 		Newline:     newlineFlag,
 		KeywordCase: keywordCaseFlag,

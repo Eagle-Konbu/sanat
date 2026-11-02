@@ -42,7 +42,7 @@ func TestGoldenFiles(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			got, err := gofile.RewriteFile(fset, file, literals, &gofile.Options{Indent: 2, Newline: true})
+			got, err := gofile.RewriteFile(fset, file, literals, gofile.Options{Indent: 2, Newline: true})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -78,7 +78,7 @@ func TestGoldenFiles_ExpectedOutputNeedsNoFormatting(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			for _, result := range gofile.FormatLiterals(file, &gofile.Options{Indent: 2, Newline: true}) {
+			for _, result := range gofile.FormatLiterals(file, gofile.Options{Indent: 2, Newline: true}) {
 				t.Errorf("already formatted literal would change\ngot:  %s\nwant: %s", result.Node.Value, result.Formatted)
 			}
 		})

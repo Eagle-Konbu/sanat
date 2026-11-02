@@ -107,7 +107,7 @@ func TestFormatLiteral(t *testing.T) {
 
 			originalValue := literals[0].Node.Value
 
-			got, changed := gofile.FormatLiteral(literals[0], &tt.opts)
+			got, changed := gofile.FormatLiteral(literals[0], tt.opts)
 
 			if want := "`" + tt.wantContent + "`"; got != want {
 				t.Errorf("formatted mismatch\ngot:  %q\nwant: %q", got, want)
@@ -142,7 +142,7 @@ func TestFormatLiterals_ReturnsOnlyChangedLiteralsWithoutModifyingAST(t *testing
 
 	valuesBefore := basicLitValues(file)
 
-	results := gofile.FormatLiterals(file, &gofile.Options{Indent: 2, Newline: true})
+	results := gofile.FormatLiterals(file, gofile.Options{Indent: 2, Newline: true})
 
 	if len(results) != 1 {
 		t.Fatalf("expected 1 changed literal, got %d: %+v", len(results), results)

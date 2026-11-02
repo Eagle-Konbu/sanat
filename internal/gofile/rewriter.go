@@ -7,7 +7,7 @@ import (
 	"go/token"
 )
 
-func RewriteFile(fset *token.FileSet, file *ast.File, literals []SQLLiteral, opts *Options) ([]byte, error) {
+func RewriteFile(fset *token.FileSet, file *ast.File, literals []SQLLiteral, opts Options) ([]byte, error) {
 	for _, lit := range literals {
 		if formatted, changed := FormatLiteral(lit, opts); changed {
 			lit.Node.Value = formatted

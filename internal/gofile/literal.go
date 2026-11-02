@@ -27,7 +27,7 @@ type FormattedLiteral struct {
 // enclosing backticks, and whether it differs from the current source text.
 // Strings that are not SQL, or that the formatter cannot parse, are reported
 // as unchanged rather than as needing formatting.
-func FormatLiteral(lit SQLLiteral, opts *Options) (string, bool) {
+func FormatLiteral(lit SQLLiteral, opts Options) (string, bool) {
 	if !sqlfmt.MightBeSQL(lit.Original) {
 		return lit.Node.Value, false
 	}
@@ -54,7 +54,7 @@ func FormatLiteral(lit SQLLiteral, opts *Options) (string, bool) {
 
 // FormatLiterals returns the raw string literals in file that would change
 // under formatting, without modifying the AST.
-func FormatLiterals(file *ast.File, opts *Options) []FormattedLiteral {
+func FormatLiterals(file *ast.File, opts Options) []FormattedLiteral {
 	var results []FormattedLiteral
 
 	for _, lit := range CollectSQLLiterals(file) {
