@@ -23,6 +23,12 @@ func FindSQLLiterals(src []byte, filename string) (*ast.File, *token.FileSet, []
 		return nil, nil, nil, err
 	}
 
+	return file, fset, CollectSQLLiterals(file), nil
+}
+
+// CollectSQLLiterals returns the raw string literals in an already-parsed
+// file, so callers such as go/analysis passes can reuse their own AST.
+func CollectSQLLiterals(file *ast.File) []SQLLiteral {
 	var literals []SQLLiteral
 
 	ast.Inspect(file, func(n ast.Node) bool {
@@ -41,5 +47,5 @@ func FindSQLLiterals(src []byte, filename string) (*ast.File, *token.FileSet, []
 		return true
 	})
 
-	return file, fset, literals, nil
+	return literals
 }
