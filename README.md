@@ -89,6 +89,46 @@ cat file.go | sanat > formatted.go
 | `--sql-mode` | `default` | SQL mode controlling string-literal parsing and rendering (`default`, `no_backslash_escapes`) |
 | `-c, --config` | | Path to config file |
 
+## Standalone Lint
+
+`sanat lint` checks Go packages for SQL literals that are not formatted, without modifying any files. It takes Go package patterns (default: `.`) and uses the same formatting flags and configuration file as the formatter.
+
+```bash
+sanat lint ./...
+sanat lint ./internal/db
+sanat lint --tests=false ./...   # skip _test.go files
+```
+
+Each finding is printed to stdout as `file:line:col: message`:
+
+```
+internal/db/users.go:12:15: SQL literal is not formatted (sanat)
+```
+
+| Exit status | Meaning |
+|-------------|---------|
+| `0` | No findings |
+| `1` | Unformatted SQL literals were found |
+| `2` | Analysis failed (invalid flags or config, or packages that fail to load or compile) |
+
+To fix the reported literals, run `sanat -w` on the reported files (for example, `sanat -w internal/db/users.go`). Note that `sanat -w ./...` rewrites every SQL literal in all Go files under the directory, including `_test.go` files and files `lint` did not analyze.
+
+### CI example (GitHub Actions)
+
+```yaml
+- uses: actions/checkout@v4
+
+- uses: actions/setup-go@v5
+  with:
+    go-version: stable
+
+- name: Install sanat
+  run: go install github.com/Eagle-Konbu/sanat@latest
+
+- name: Check SQL formatting
+  run: sanat lint ./...
+```
+
 ## Configuration File
 
 Settings can also be defined in a configuration file placed in the current directory. The following files are searched in order:

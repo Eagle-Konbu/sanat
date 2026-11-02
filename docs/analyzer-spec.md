@@ -27,6 +27,10 @@ flowchart TD
 - **Generated files** (those detected by `ast.IsGenerated`, i.e. containing a `// Code generated ... DO NOT EDIT.` comment) are skipped regardless of the driver, because their literals cannot be fixed by hand (for example, sqlc output).
 - Whether `_test.go` files are analyzed is decided by the driver.
 
+## Drivers
+
+- **Standalone lint command** (`sanat lint`, see [formatter-spec.md](formatter-spec.md#lint-command)): loads packages with `golang.org/x/tools/go/packages` and runs the analyzer through `golang.org/x/tools/go/analysis/checker`, so the CLI controls output and exit status. Options are resolved from the formatter's flags and configuration file. Because the analyzer uses no facts, only the requested packages are loaded from source. Suggested fixes are not applied.
+
 ## Diagnostics
 
 | Field | Value |
