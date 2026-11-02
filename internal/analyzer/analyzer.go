@@ -24,7 +24,7 @@ func New(opts gofile.Options) *analysis.Analyzer {
 		Run: func(pass *analysis.Pass) (any, error) {
 			run(pass, opts)
 
-			return nil, nil //nolint:nilnil // the analyzer produces no result for other analyzers
+			return nil, nil
 		},
 	}
 }

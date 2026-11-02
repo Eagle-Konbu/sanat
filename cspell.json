@@ -97,7 +97,6 @@
     "varnamelen",
     "wrapcheck",
     "analysistest",
-    "nilnil",
     "sqlc"
   ],
   "ignorePaths": [
