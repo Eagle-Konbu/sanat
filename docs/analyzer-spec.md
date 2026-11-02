@@ -40,3 +40,38 @@ flowchart TD
 The suggested fix is always attached. Raw string literals cannot contain backticks, so replacing the whole literal with a new raw string literal is always safe.
 
 The analyzer never modifies source files; applying fixes is left to the driver.
+
+## golangci-lint Integration
+
+The `plugin` package (`github.com/Eagle-Konbu/sanat/plugin`) registers the analyzer with the golangci-lint v2 Module Plugin System under the name `sanat`. It is compiled into a custom binary with `golangci-lint custom`; the stock binary cannot load it.
+
+| Item | Value |
+|---|---|
+| Registration | `register.Plugin("sanat", plugin.New)` |
+| Load mode | `register.LoadModeSyntax` (the analyzer needs only the AST) |
+| Analyzers | A single analyzer built by `analyzer.New` |
+| Tested golangci-lint version | v2.15.0 (pinned in `e2e/golangci/testdata/.custom-gcl.yml` and CI) |
+
+### Settings Resolution
+
+`linters.settings.custom.sanat.settings` is decoded with `register.DecodeSettings`, which rejects unknown keys and mistyped values. The keys are `indent`, `newline`, `keyword-case`, `comma-style`, `sql-mode`, and `config`.
+
+```mermaid
+flowchart TD
+    A[Decode settings] --> B{config set?}
+    B -- Yes --> C[config.LoadFile]
+    B -- No --> D[Empty file config]
+    C --> E[Merge per key: setting > file > default]
+    D --> E
+    E --> F[config.Validate]
+    F --> G[analyzer.New]
+```
+
+- **Precedence** is resolved per key: an explicit setting wins over the value from the `config` file, which wins over the CLI defaults (`config.Default*`).
+- **No implicit discovery**: `.sanat.*` files are read only when `config` is set. A relative `config` path is resolved against the working directory of the golangci-lint process. The `write` option is ignored.
+- **Errors**: unknown keys, mistyped or invalid values, and an unreadable or invalid `config` file are returned from `plugin.New`, so golangci-lint fails before linting. A `config` file is validated in full even when every key is overridden by an explicit setting, matching the CLI.
+- **Caching**: golangci-lint's cache key does not include the file referenced by `config`, so users must run `golangci-lint cache clean` after editing it.
+
+### Smoke Test
+
+`e2e/golangci/` is a bats suite run by `task e2e:golangci` and the `golangci-plugin` CI job (it is not part of `bats e2e/`, which does not recurse into subdirectories). Its `setup_suite` builds a custom binary from `e2e/golangci/testdata/.custom-gcl.yml`, which references this checkout through `path:`. The tests run the binary against the fixture module in `e2e/golangci/testdata/` and verify that an unformatted literal is reported, formatted literals pass, the `config` setting changes the result, and invalid settings fail at startup.
