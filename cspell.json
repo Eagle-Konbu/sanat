@@ -97,7 +97,9 @@
     "varnamelen",
     "wrapcheck",
     "analysistest",
-    "sqlc"
+    "sqlc",
+    "pflag",
+    "pkgs"
   ],
   "ignorePaths": [
     ".git",
