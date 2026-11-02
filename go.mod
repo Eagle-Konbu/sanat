@@ -4,6 +4,7 @@ go 1.25.7
 
 require (
 	github.com/BurntSushi/toml v1.6.0
+	github.com/golangci/plugin-module-register v0.1.2
 	github.com/manifoldco/promptui v0.9.0
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/tools v0.49.0
