@@ -35,6 +35,9 @@ archives:
     files:
       - completions/*
 
+release:
+  prerelease: auto
+
 checksum:
   name_template: "checksums.txt"
 
@@ -54,6 +57,7 @@ changelog:
 
 homebrew_casks:
   - name: sanat
+    skip_upload: auto
     binaries:
       - sanat
     completions:
