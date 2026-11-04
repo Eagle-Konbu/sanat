@@ -53,3 +53,34 @@ func TestGoldenFiles(t *testing.T) {
 		})
 	}
 }
+
+func TestGoldenFiles_ExpectedOutputNeedsNoFormatting(t *testing.T) {
+	expectedDir := filepath.Join("..", "..", "testdata", "expected")
+
+	entries, err := os.ReadDir(expectedDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".go" {
+			continue
+		}
+
+		t.Run(entry.Name(), func(t *testing.T) {
+			src, err := os.ReadFile(filepath.Join(expectedDir, entry.Name()))
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			file, _, _, err := gofile.FindSQLLiterals(src, entry.Name())
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			for _, result := range gofile.FormatLiterals(file, gofile.Options{Indent: 2, Newline: true}) {
+				t.Errorf("already formatted literal would change\ngot:  %s\nwant: %s", result.Node.Value, result.Formatted)
+			}
+		})
+	}
+}

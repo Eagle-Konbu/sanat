@@ -42,15 +42,19 @@ func SetVersion(v string) {
 
 func init() {
 	rootCmd.Flags().BoolVarP(&writeFlag, "write", "w", false, "overwrite files in place")
-	rootCmd.Flags().IntVar(&indentFlag, "indent", 2, "indent width for SQL formatting")
-	rootCmd.Flags().BoolVar(&newlineFlag, "newline", true, "add newline after opening backtick")
-	rootCmd.Flags().StringVar(&keywordCaseFlag, "keyword-case", config.KeywordCaseUpper,
+
+	// Formatting options are persistent so subcommands such as lint resolve
+	// them exactly like the formatter does.
+	formatFlags := rootCmd.PersistentFlags()
+	formatFlags.IntVar(&indentFlag, "indent", 2, "indent width for SQL formatting")
+	formatFlags.BoolVar(&newlineFlag, "newline", true, "add newline after opening backtick")
+	formatFlags.StringVar(&keywordCaseFlag, "keyword-case", config.KeywordCaseUpper,
 		"casing for operator/predicate keywords (upper, lower, preserve)")
-	rootCmd.Flags().StringVar(&commaStyleFlag, "comma-style", config.CommaStyleTrailing,
+	formatFlags.StringVar(&commaStyleFlag, "comma-style", config.CommaStyleTrailing,
 		"comma placement in lists (trailing, leading)")
-	rootCmd.Flags().StringVar(&sqlModeFlag, "sql-mode", config.SQLModeDefault,
+	formatFlags.StringVar(&sqlModeFlag, "sql-mode", config.SQLModeDefault,
 		"SQL mode for string-literal parsing (default, no_backslash_escapes)")
-	rootCmd.Flags().StringVarP(&configFlag, "config", "c", "", "path to config file")
+	formatFlags.StringVarP(&configFlag, "config", "c", "", "path to config file")
 }
 
 func Execute() error {

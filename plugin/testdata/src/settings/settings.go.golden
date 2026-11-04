@@ -1,0 +1,13 @@
+package settings
+
+var unformatted = `SELECT
+  id
+, name
+FROM
+  users` // want "SQL literal is not formatted"
+
+var formatted = `SELECT
+  id
+, name
+FROM
+  users`

@@ -861,6 +861,8 @@ sanat [flags] [pattern ...]
 | `--sql-mode` | | `default` | SQL mode controlling string-literal parsing and rendering (`default`, `no_backslash_escapes`) |
 | `--config` | `-c` | | Configuration file path |
 
+All flags except `--write` are shared with the [lint command](#lint-command).
+
 ### Input Methods
 
 - **File patterns**: `sanat file.go`, `sanat ./...`, `sanat *.go`
@@ -884,6 +886,42 @@ The following directories are excluded from traversal:
 
 - Default: output formatted result to stdout
 - With `-w`: overwrite files directly (permission 0600)
+
+### Lint Command
+
+```
+sanat lint [flags] [pattern ...]
+```
+
+`sanat lint` runs the SQL formatting analyzer (see [analyzer-spec.md](analyzer-spec.md)) over Go packages and reports literals that the formatter would change. It never modifies files and does not read standard input.
+
+- **Patterns** are Go package patterns (`./...`, `./internal/db`, import paths), resolved by `golang.org/x/tools/go/packages` like `go vet`. With no pattern, the package in the current directory (`.`) is analyzed. Unlike the formatter's file patterns, directories excluded by the go command (`vendor/`, `testdata/`, and directories starting with `.` or `_`) are skipped and files are filtered by build constraints.
+- **Formatting options** are the formatter's options: `--indent`, `--newline`, `--keyword-case`, `--comma-style`, `--sql-mode`, and `--config` are shared with the formatter and resolved with the same [configuration file](#configuration-file) lookup and [precedence](#precedence). `--write` and the `write` config option are not applicable.
+- **Test files** are analyzed by default. A diagnostic in a file shared by a package and its test variant is reported once.
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--tests` | `true` | Analyze `_test.go` files; `--tests=false` excludes them |
+
+#### Lint Output
+
+Each finding is printed to stdout as one line, sorted by file, line, and column:
+
+```
+path/to/file.go:12:15: SQL literal is not formatted (sanat)
+```
+
+The path is relative to the current directory when the file is inside it, and absolute otherwise. The position is the start of the raw string literal. A summary line and all errors (package load, parse, and type errors, and invalid flags or configuration) are printed to stderr.
+
+#### Lint Exit Status
+
+| Code | Meaning |
+|------|---------|
+| `0` | No findings |
+| `1` | One or more unformatted SQL literals were found |
+| `2` | Analysis failed: invalid flags or configuration, a pattern matched no packages, or a package failed to load, parse, or type-check |
+
+As with `go vet`, packages that do not compile are an analysis failure rather than being skipped. The formatter command exits with `1` when an error stops it, such as invalid flags or configuration, an unresolvable pattern, or unparsable standard input. Read, parse, or write errors for individual files are printed to stderr and the remaining files are still processed, so they do not change the exit status.
 
 ## Newline Option
 
