@@ -1,6 +1,10 @@
 package pgparser
 
-import "github.com/Eagle-Konbu/sanat/internal/sqlfmt/pgast"
+import (
+	"strings"
+
+	"github.com/Eagle-Konbu/sanat/internal/sqlfmt/pgast"
+)
 
 // parseSubqueryStatement parses the SELECT statement inside a parenthesized
 // subquery, EXISTS (...), or [NOT] IN (...) predicate. WITH is deferred to
@@ -26,12 +30,35 @@ func (p *Parser) parseSelectStatement() *pgast.Select {
 	sel.Having = p.parseOptionalWhereClause(HAVING)
 	sel.Window = p.parseOptionalWindowClause()
 	sel.OrderBy = p.parseOptionalOrderBy()
-	sel.Limit = p.parseOptionalLimit()
-	sel.Offset = p.parseOptionalOffset()
-	sel.Fetch = p.parseOptionalFetch()
-	sel.Lock = p.parseOptionalLock()
+	p.parseRowLimitClauses(sel)
+
+	for lock := p.parseOptionalLock(); lock != nil; lock = p.parseOptionalLock() {
+		sel.Locks = append(sel.Locks, lock)
+	}
 
 	return sel
+}
+
+// parseRowLimitClauses parses LIMIT and OFFSET (each at most once, in either
+// order, as PostgreSQL allows) followed by an optional FETCH. FETCH is the
+// SQL-standard spelling of LIMIT, so PostgreSQL rejects the two together.
+func (p *Parser) parseRowLimitClauses(sel *pgast.Select) {
+	for {
+		switch {
+		case sel.Limit == nil && p.at(LIMIT):
+			sel.Limit = p.parseOptionalLimit()
+		case sel.Offset == nil && p.at(OFFSET):
+			sel.Offset = p.parseOptionalOffset()
+		default:
+			if sel.Limit != nil && p.at(FETCH) {
+				p.failf("FETCH cannot be combined with LIMIT")
+			}
+
+			sel.Fetch = p.parseOptionalFetch()
+
+			return
+		}
+	}
 }
 
 // parseSelectModifiers parses the [ALL | DISTINCT [ON (...)]] modifier
@@ -81,21 +108,38 @@ func (p *Parser) parseSelectExpr() pgast.SelectExpr {
 	return &pgast.AliasedExpr{Expr: expr, As: pgast.ColIdent(alias)}
 }
 
-// tryParseQualifiedStar consumes and returns a `table.*` select item if the
-// next three tokens spell one out; otherwise it consumes nothing and
-// returns nil, leaving the caller to parse a general expression.
+// tryParseQualifiedStar consumes and returns a `table.*` or
+// `schema.table.*` select item if the upcoming tokens spell one out;
+// otherwise it consumes nothing and returns nil, leaving the caller to parse
+// a general expression.
 func (p *Parser) tryParseQualifiedStar() pgast.SelectExpr {
-	if (!p.at(IDENT) && !p.at(QuotedIdent)) || !p.peekAt(DOT) || !p.peek2At(STAR) {
+	if !isIdentToken(p.tok) || !p.peekAt(DOT) {
 		return nil
 	}
 
-	name := p.tok.Literal
+	if p.peek2At(STAR) {
+		name := p.readIdent()
+		p.advance() // consume '.'
+		p.advance() // consume '*'
 
-	for range 3 { // ident, '.', '*'
-		p.advance()
+		return &pgast.StarExpr{TableName: pgast.TableName{Name: pgast.TableIdent(name)}}
 	}
 
-	return &pgast.StarExpr{TableName: pgast.TableName{Name: pgast.TableIdent(name)}}
+	if !isIdentToken(p.peek2Tok) || !p.lookaheadBeyondBufferIs(DOT, STAR) {
+		return nil
+	}
+
+	qualifier := p.readIdent()
+	p.advance() // consume '.'
+	name := p.readIdent()
+	p.advance() // consume '.'
+	p.advance() // consume '*'
+
+	return &pgast.StarExpr{TableName: pgast.TableName{Qualifier: pgast.TableIdent(qualifier), Name: pgast.TableIdent(name)}}
+}
+
+func isIdentToken(tok Token) bool {
+	return tok.Type == IDENT || tok.Type == QuotedIdent
 }
 
 // parseOptionalAlias parses an optional trailing "[AS] name" alias (used for
@@ -105,7 +149,7 @@ func (p *Parser) parseOptionalAlias() string {
 		return p.readIdent()
 	}
 
-	if p.at(IDENT) || p.at(QuotedIdent) {
+	if isIdentToken(p.tok) {
 		return p.readIdent()
 	}
 
@@ -113,14 +157,25 @@ func (p *Parser) parseOptionalAlias() string {
 }
 
 func (p *Parser) readIdent() string {
-	if p.tok.Type != IDENT && p.tok.Type != QuotedIdent {
+	if !isIdentToken(p.tok) {
 		p.failf("expected identifier, got %s", p.tok.Type)
 	}
 
-	lit := p.tok.Literal
+	text := identText(p.tok)
 	p.advance()
 
-	return lit
+	return text
+}
+
+// identText returns tok's identifier as SQL text. A QuotedIdent is
+// re-quoted: the lexer strips its quotes, but rendering it bare would let
+// PostgreSQL fold its case and change which name it refers to.
+func identText(tok Token) string {
+	if tok.Type == QuotedIdent {
+		return `"` + strings.ReplaceAll(tok.Literal, `"`, `""`) + `"`
+	}
+
+	return tok.Literal
 }
 
 func (p *Parser) parseOptionalFromClause() []pgast.TableExpr {
@@ -166,17 +221,16 @@ func (p *Parser) parseJoin(left pgast.TableExpr) pgast.TableExpr {
 	joinType := p.parseJoinType()
 	right := p.parseTableFactor()
 
-	// NATURAL joins determine their join columns implicitly and PostgreSQL
-	// rejects an explicit ON/USING alongside NATURAL, so this doesn't even
-	// look for one: any ON/USING left in the token stream is then unconsumed
-	// input, which fails elsewhere with a parse error instead of being
-	// silently accepted (and possibly dropped) here.
-	if isNaturalJoinType(joinType) {
+	// PostgreSQL rejects an explicit ON/USING on CROSS and NATURAL joins, so
+	// this doesn't even look for one: any ON/USING left in the token stream
+	// is then unconsumed input, which fails elsewhere with a parse error
+	// instead of being silently accepted (and possibly dropped) here.
+	if !joinRequiresCondition(joinType) {
 		return &pgast.JoinTableExpr{Left: left, Join: joinType, Right: right}
 	}
 
 	cond := p.parseOptionalJoinCondition()
-	if cond == nil && joinRequiresCondition(joinType) {
+	if cond == nil {
 		p.failf("expected ON or USING after %s", joinType)
 	}
 
@@ -184,21 +238,11 @@ func (p *Parser) parseJoin(left pgast.TableExpr) pgast.TableExpr {
 }
 
 // joinRequiresCondition reports whether PostgreSQL requires an ON or USING
-// clause for joinType. INNER/CROSS may omit one; LEFT, RIGHT, and FULL
-// (OUTER) may not. NATURAL joins are handled separately in parseJoin, since
-// they may not have a condition at all.
+// clause for joinType. [INNER] JOIN and LEFT/RIGHT/FULL [OUTER] JOIN require
+// one; CROSS and NATURAL joins (whose columns are implicit) may not have one.
 func joinRequiresCondition(joinType pgast.JoinType) bool {
 	switch joinType {
-	case pgast.JoinLeft, pgast.JoinRight, pgast.JoinFull:
-		return true
-	default:
-		return false
-	}
-}
-
-func isNaturalJoinType(joinType pgast.JoinType) bool {
-	switch joinType {
-	case pgast.JoinNatural, pgast.JoinNaturalLeft, pgast.JoinNaturalRight, pgast.JoinNaturalFull:
+	case pgast.JoinInner, pgast.JoinLeft, pgast.JoinRight, pgast.JoinFull:
 		return true
 	default:
 		return false
@@ -264,6 +308,11 @@ func (p *Parser) parseNaturalJoinType() pgast.JoinType {
 		p.advanceOuterJoin()
 
 		return pgast.JoinNaturalFull
+	case INNER:
+		p.advance()
+		p.expect(JOIN)
+
+		return pgast.JoinNatural
 	default:
 		p.expect(JOIN)
 
@@ -362,7 +411,9 @@ func (p *Parser) parseParenTableExpr() pgast.TableExpr {
 
 	p.expect(RPAREN)
 
-	return &pgast.ParenTableExpr{Exprs: tables}
+	alias := p.parseOptionalAlias()
+
+	return &pgast.ParenTableExpr{Exprs: tables, As: pgast.TableIdent(alias)}
 }
 
 func (p *Parser) parseDerivedTable() pgast.TableExpr {
@@ -401,10 +452,16 @@ func (p *Parser) parseOptionalGroupBy() *pgast.GroupBy {
 	}
 }
 
-// parseGroupingElement parses a single GROUP BY item: a plain expression, or
-// a GROUPING SETS(...)/CUBE(...)/ROLLUP(...) construct.
+// parseGroupingElement parses a single GROUP BY item: a plain expression, an
+// empty grouping set "()", or a GROUPING SETS(...)/CUBE(...)/ROLLUP(...)
+// construct. "()" is modeled as GROUPING SETS (()), its exact equivalent.
 func (p *Parser) parseGroupingElement() pgast.Expr {
 	switch {
+	case p.at(LPAREN) && p.peekAt(RPAREN):
+		p.advance() // consume '('
+		p.advance() // consume ')'
+
+		return &pgast.GroupingSets{Sets: [][]pgast.Expr{nil}}
 	case p.consume(GROUPING):
 		p.expect(SETS)
 
@@ -432,7 +489,7 @@ func (p *Parser) parseGroupingSets() pgast.Expr {
 	var sets [][]pgast.Expr
 
 	for {
-		sets = append(sets, p.parseParenExprListOrEmpty())
+		sets = append(sets, p.parseGroupingSet())
 
 		if !p.consume(COMMA) {
 			break
@@ -442,6 +499,16 @@ func (p *Parser) parseGroupingSets() pgast.Expr {
 	p.expect(RPAREN)
 
 	return &pgast.GroupingSets{Sets: sets}
+}
+
+// parseGroupingSet parses one GROUPING SETS member: a parenthesized list,
+// "()", or a bare expression (equivalent to a one-element list).
+func (p *Parser) parseGroupingSet() []pgast.Expr {
+	if !p.at(LPAREN) {
+		return []pgast.Expr{p.parseExpr()}
+	}
+
+	return p.parseParenExprListOrEmpty()
 }
 
 // parseParenExprListOrEmpty parses a "(expr, ...)" list, or "()" for an
@@ -490,11 +557,8 @@ func (p *Parser) parseOptionalOver() *pgast.WindowSpec {
 		return nil
 	}
 
-	if p.at(IDENT) || p.at(QuotedIdent) {
-		name := p.tok.Literal
-		p.advance()
-
-		return &pgast.WindowSpec{Name: pgast.ColIdent(name)}
+	if isIdentToken(p.tok) {
+		return &pgast.WindowSpec{Name: pgast.ColIdent(p.readIdent())}
 	}
 
 	p.expect(LPAREN)
@@ -515,9 +579,8 @@ func (p *Parser) parseOptionalOver() *pgast.WindowSpec {
 func (p *Parser) parseWindowSpecBody() *pgast.WindowSpec {
 	spec := &pgast.WindowSpec{}
 
-	if p.at(IDENT) || p.at(QuotedIdent) {
-		spec.Name = pgast.ColIdent(p.tok.Literal)
-		p.advance()
+	if isIdentToken(p.tok) {
+		spec.Name = pgast.ColIdent(p.readIdent())
 	}
 
 	if p.consume(PARTITION) {

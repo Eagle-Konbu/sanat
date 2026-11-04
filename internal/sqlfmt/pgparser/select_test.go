@@ -39,6 +39,14 @@ func TestParseSelect_basic(t *testing.T) {
 		{"simple", "SELECT id, name FROM users", "SELECT id, name FROM users"},
 		{"star", "SELECT * FROM t", "SELECT * FROM t"},
 		{"qualified star", "SELECT t.* FROM t", "SELECT t.* FROM t"},
+		{"schema-qualified star", "SELECT public.users.* FROM public.users", "SELECT public.users.* FROM public.users"},
+		{"qualified column is not a star", "SELECT t.id, t.name FROM t", "SELECT t.id, t.name FROM t"},
+		{
+			"quoted identifiers keep their quotes",
+			`SELECT "MixedCase", "a""b" AS "Alias", t."Col" FROM "Schema"."Table" "T"`,
+			`SELECT "MixedCase", "a""b" AS "Alias", t."Col" FROM "Schema"."Table" "T"`,
+		},
+		{"quoted qualified star", `SELECT "T".* FROM t`, `SELECT "T".* FROM t`},
 		{"distinct", "SELECT DISTINCT id FROM t", "SELECT DISTINCT id FROM t"},
 		{"distinct on", "SELECT DISTINCT ON (a, b) * FROM t", "SELECT DISTINCT ON (a, b) * FROM t"},
 		{"select all is a no-op", "SELECT ALL id FROM t", "SELECT id FROM t"},
@@ -81,6 +89,16 @@ func TestParseSelect_groupBy(t *testing.T) {
 			"rollup",
 			"SELECT dept FROM emp GROUP BY ROLLUP (a, b)",
 			"SELECT dept FROM emp GROUP BY ROLLUP (a, b)",
+		},
+		{
+			"grouping sets with bare expressions",
+			"SELECT dept FROM emp GROUP BY GROUPING SETS (a, (b, c), ())",
+			"SELECT dept FROM emp GROUP BY GROUPING SETS ((a), (b, c), ())",
+		},
+		{
+			"empty grouping set renders as its grouping sets equivalent",
+			"SELECT count(*) FROM emp GROUP BY ()",
+			"SELECT count(*) FROM emp GROUP BY GROUPING SETS (())",
 		},
 		{
 			"mixed with plain expr",
@@ -128,6 +146,7 @@ func TestParseSelect_limitOffsetFetch(t *testing.T) {
 		{"offset with row noise word", "SELECT * FROM t OFFSET 5 ROW", "SELECT * FROM t OFFSET 5"},
 		{"offset with rows noise word", "SELECT * FROM t OFFSET 5 ROWS", "SELECT * FROM t OFFSET 5"},
 		{"limit offset", "SELECT * FROM t LIMIT 10 OFFSET 5", "SELECT * FROM t LIMIT 10 OFFSET 5"},
+		{"offset before limit", "SELECT * FROM t OFFSET 5 LIMIT 10", "SELECT * FROM t LIMIT 10 OFFSET 5"},
 		{
 			"fetch first row only",
 			"SELECT * FROM t FETCH FIRST ROW ONLY",
@@ -177,6 +196,11 @@ func TestParseSelect_lock(t *testing.T) {
 			"SELECT * FROM t FOR UPDATE SKIP LOCKED",
 			"SELECT * FROM t FOR UPDATE SKIP LOCKED",
 		},
+		{
+			"multiple locking clauses",
+			"SELECT * FROM t, u FOR UPDATE OF t NOWAIT FOR SHARE OF u",
+			"SELECT * FROM t, u FOR UPDATE OF t NOWAIT FOR SHARE OF u",
+		},
 	}
 
 	for _, tt := range tests {
@@ -209,6 +233,7 @@ func TestParseSelect_joins(t *testing.T) {
 		{"natural left join", "SELECT * FROM a NATURAL LEFT JOIN b", "SELECT * FROM a NATURAL LEFT JOIN b"},
 		{"natural right join", "SELECT * FROM a NATURAL RIGHT JOIN b", "SELECT * FROM a NATURAL RIGHT JOIN b"},
 		{"natural full join", "SELECT * FROM a NATURAL FULL JOIN b", "SELECT * FROM a NATURAL FULL JOIN b"},
+		{"natural inner join", "SELECT * FROM a NATURAL INNER JOIN b", "SELECT * FROM a NATURAL JOIN b"},
 		{"using", "SELECT * FROM a JOIN b USING (id)", "SELECT * FROM a JOIN b USING (id)"},
 		{
 			"chained joins",
@@ -219,6 +244,11 @@ func TestParseSelect_joins(t *testing.T) {
 			"parenthesized join",
 			"SELECT * FROM (a JOIN b ON a.id = b.id)",
 			"SELECT * FROM (a JOIN b ON a.id = b.id)",
+		},
+		{
+			"aliased parenthesized join",
+			"SELECT * FROM (a JOIN b ON a.id = b.id) AS j",
+			"SELECT * FROM (a JOIN b ON a.id = b.id) j",
 		},
 		{
 			"derived table",
@@ -299,6 +329,14 @@ func TestParseSelect_errors(t *testing.T) {
 		"SELECT * FROM",
 		"SELECT * FROM a LEFT JOIN b",
 		"SELECT * FROM a NATURAL JOIN b ON a.id = b.id",
+		"SELECT * FROM a JOIN b",
+		"SELECT * FROM a INNER JOIN b",
+		"SELECT * FROM a CROSS JOIN b ON a.id = b.id",
+		"SELECT * FROM a CROSS JOIN b USING (id)",
+		"SELECT * FROM t LIMIT 1 LIMIT 2",
+		"SELECT * FROM t OFFSET 1 OFFSET 2",
+		"SELECT * FROM t LIMIT 1 FETCH FIRST ROW ONLY",
+		"SELECT * FROM t LIMIT 1 OFFSET 2 FETCH FIRST ROW ONLY",
 		"SELECT * FOR UPDATE OF",
 		"SELECT * FROM t FETCH FIRST",
 		"SELECT * FROM t GROUP BY GROUPING SETS",

@@ -112,6 +112,9 @@ func TestParenTableExpr_String(t *testing.T) {
 		&pgast.AliasedTableExpr{Expr: pgast.TableName{Name: "b"}},
 	}}
 	assertEqual(t, "(a, b)", p.String())
+
+	p.As = "j"
+	assertEqual(t, "(a, b) j", p.String())
 }
 
 func TestDerivedTable_String(t *testing.T) {
@@ -150,5 +153,10 @@ func TestStarExpr_String(t *testing.T) {
 	t.Run("qualified", func(t *testing.T) {
 		s := &pgast.StarExpr{TableName: pgast.TableName{Name: "users"}}
 		assertEqual(t, "users.*", s.String())
+	})
+
+	t.Run("schema-qualified", func(t *testing.T) {
+		s := &pgast.StarExpr{TableName: pgast.TableName{Qualifier: "public", Name: "users"}}
+		assertEqual(t, "public.users.*", s.String())
 	})
 }

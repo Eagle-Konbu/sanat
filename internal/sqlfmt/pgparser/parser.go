@@ -60,6 +60,23 @@ func (p *Parser) at(tt TokenType) bool      { return p.tok.Type == tt }
 func (p *Parser) peekAt(tt TokenType) bool  { return p.peekTok.Type == tt }
 func (p *Parser) peek2At(tt TokenType) bool { return p.peek2Tok.Type == tt }
 
+// lookaheadBeyondBufferIs reports whether the tokens following the
+// three-token lookahead buffer have the given types, by lexing ahead on a
+// copy of the lexer so the parser's position is unaffected. A lexer error
+// reports false; the real lex reports it once the parser gets there.
+func (p *Parser) lookaheadBeyondBufferIs(types ...TokenType) bool {
+	lex := *p.lex
+
+	for _, tt := range types {
+		tok, err := lex.Next()
+		if err != nil || tok.Type != tt {
+			return false
+		}
+	}
+
+	return true
+}
+
 func (p *Parser) errorf(format string, args ...any) *ParseError {
 	return &ParseError{Pos: p.tok.Pos, Msg: fmt.Sprintf(format, args...)}
 }

@@ -40,9 +40,12 @@ func TestSelect_String(t *testing.T) {
 				Limit:       &pgast.Limit{Count: lit("10")},
 				Offset:      &pgast.Offset{Start: lit("5")},
 				Fetch:       &pgast.Fetch{Count: lit("1")},
-				Lock:        &pgast.Lock{Strength: pgast.ForUpdate},
+				Locks: []*pgast.Lock{
+					{Strength: pgast.ForUpdate, Of: []pgast.TableName{{Name: "t"}}},
+					{Strength: pgast.ForShare},
+				},
 			},
-			"WITH cte AS (SELECT * FROM t) SELECT id FROM t WHERE active GROUP BY id HAVING cond WINDOW w AS () ORDER BY id LIMIT 10 OFFSET 5 FETCH FIRST 1 ROW ONLY FOR UPDATE",
+			"WITH cte AS (SELECT * FROM t) SELECT id FROM t WHERE active GROUP BY id HAVING cond WINDOW w AS () ORDER BY id LIMIT 10 OFFSET 5 FETCH FIRST 1 ROW ONLY FOR UPDATE OF t FOR SHARE",
 		},
 	}
 

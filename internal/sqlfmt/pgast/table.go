@@ -98,9 +98,11 @@ func (j *JoinTableExpr) String() string {
 	return b.String()
 }
 
-// ParenTableExpr represents a parenthesized list of table expressions.
+// ParenTableExpr represents a parenthesized list of table expressions with
+// an optional alias.
 type ParenTableExpr struct {
 	Exprs []TableExpr
+	As    TableIdent
 }
 
 // String returns ParenTableExpr's SQL text.
@@ -110,7 +112,12 @@ func (p *ParenTableExpr) String() string {
 		strs[i] = e.String()
 	}
 
-	return "(" + strings.Join(strs, ", ") + ")"
+	s := "(" + strings.Join(strs, ", ") + ")"
+	if !p.As.IsEmpty() {
+		s += " " + p.As.String()
+	}
+
+	return s
 }
 
 // DerivedTable represents a subquery used as a table.
@@ -140,7 +147,7 @@ func (a *AliasedExpr) String() string {
 	return s
 }
 
-// StarExpr represents a * or table.* item in a SELECT list.
+// StarExpr represents a *, table.*, or schema.table.* item in a SELECT list.
 type StarExpr struct {
 	TableName TableName
 }
@@ -151,5 +158,5 @@ func (s *StarExpr) String() string {
 		return "*"
 	}
 
-	return s.TableName.Name.String() + ".*"
+	return s.TableName.String() + ".*"
 }

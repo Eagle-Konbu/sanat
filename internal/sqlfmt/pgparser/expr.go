@@ -350,14 +350,11 @@ func (p *Parser) parseTypeName() pgast.ColIdent {
 }
 
 func (p *Parser) readTypeIdent() string {
-	if p.tok.Type != IDENT && p.tok.Type != QuotedIdent {
+	if !isIdentToken(p.tok) {
 		return failReturn[string](p, "expected type name, got %s", p.tok.Type)
 	}
 
-	lit := p.tok.Literal
-	p.advance()
-
-	return lit
+	return p.readIdent()
 }
 
 func (p *Parser) readTypeModifier() string {
