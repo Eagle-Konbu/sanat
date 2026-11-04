@@ -24,6 +24,9 @@ const (
 
 	SQLModeDefault            = "default"
 	SQLModeNoBackslashEscapes = "no_backslash_escapes"
+
+	DialectMySQL      = "mysql"
+	DialectPostgreSQL = "postgresql"
 )
 
 var (
@@ -32,6 +35,7 @@ var (
 	ErrInvalidKeywordCase = errors.New("keyword_case must be one of: upper, lower, preserve")
 	ErrInvalidCommaStyle  = errors.New("comma_style must be one of: trailing, leading")
 	ErrInvalidSQLMode     = errors.New("sql_mode must be one of: default, no_backslash_escapes")
+	ErrInvalidDialect     = errors.New("dialect must be one of: mysql, postgresql")
 )
 
 var knownFields = map[string]bool{
@@ -42,6 +46,7 @@ var knownFields = map[string]bool{
 	"keyword_case": true,
 	"comma_style":  true,
 	"sql_mode":     true,
+	"dialect":      true,
 }
 
 type Config struct {
@@ -52,6 +57,7 @@ type Config struct {
 	KeywordCase *string `toml:"keyword_case,omitempty" yaml:"keyword_case,omitempty"`
 	CommaStyle  *string `toml:"comma_style,omitempty"  yaml:"comma_style,omitempty"`
 	SQLMode     *string `toml:"sql_mode,omitempty"     yaml:"sql_mode,omitempty"`
+	Dialect     *string `toml:"dialect,omitempty"      yaml:"dialect,omitempty"`
 }
 
 var configFiles = []string{
@@ -123,6 +129,7 @@ func validate(cfg Config) error {
 		validateKeywordCase,
 		validateCommaStyle,
 		validateSQLMode,
+		validateDialect,
 	} {
 		if err := check(cfg); err != nil {
 			return err
@@ -184,6 +191,19 @@ func validateSQLMode(cfg Config) error {
 		return nil
 	default:
 		return fmt.Errorf("%w: %q", ErrInvalidSQLMode, *cfg.SQLMode)
+	}
+}
+
+func validateDialect(cfg Config) error {
+	if cfg.Dialect == nil {
+		return nil
+	}
+
+	switch *cfg.Dialect {
+	case DialectMySQL, DialectPostgreSQL:
+		return nil
+	default:
+		return fmt.Errorf("%w: %q", ErrInvalidDialect, *cfg.Dialect)
 	}
 }
 

@@ -311,6 +311,13 @@ func TestLoad_SQLMode(t *testing.T) {
 	assertValidatedStringField(t, "sql_mode", valid, get, config.ErrInvalidSQLMode)
 }
 
+func TestLoad_Dialect(t *testing.T) {
+	valid := []string{config.DialectMySQL, config.DialectPostgreSQL}
+	get := func(cfg config.Config) *string { return cfg.Dialect }
+
+	assertValidatedStringField(t, "dialect", valid, get, config.ErrInvalidDialect)
+}
+
 func TestLoad_UnknownField_WarnsButSucceeds(t *testing.T) {
 	dir := t.TempDir()
 	content := "version: 1\nindent: 4\nnot_a_real_field: true\n"

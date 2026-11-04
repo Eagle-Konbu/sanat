@@ -15,7 +15,7 @@ func TestRewriteFile_WithNewline(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	out, err := gofile.RewriteFile(fset, file, literals, gofile.Options{Indent: 2, Newline: true})
+	out, err := gofile.RewriteFile(fset, file, literals, &gofile.Options{Indent: 2, Newline: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,7 +46,7 @@ func TestRewriteFile_WithoutNewline(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	out, err := gofile.RewriteFile(fset, file, literals, gofile.Options{Indent: 2, Newline: false})
+	out, err := gofile.RewriteFile(fset, file, literals, &gofile.Options{Indent: 2, Newline: false})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +65,7 @@ func TestRewriteFile_DoubleQuotedSQLNotChanged(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	out, err := gofile.RewriteFile(fset, file, literals, gofile.Options{Indent: 2, Newline: true})
+	out, err := gofile.RewriteFile(fset, file, literals, &gofile.Options{Indent: 2, Newline: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,7 +85,7 @@ func TestRewriteFile_BacktickIdentifiersStripped(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	out, err := gofile.RewriteFile(fset, file, literals, gofile.Options{Indent: 2, Newline: true})
+	out, err := gofile.RewriteFile(fset, file, literals, &gofile.Options{Indent: 2, Newline: true})
 	if err != nil {
 		t.Fatal(err)
 	}

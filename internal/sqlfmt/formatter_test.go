@@ -1638,6 +1638,39 @@ func TestFormatSQLWithOptions_SQLMode(t *testing.T) {
 	}
 }
 
+// TestFormatSQLWithOptions_Dialect covers dialect selection: the empty
+// string and DialectMySQL both format normally (today's only implemented
+// dialect), DialectPostgreSQL fails explicitly rather than silently
+// formatting as MySQL (pgparser doesn't exist yet), and an unrecognized
+// dialect string also fails explicitly.
+func TestFormatSQLWithOptions_Dialect(t *testing.T) {
+	tests := []struct {
+		name    string
+		dialect string
+		wantOK  bool
+	}{
+		{name: "default (unset) formats as MySQL", dialect: "", wantOK: true},
+		{name: "DialectMySQL formats normally", dialect: sqlfmt.DialectMySQL, wantOK: true},
+		{name: "DialectPostgreSQL is not yet supported", dialect: sqlfmt.DialectPostgreSQL, wantOK: false},
+		{name: "unknown dialect is rejected", dialect: "sqlite", wantOK: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			in := "select 1 from t"
+
+			got, ok := sqlfmt.FormatSQLWithOptions(in, sqlfmt.Options{Indent: 2, Dialect: tt.dialect})
+			if ok != tt.wantOK {
+				t.Fatalf("ok = %v, want %v", ok, tt.wantOK)
+			}
+
+			if !tt.wantOK && got != in {
+				t.Errorf("on failure, got %q, want input unchanged %q", got, in)
+			}
+		})
+	}
+}
+
 func assertSQL(t *testing.T, got, want string) {
 	t.Helper()
 
