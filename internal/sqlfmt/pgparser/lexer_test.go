@@ -134,6 +134,25 @@ func TestLexer_Identifiers(t *testing.T) {
 	t.Run("unterminated quoted identifier", func(t *testing.T) {
 		assertLexError(t, `"users`)
 	})
+
+	t.Run("zero-length quoted identifier", func(t *testing.T) {
+		assertLexError(t, `""`)
+	})
+
+	t.Run("unquoted folds only ASCII letters", func(t *testing.T) {
+		assertTokens(t, "ÄRGER", []wantToken{
+			{pgparser.IDENT, "Ärger"},
+			{pgparser.EOF, ""},
+		})
+	})
+
+	t.Run("non-ASCII letters do not fold into keywords", func(t *testing.T) {
+		assertTokens(t, "ſelect ınner", []wantToken{
+			{pgparser.IDENT, "ſelect"},
+			{pgparser.IDENT, "ınner"},
+			{pgparser.EOF, ""},
+		})
+	})
 }
 
 func TestLexer_Strings(t *testing.T) {
@@ -219,13 +238,94 @@ func TestLexer_Strings(t *testing.T) {
 		assertLexError(t, `E'\x'`)
 	})
 
-	t.Run("escape string invalid unicode escape", func(t *testing.T) {
-		assertLexError(t, `E'\u12'`)
+	t.Run("escape string octal and hex escapes are raw bytes", func(t *testing.T) {
+		assertTokens(t, `E'\303\251\xc3\xa9'`, []wantToken{
+			{pgparser.STRING, "éé"},
+			{pgparser.EOF, ""},
+		})
 	})
+
+	t.Run("escape string unicode surrogate pair", func(t *testing.T) {
+		assertTokens(t, `E'\uD83D\uDE00\uD83D\U0000DE00'`, []wantToken{
+			{pgparser.STRING, "😀😀"},
+			{pgparser.EOF, ""},
+		})
+	})
+
+	t.Run("escape string max unicode code point", func(t *testing.T) {
+		assertTokens(t, `E'\U0010FFFF'`, []wantToken{
+			{pgparser.STRING, "\U0010FFFF"},
+			{pgparser.EOF, ""},
+		})
+	})
+
+	invalidUnicodeEscapes := []struct {
+		name string
+		in   string
+	}{
+		{"too few digits", `E'\u12'`},
+		{"beyond max code point", `E'\U00110000'`},
+		{"beyond int32", `E'\UFFFFFFFF'`},
+		{"lone low surrogate", `E'\uDE00'`},
+		{"high surrogate at end", `E'\uD83D'`},
+		{"high surrogate followed by text", `E'\uD83Dx'`},
+		{"high surrogate followed by non-surrogate", `E'\uD83D\u0041'`},
+	}
+
+	for _, tt := range invalidUnicodeEscapes {
+		t.Run("escape string invalid unicode escape, "+tt.name, func(t *testing.T) {
+			assertLexError(t, tt.in)
+		})
+	}
 
 	t.Run("escape string unterminated", func(t *testing.T) {
 		assertLexError(t, `E'abc`)
 	})
+}
+
+func TestLexer_StringContinuation(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want []wantToken
+	}{
+		{
+			name: "newline-separated strings are joined",
+			in:   "'foo'\n  'bar'",
+			want: []wantToken{{pgparser.STRING, "foobar"}, {pgparser.EOF, ""}},
+		},
+		{
+			name: "line comment before the newline still joins",
+			in:   "'foo' -- note\n'bar'",
+			want: []wantToken{{pgparser.STRING, "foobar"}, {pgparser.EOF, ""}},
+		},
+		{
+			name: "escape string continuation keeps escapes",
+			in:   "E'a\\n'\n'\\t'",
+			want: []wantToken{{pgparser.STRING, "a\n\t"}, {pgparser.EOF, ""}},
+		},
+		{
+			name: "same-line strings stay separate",
+			in:   "'foo' 'bar'",
+			want: []wantToken{{pgparser.STRING, "foo"}, {pgparser.STRING, "bar"}, {pgparser.EOF, ""}},
+		},
+		{
+			name: "block comment separates strings",
+			in:   "'foo' /* c */\n'bar'",
+			want: []wantToken{{pgparser.STRING, "foo"}, {pgparser.STRING, "bar"}, {pgparser.EOF, ""}},
+		},
+		{
+			name: "newline followed by a non-string token",
+			in:   "'foo'\nbar",
+			want: []wantToken{{pgparser.STRING, "foo"}, {pgparser.IDENT, "bar"}, {pgparser.EOF, ""}},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assertTokens(t, tt.in, tt.want)
+		})
+	}
 }
 
 func TestLexer_DollarQuotedStrings(t *testing.T) {
@@ -257,8 +357,20 @@ func TestLexer_DollarQuotedStrings(t *testing.T) {
 		})
 	})
 
+	t.Run("multibyte tag", func(t *testing.T) {
+		assertTokens(t, "$é$x$é$ y", []wantToken{
+			{pgparser.STRING, "x"},
+			{pgparser.IDENT, "y"},
+			{pgparser.EOF, ""},
+		})
+	})
+
 	t.Run("unterminated tag", func(t *testing.T) {
 		assertLexError(t, "$tag")
+	})
+
+	t.Run("tag with hyphen is rejected", func(t *testing.T) {
+		assertLexError(t, "$a-b$x$a-b$")
 	})
 
 	t.Run("unterminated body", func(t *testing.T) {
@@ -283,6 +395,8 @@ func TestLexer_Numbers(t *testing.T) {
 	}{
 		{"int", "123", pgparser.INT},
 		{"float", "123.45", pgparser.FLOAT},
+		{"trailing dot", "1.", pgparser.FLOAT},
+		{"trailing dot with exponent", "1.e5", pgparser.FLOAT},
 		{"leading dot", ".5", pgparser.FLOAT},
 		{"exponent", "1e10", pgparser.FLOAT},
 		{"exponent with sign", "1e-10", pgparser.FLOAT},
@@ -314,11 +428,19 @@ func TestLexer_Numbers(t *testing.T) {
 		})
 	})
 
-	t.Run("number followed by dot-qualified identifier", func(t *testing.T) {
+	t.Run("trailing-dot number followed by identifier", func(t *testing.T) {
 		assertTokens(t, "1.col", []wantToken{
+			{pgparser.FLOAT, "1."},
+			{pgparser.IDENT, "col"},
+			{pgparser.EOF, ""},
+		})
+	})
+
+	t.Run("double dot is not part of the number", func(t *testing.T) {
+		assertTokens(t, "1..2", []wantToken{
 			{pgparser.INT, "1"},
 			{pgparser.DOT, "."},
-			{pgparser.IDENT, "col"},
+			{pgparser.FLOAT, ".2"},
 			{pgparser.EOF, ""},
 		})
 	})
@@ -341,6 +463,7 @@ func TestLexer_Operators(t *testing.T) {
 		{"*", pgparser.STAR},
 		{"/", pgparser.SLASH},
 		{"%", pgparser.PERCENT},
+		{"||", pgparser.CONCAT},
 		{"::", pgparser.DoubleColon},
 		{"->", pgparser.Arrow},
 		{"->>", pgparser.ArrowText},
@@ -348,6 +471,8 @@ func TestLexer_Operators(t *testing.T) {
 		{"#>>", pgparser.HashArrowText},
 		{"@>", pgparser.Contains},
 		{"<@", pgparser.ContainedBy},
+		{"@?", pgparser.JSONPathExists},
+		{"@@", pgparser.JSONPathMatch},
 		{"?", pgparser.JSONExists},
 		{"?|", pgparser.JSONExistsAny},
 		{"?&", pgparser.JSONExistsAll},
@@ -380,6 +505,10 @@ func TestLexer_Operators(t *testing.T) {
 
 	t.Run("unexpected at", func(t *testing.T) {
 		assertLexError(t, "@a")
+	})
+
+	t.Run("unexpected pipe", func(t *testing.T) {
+		assertLexError(t, "|a")
 	})
 
 	t.Run("unexpected character", func(t *testing.T) {
@@ -415,6 +544,58 @@ func TestLexer_Comments(t *testing.T) {
 	t.Run("unterminated block comment", func(t *testing.T) {
 		assertLexError(t, "/* comment")
 	})
+
+	t.Run("form feed is whitespace", func(t *testing.T) {
+		assertTokens(t, "a\fb", []wantToken{
+			{pgparser.IDENT, "a"},
+			{pgparser.IDENT, "b"},
+			{pgparser.EOF, ""},
+		})
+	})
+}
+
+func TestLexer_Positions(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want []pgparser.Position
+	}{
+		{
+			name: "multibyte input counts byte offset and rune column",
+			in:   "'é' x",
+			want: []pgparser.Position{
+				{Offset: 0, Line: 1, Column: 1},
+				{Offset: 5, Line: 1, Column: 5},
+				{Offset: 6, Line: 1, Column: 6},
+			},
+		},
+		{
+			name: "newline advances line and resets column",
+			in:   "a\n  b",
+			want: []pgparser.Position{
+				{Offset: 0, Line: 1, Column: 1},
+				{Offset: 4, Line: 2, Column: 3},
+				{Offset: 5, Line: 2, Column: 4},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			l := pgparser.New(tt.in)
+
+			for i, want := range tt.want {
+				tok, err := l.Next()
+				if err != nil {
+					t.Fatalf("Next() error = %v", err)
+				}
+
+				if tok.Pos != want {
+					t.Errorf("token[%d] %v Pos = %+v, want %+v", i, tok.Type, tok.Pos, want)
+				}
+			}
+		})
+	}
 }
 
 func TestLexError_Error(t *testing.T) {

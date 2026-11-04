@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
+	"unicode/utf16"
 	"unicode/utf8"
 )
 
@@ -98,7 +99,7 @@ func (l *Lexer) readIdentifierOrEscapeString(pos Position) (Token, error) {
 
 	tt := lookupIdent(lit)
 	if tt == IDENT {
-		lit = strings.ToLower(lit)
+		lit = asciiLower(lit)
 	}
 
 	return Token{Type: tt, Literal: lit, Pos: pos}, nil
@@ -246,6 +247,10 @@ func (l *Lexer) readQuotedIdent(startPos Position) (string, error) {
 		case l.ch == '"':
 			l.readChar() // consume closing "
 
+			if sb.Len() == 0 {
+				return "", &LexError{Pos: startPos, Msg: "zero-length quoted identifier"}
+			}
+
 			return sb.String(), nil
 		default:
 			sb.WriteRune(l.ch)
@@ -258,6 +263,9 @@ func (l *Lexer) readQuotedIdent(startPos Position) (string, error) {
 // quote. Doubled-quote escaping (two consecutive ' characters) always
 // applies; escapes reads PostgreSQL's E'...' backslash escape sequences
 // (\n, \xHH, \uXXXX, octal, ...) in addition. l.ch must be the opening '.
+//
+// Adjacent string constants separated only by whitespace containing a newline
+// are joined into one, per PostgreSQL's string-continuation rule.
 func (l *Lexer) readString(startPos Position, escapes bool) (string, error) {
 	l.readChar() // consume opening '
 
@@ -274,7 +282,11 @@ func (l *Lexer) readString(startPos Position, escapes bool) (string, error) {
 		case l.ch == '\'':
 			l.readChar() // consume closing '
 
-			return sb.String(), nil
+			if !l.skipToStringContinuation() {
+				return sb.String(), nil
+			}
+
+			l.readChar() // consume the continuation's opening '
 		case l.ch == '\\' && escapes:
 			s, err := l.readEscapeSequence(startPos)
 			if err != nil {
@@ -285,6 +297,35 @@ func (l *Lexer) readString(startPos Position, escapes bool) (string, error) {
 		default:
 			sb.WriteRune(l.ch)
 			l.readChar()
+		}
+	}
+}
+
+// skipToStringContinuation advances to the opening quote of a continuation
+// string constant and reports true, or leaves the lexer unchanged and reports
+// false. Like PostgreSQL's scanner, only whitespace and "--" comments may
+// separate the two parts, and at least one newline is required; block
+// comments end the string.
+func (l *Lexer) skipToStringContinuation() bool {
+	saved := *l
+	sawNewline := false
+
+	for {
+		switch {
+		case l.ch == '\n' || l.ch == '\r':
+			sawNewline = true
+
+			l.readChar()
+		case isSpace(l.ch):
+			l.readChar()
+		case l.ch == '-' && l.peek() == '-':
+			l.skipLineComment()
+		case l.ch == '\'' && sawNewline:
+			return true
+		default:
+			*l = saved
+
+			return false
 		}
 	}
 }
@@ -341,9 +382,12 @@ func (l *Lexer) readOctalEscape() string {
 		l.readChar()
 	}
 
-	n, _ := strconv.ParseInt(l.input[start:l.pos], 8, 32)
+	n, _ := strconv.ParseUint(l.input[start:l.pos], 8, 16)
 
-	return string(rune(n))
+	// Octal and hex escapes denote raw bytes, not code points: E'\303\251'
+	// is the two-byte UTF-8 encoding of 'é'. Like PostgreSQL, values above
+	// \377 are truncated to their low byte.
+	return string([]byte{byte(n)})
 }
 
 func (l *Lexer) readHexEscape(stringStart Position) (string, error) {
@@ -363,12 +407,71 @@ func (l *Lexer) readHexEscape(stringStart Position) (string, error) {
 		return "", &LexError{Pos: stringStart, Msg: `invalid hex escape: expected at least one hex digit after \x`}
 	}
 
-	n, _ := strconv.ParseInt(l.input[start:l.pos], 16, 32)
+	n, _ := strconv.ParseUint(l.input[start:l.pos], 16, 8)
 
-	return string(rune(n)), nil
+	return string([]byte{byte(n)}), nil
 }
 
+// readUnicodeEscape decodes a \uXXXX or \UXXXXXXXX escape. A UTF-16 high
+// surrogate must be immediately followed by a low-surrogate escape, and the
+// pair is combined into one code point, as PostgreSQL does.
 func (l *Lexer) readUnicodeEscape(stringStart Position, digits int) (string, error) {
+	cp, err := l.readUnicodeCodePoint(stringStart, digits)
+	if err != nil {
+		return "", err
+	}
+
+	switch {
+	case isLowSurrogate(cp):
+		return "", &LexError{Pos: stringStart, Msg: "invalid unicode surrogate pair: unexpected low surrogate"}
+	case isHighSurrogate(cp):
+		low, err := l.readLowSurrogateEscape(stringStart)
+		if err != nil {
+			return "", err
+		}
+
+		cp = utf16.DecodeRune(cp, low)
+	}
+
+	return string(cp), nil
+}
+
+func (l *Lexer) readLowSurrogateEscape(stringStart Position) (rune, error) {
+	errMissing := &LexError{Pos: stringStart, Msg: "invalid unicode surrogate pair: expected low surrogate escape"}
+
+	if l.ch != '\\' {
+		return 0, errMissing
+	}
+
+	var digits int
+
+	switch l.peek() {
+	case 'u':
+		digits = 4
+	case 'U':
+		digits = 8
+	default:
+		return 0, errMissing
+	}
+
+	l.readChar() // consume backslash
+
+	low, err := l.readUnicodeCodePoint(stringStart, digits)
+	if err != nil {
+		return 0, err
+	}
+
+	if !isLowSurrogate(low) {
+		return 0, errMissing
+	}
+
+	return low, nil
+}
+
+// readUnicodeCodePoint reads the 'u'/'U' and exactly digits hex digits of a
+// unicode escape, rejecting values beyond U+10FFFF. Surrogates are left for
+// the caller to validate.
+func (l *Lexer) readUnicodeCodePoint(stringStart Position, digits int) (rune, error) {
 	l.readChar() // consume 'u'/'U'
 
 	start := l.pos
@@ -382,13 +485,20 @@ func (l *Lexer) readUnicodeEscape(stringStart Position, digits int) (string, err
 	}
 
 	if l.pos-start != digits {
-		return "", &LexError{Pos: stringStart, Msg: fmt.Sprintf("invalid unicode escape: expected %d hex digits", digits)}
+		return 0, &LexError{Pos: stringStart, Msg: fmt.Sprintf("invalid unicode escape: expected %d hex digits", digits)}
 	}
 
-	n, _ := strconv.ParseInt(l.input[start:l.pos], 16, 32)
+	n, err := strconv.ParseUint(l.input[start:l.pos], 16, 32)
+	if err != nil || n > unicode.MaxRune {
+		return 0, &LexError{Pos: stringStart, Msg: "invalid unicode escape value"}
+	}
 
-	return string(rune(n)), nil
+	return rune(n), nil
 }
+
+func isHighSurrogate(r rune) bool { return r >= 0xD800 && r <= 0xDBFF }
+
+func isLowSurrogate(r rune) bool { return r >= 0xDC00 && r <= 0xDFFF }
 
 // readDollarSigil reads whatever follows a '$': a positional placeholder
 // ($1, $2, ...) when a digit immediately follows, otherwise a dollar-quoted
@@ -418,12 +528,15 @@ func (l *Lexer) readDollarQuotedString(startPos Position) (string, error) {
 
 	tagStart := l.pos
 
-	for l.ch != '$' && l.ch != eof {
-		l.readChar()
+	// A tag follows unquoted-identifier rules, except '$' cannot appear in it.
+	if isIdentStart(l.ch) {
+		for isIdentPart(l.ch) && l.ch != '$' {
+			l.readChar()
+		}
 	}
 
-	if l.ch == eof {
-		return "", &LexError{Pos: startPos, Msg: "unterminated dollar-quoted string tag"}
+	if l.ch != '$' {
+		return "", &LexError{Pos: startPos, Msg: "invalid or unterminated dollar-quote tag"}
 	}
 
 	tag := l.input[tagStart:l.pos]
@@ -440,7 +553,7 @@ func (l *Lexer) readDollarQuotedString(startPos Position) (string, error) {
 		if l.ch == '$' && strings.HasPrefix(l.input[l.pos:], delimiter) {
 			content := l.input[contentStart:l.pos]
 
-			for range len(delimiter) {
+			for range utf8.RuneCountInString(delimiter) {
 				l.readChar()
 			}
 
@@ -482,11 +595,11 @@ func (l *Lexer) readDigits() {
 }
 
 // tryReadFraction reads a fractional part starting at a '.', if present.
-// The '.' must be followed by a digit: this is what disambiguates a
-// leading-dot literal like ".5" from a number immediately followed by a
-// DOT-qualified identifier, e.g. "123.col".
+// As in PostgreSQL, the digits after the '.' are optional ("1." is a valid
+// numeric, so "1.col" lexes as "1." followed by "col"), except that "1..2"
+// leaves ".." intact for the parser.
 func (l *Lexer) tryReadFraction() bool {
-	if l.ch != '.' || !isDigit(l.peek()) {
+	if l.ch != '.' || l.peek() == '.' {
 		return false
 	}
 
@@ -535,6 +648,8 @@ func (l *Lexer) readOperator(pos Position) (Token, error) {
 		return l.readHash(pos)
 	case '@':
 		return l.readAt(pos)
+	case '|':
+		return l.readPipe(pos)
 	case '?':
 		return l.readQuestion(pos), nil
 	case ':':
@@ -629,18 +744,41 @@ func (l *Lexer) readHash(pos Position) (Token, error) {
 	return Token{Type: HashArrow, Literal: "#>", Pos: pos}, nil
 }
 
+var atOperators = map[rune]TokenType{
+	'>': Contains,
+	'?': JSONPathExists,
+	'@': JSONPathMatch,
+}
+
 func (l *Lexer) readAt(pos Position) (Token, error) {
-	if l.peek() != '>' {
+	tt, ok := atOperators[l.peek()]
+	if !ok {
 		ch := l.ch
 		l.readChar()
 
 		return Token{}, &LexError{Pos: pos, Msg: fmt.Sprintf("unexpected character %q", ch)}
 	}
 
-	l.readChar() // consume '@'
-	l.readChar() // consume '>'
+	lit := "@" + string(l.peek())
 
-	return Token{Type: Contains, Literal: "@>", Pos: pos}, nil
+	l.readChar() // consume '@'
+	l.readChar() // consume the operator's second character
+
+	return Token{Type: tt, Literal: lit, Pos: pos}, nil
+}
+
+func (l *Lexer) readPipe(pos Position) (Token, error) {
+	if l.peek() != '|' {
+		ch := l.ch
+		l.readChar()
+
+		return Token{}, &LexError{Pos: pos, Msg: fmt.Sprintf("unexpected character %q", ch)}
+	}
+
+	l.readChar()
+	l.readChar()
+
+	return Token{Type: CONCAT, Literal: "||", Pos: pos}, nil
 }
 
 func (l *Lexer) readQuestion(pos Position) Token {
@@ -703,7 +841,7 @@ var singleCharTokens = map[rune]TokenType{
 }
 
 func isSpace(ch rune) bool {
-	return ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r'
+	return ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r' || ch == '\f'
 }
 
 func isDigit(ch rune) bool {
