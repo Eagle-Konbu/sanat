@@ -54,6 +54,7 @@
     "ARRAYAGG",
     "OBJECTAGG",
     "NOWAIT",
+    "ORDINALITY",
     "Ttbcdo",
     "manifoldco",
     "promptui",

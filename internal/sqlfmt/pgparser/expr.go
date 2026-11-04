@@ -411,7 +411,7 @@ func (p *Parser) parseTypeName() pgast.ColIdent {
 }
 
 func (p *Parser) readTypeIdent() string {
-	if p.tok.Type != IDENT && p.tok.Type != QuotedIdent {
+	if !isIdentToken(p.tok) {
 		return failReturn[string](p, "expected type name, got %s", p.tok.Type)
 	}
 
@@ -742,8 +742,7 @@ func (p *Parser) parseFuncCall(qualifier, name string) pgast.Expr {
 }
 
 // parseOverClause parses the window after OVER into f: either a bare window
-// name or a parenthesized window specification. Frame clauses (ROWS / RANGE
-// / GROUPS ...) are not supported yet.
+// name or a parenthesized window specification.
 func (p *Parser) parseOverClause(f *pgast.FuncExpr) {
 	if !p.consume(LPAREN) {
 		f.Over = &pgast.WindowSpec{Name: pgast.ColIdent(p.readIdent())}
@@ -752,63 +751,9 @@ func (p *Parser) parseOverClause(f *pgast.FuncExpr) {
 		return
 	}
 
-	spec := &pgast.WindowSpec{}
-
-	if p.at(IDENT) || p.at(QuotedIdent) {
-		spec.Name = pgast.ColIdent(p.readIdent())
-	}
-
-	if p.consume(PARTITION) {
-		p.expect(BY)
-		spec.PartitionBy = p.parseExprList()
-	}
-
-	if p.consume(ORDER) {
-		p.expect(BY)
-		spec.OrderBy = p.parseOrderByList()
-	}
+	f.Over = p.parseWindowSpecBody()
 
 	p.expect(RPAREN)
-
-	f.Over = spec
-}
-
-func (p *Parser) parseOrderByList() pgast.OrderBy {
-	var orders pgast.OrderBy
-
-	for {
-		orders = append(orders, p.parseOrder())
-
-		if !p.consume(COMMA) {
-			return orders
-		}
-	}
-}
-
-func (p *Parser) parseOrder() *pgast.Order {
-	order := &pgast.Order{Expr: p.parseExpr()}
-
-	if p.consume(DESC) {
-		order.Direction = pgast.DescOrder
-	} else {
-		p.consume(ASC)
-	}
-
-	if p.consume(NULLS) {
-		order.Nulls = p.parseNullsPosition()
-	}
-
-	return order
-}
-
-func (p *Parser) parseNullsPosition() pgast.NullsOrder {
-	if p.consume(FIRST) {
-		return pgast.NullsFirst
-	}
-
-	p.expect(LAST)
-
-	return pgast.NullsLast
 }
 
 // parseExprList parses a comma-separated list of expressions.

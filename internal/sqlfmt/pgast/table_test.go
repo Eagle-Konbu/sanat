@@ -112,6 +112,9 @@ func TestParenTableExpr_String(t *testing.T) {
 		&pgast.AliasedTableExpr{Expr: pgast.TableName{Name: "b"}},
 	}}
 	assertEqual(t, "(a, b)", p.String())
+
+	p.As = "j"
+	assertEqual(t, "(a, b) j", p.String())
 }
 
 func TestDerivedTable_String(t *testing.T) {

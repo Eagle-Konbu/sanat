@@ -19,7 +19,7 @@ type Select struct {
 	Limit       *Limit
 	Offset      *Offset
 	Fetch       *Fetch
-	Lock        *Lock
+	Locks       []*Lock
 }
 
 // String returns Select's SQL text.
@@ -48,7 +48,10 @@ func (s *Select) String() string {
 	writeSuffix(&b, s.Limit)
 	writeSuffix(&b, s.Offset)
 	writeSuffix(&b, s.Fetch)
-	writeSuffix(&b, s.Lock)
+
+	for _, lock := range s.Locks {
+		writeSuffix(&b, lock)
+	}
 
 	return b.String()
 }
