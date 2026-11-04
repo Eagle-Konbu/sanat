@@ -1,0 +1,18 @@
+package basic
+
+var unformatted = `select id from users` // want "SQL literal is not formatted"
+
+var formatted = `
+SELECT
+  id
+FROM
+  users
+`
+
+var notSQL = `hello world`
+
+var formatVerb = `select id from %s`
+
+var invalidSQL = `select id from users where (`
+
+var doubleQuoted = "select id from users"

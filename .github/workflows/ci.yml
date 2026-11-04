@@ -18,7 +18,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
       with:
-        go-version: '1.25'
+        go-version-file: "go.mod"
 
     - name: Download dependencies
       run: go mod download
@@ -32,9 +32,6 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        go-version: ['1.23', '1.24', '1.25']
 
     steps:
     - name: Checkout code
@@ -43,7 +40,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
       with:
-        go-version: ${{ matrix.go-version }}
+        go-version-file: "go.mod"
 
     - name: Download dependencies
       run: go mod download
@@ -66,7 +63,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
       with:
-        go-version: '1.25'
+        go-version-file: "go.mod"
 
     - name: Setup Bats
       uses: bats-core/bats-action@77d6fb60505b4d0d1d73e48bd035b55074bbfb43 # 4.0.0
@@ -75,6 +72,34 @@ jobs:
 
     - name: Run e2e tests
       run: bats e2e/
+
+  golangci-plugin:
+    name: golangci-lint Plugin
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      with:
+        persist-credentials: false
+
+    - name: Set up Go
+      uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+      with:
+        go-version-file: "go.mod"
+
+    - name: Install golangci-lint
+      run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0
+
+    - name: Setup Bats
+      uses: bats-core/bats-action@77d6fb60505b4d0d1d73e48bd035b55074bbfb43 # 4.0.0
+      with:
+        bats-version: '1.14.0'
+
+    - name: Run golangci-lint plugin smoke tests
+      run: bats e2e/golangci/
 
   coverage:
     name: Coverage
@@ -87,7 +112,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
       with:
-        go-version: '1.25'
+        go-version-file: "go.mod"
 
     - name: Download dependencies
       run: go mod download
@@ -111,7 +136,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
       with:
-        go-version: '1.25'
+        go-version-file: "go.mod"
 
     - name: Run golangci-lint
       uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0

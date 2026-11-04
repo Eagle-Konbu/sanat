@@ -1,0 +1,9 @@
+# Builds a custom golangci-lint binary with the sanat plugin taken from this
+# checkout. `path` is resolved against the directory `golangci-lint custom`
+# runs from, which is this directory.
+version: v2.15.0
+name: custom-gcl
+plugins:
+  - module: github.com/Eagle-Konbu/sanat
+    import: github.com/Eagle-Konbu/sanat/plugin
+    path: ../../..

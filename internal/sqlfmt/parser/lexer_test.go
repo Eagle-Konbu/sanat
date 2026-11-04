@@ -157,8 +157,7 @@ func TestLexer_AtVariable(t *testing.T) {
 
 		_, err := l.Next()
 
-		var lexErr *parser.LexError
-		if !errors.As(err, &lexErr) {
+		if _, ok := errors.AsType[*parser.LexError](err); !ok {
 			t.Fatalf("Next() error = %v, want *parser.LexError", err)
 		}
 	})
@@ -168,8 +167,7 @@ func TestLexer_AtVariable(t *testing.T) {
 
 		_, err := l.Next()
 
-		var lexErr *parser.LexError
-		if !errors.As(err, &lexErr) {
+		if _, ok := errors.AsType[*parser.LexError](err); !ok {
 			t.Fatalf("Next() error = %v, want *parser.LexError", err)
 		}
 	})
@@ -179,8 +177,7 @@ func TestLexer_AtVariable(t *testing.T) {
 
 		_, err := l.Next()
 
-		var lexErr *parser.LexError
-		if !errors.As(err, &lexErr) {
+		if _, ok := errors.AsType[*parser.LexError](err); !ok {
 			t.Fatalf("Next() error = %v, want *parser.LexError", err)
 		}
 	})
@@ -647,8 +644,7 @@ func TestLexer_IllegalCharacter(t *testing.T) {
 		t.Fatal("expected error for illegal character")
 	}
 
-	var lexErr *parser.LexError
-	if !errors.As(err, &lexErr) {
+	if _, ok := errors.AsType[*parser.LexError](err); !ok {
 		t.Fatalf("Next() error type = %T, want *parser.LexError", err)
 	}
 }

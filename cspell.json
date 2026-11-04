@@ -8,6 +8,8 @@
     "Eagle-Konbu",
     "goreg",
     "goreleaser",
+    "incpatch",
+    "xattr",
     "golangci",
     "Vitess",
     "vitess",
@@ -17,6 +19,7 @@
     "mise",
     "magicdrive",
     "devcontainer",
+    "devel",
     "sqlfmt",
     "sqla",
     "pgparser",
@@ -109,7 +112,11 @@
     "ÄRGER",
     "Ärger",
     "ſelect",
-    "ınner"
+    "ınner",
+    "analysistest",
+    "sqlc",
+    "pflag",
+    "pkgs"
   ],
   "ignorePaths": [
     ".git",
