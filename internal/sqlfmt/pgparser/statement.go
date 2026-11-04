@@ -6,7 +6,7 @@ import "github.com/Eagle-Konbu/sanat/internal/sqlfmt/pgast"
 // subquery, EXISTS (...), or [NOT] IN (...) predicate.
 //
 // This is a deliberately minimal SELECT subset — just enough for expr.go's
-// subquery contexts to be parseable and testable on their own — because the
+// subquery contexts to parse and be tested on their own — because the
 // full SELECT grammar (joins, DISTINCT ON, GROUP BY, window clauses, ...) is
 // issue #81's scope, not this one. #81 replaces parseSelectStatement below
 // with the complete grammar; this file (and this function split) goes away

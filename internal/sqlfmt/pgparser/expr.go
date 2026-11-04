@@ -108,7 +108,8 @@ func (p *Parser) readTruthValue() pgast.TruthValue {
 		return pgast.TruthUnknown
 	}
 
-	return failReturn[pgast.TruthValue](p, "expected NULL, TRUE, FALSE, UNKNOWN, or DISTINCT FROM after IS, got %s", p.tok.Type)
+	return failReturn[pgast.TruthValue](p,
+		"expected NULL, TRUE, FALSE, UNKNOWN, or DISTINCT FROM after IS, got %s", p.tok.Type)
 }
 
 var simpleComparisonOps = map[TokenType]pgast.ComparisonOperator{
