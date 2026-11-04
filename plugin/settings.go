@@ -32,33 +32,26 @@ func (s Settings) Options() (gofile.Options, error) {
 		return gofile.Options{}, err
 	}
 
-	defaults := config.Config{
-		Indent:      ptr(config.DefaultIndent),
-		Newline:     ptr(config.DefaultNewline),
-		KeywordCase: ptr(config.DefaultKeywordCase),
-		CommaStyle:  ptr(config.DefaultCommaStyle),
-		SQLMode:     ptr(config.DefaultSQLMode),
+	opts := gofile.Options{
+		Indent:      firstSet(s.Indent, fileCfg.Indent, config.DefaultIndent),
+		Newline:     firstSet(s.Newline, fileCfg.Newline, config.DefaultNewline),
+		KeywordCase: firstSet(s.KeywordCase, fileCfg.KeywordCase, config.DefaultKeywordCase),
+		CommaStyle:  firstSet(s.CommaStyle, fileCfg.CommaStyle, config.DefaultCommaStyle),
+		SQLMode:     firstSet(s.SQLMode, fileCfg.SQLMode, config.DefaultSQLMode),
 	}
 
-	merged := config.Config{
-		Indent:      firstSet(s.Indent, fileCfg.Indent, defaults.Indent),
-		Newline:     firstSet(s.Newline, fileCfg.Newline, defaults.Newline),
-		KeywordCase: firstSet(s.KeywordCase, fileCfg.KeywordCase, defaults.KeywordCase),
-		CommaStyle:  firstSet(s.CommaStyle, fileCfg.CommaStyle, defaults.CommaStyle),
-		SQLMode:     firstSet(s.SQLMode, fileCfg.SQLMode, defaults.SQLMode),
+	resolved := config.Config{
+		Indent:      &opts.Indent,
+		Newline:     &opts.Newline,
+		KeywordCase: &opts.KeywordCase,
+		CommaStyle:  &opts.CommaStyle,
+		SQLMode:     &opts.SQLMode,
 	}
-
-	if err := config.Validate(merged); err != nil {
+	if err := config.Validate(resolved); err != nil {
 		return gofile.Options{}, fmt.Errorf("sanat: invalid settings: %w", err)
 	}
 
-	return gofile.Options{
-		Indent:      *merged.Indent,
-		Newline:     *merged.Newline,
-		KeywordCase: *merged.KeywordCase,
-		CommaStyle:  *merged.CommaStyle,
-		SQLMode:     *merged.SQLMode,
-	}, nil
+	return opts, nil
 }
 
 // loadConfigFile reads the config file only when one is referenced
@@ -77,16 +70,14 @@ func (s Settings) loadConfigFile() (config.Config, error) {
 	return cfg, nil
 }
 
-func firstSet[T any](values ...*T) *T {
-	for _, v := range values {
-		if v != nil {
-			return v
-		}
+func firstSet[T any](explicit, fromFile *T, fallback T) T {
+	if explicit != nil {
+		return *explicit
 	}
 
-	return nil
-}
+	if fromFile != nil {
+		return *fromFile
+	}
 
-func ptr[T any](v T) *T {
-	return &v
+	return fallback
 }
