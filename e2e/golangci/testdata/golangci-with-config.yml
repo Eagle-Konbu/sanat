@@ -1,0 +1,14 @@
+version: "2"
+
+linters:
+  default: none
+  enable:
+    - sanat
+  settings:
+    custom:
+      sanat:
+        type: module
+        description: Reports SQL raw string literals that are not formatted by sanat.
+        settings:
+          # Relative to the directory golangci-lint runs from.
+          config: sanat-leading.yml

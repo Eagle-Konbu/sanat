@@ -29,6 +29,15 @@ const (
 	DialectPostgreSQL = "postgresql"
 )
 
+// Defaults applied when neither a flag, a setting, nor a config file sets a value.
+const (
+	DefaultIndent      = 2
+	DefaultNewline     = true
+	DefaultKeywordCase = KeywordCaseUpper
+	DefaultCommaStyle  = CommaStyleTrailing
+	DefaultSQLMode     = SQLModeDefault
+)
+
 var (
 	ErrUnsupportedVersion = errors.New("unsupported config version")
 	ErrInvalidIndent      = errors.New("indent must be a positive integer")
@@ -113,7 +122,7 @@ func decode(name string, data []byte) (Config, error) {
 		}
 	}
 
-	if err := validate(cfg); err != nil {
+	if err := Validate(cfg); err != nil {
 		return Config{}, err
 	}
 
@@ -122,7 +131,8 @@ func decode(name string, data []byte) (Config, error) {
 	return cfg, nil
 }
 
-func validate(cfg Config) error {
+// Validate reports the first invalid value set in cfg. Unset fields are valid.
+func Validate(cfg Config) error {
 	for _, check := range []func(Config) error{
 		validateVersion,
 		validateIndent,

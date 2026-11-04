@@ -20,6 +20,11 @@ tasks:
     cmds:
       - bats e2e/
 
+  e2e:golangci:
+    desc: Build a custom golangci-lint with the sanat plugin and run its smoke tests
+    cmds:
+      - bats e2e/golangci/
+
   lint:
     desc: Run linter (golangci-lint)
     cmds:
