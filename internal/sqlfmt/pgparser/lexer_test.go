@@ -57,8 +57,7 @@ func assertLexError(t *testing.T, input string) {
 	for {
 		tok, err := l.Next()
 		if err != nil {
-			var lexErr *pgparser.LexError
-			if !errors.As(err, &lexErr) {
+			if _, ok := errors.AsType[*pgparser.LexError](err); !ok {
 				t.Fatalf("error type = %T, want *pgparser.LexError", err)
 			}
 
