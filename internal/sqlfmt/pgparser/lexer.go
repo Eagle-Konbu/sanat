@@ -856,6 +856,7 @@ var singleCharTokens = map[rune]TokenType{
 	'*': STAR,
 	'/': SLASH,
 	'%': PERCENT,
+	'^': CARET,
 	'(': LPAREN,
 	')': RPAREN,
 	'[': LBRACKET,

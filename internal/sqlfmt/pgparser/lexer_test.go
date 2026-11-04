@@ -464,6 +464,7 @@ func TestLexer_Operators(t *testing.T) {
 		{"/", pgparser.SLASH},
 		{"%", pgparser.PERCENT},
 		{"||", pgparser.CONCAT},
+		{"^", pgparser.CARET},
 		{"::", pgparser.DoubleColon},
 		{"->", pgparser.Arrow},
 		{"->>", pgparser.ArrowText},
@@ -512,7 +513,7 @@ func TestLexer_Operators(t *testing.T) {
 	})
 
 	t.Run("unexpected character", func(t *testing.T) {
-		assertLexError(t, "^")
+		assertLexError(t, "~")
 	})
 }
 

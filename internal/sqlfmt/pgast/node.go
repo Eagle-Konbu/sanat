@@ -50,12 +50,11 @@ type InsertRows interface {
 
 // ColIdent represents a column identifier.
 //
-// Unlike sqlast.ColIdent (backtick-quoted in MySQL), PostgreSQL quotes
-// identifiers with double quotes and folds unquoted identifiers to lower
-// case. Neither concern is modeled here: like sqlast.ColIdent, this stores
-// the identifier's resolved name and renders it unquoted — pgparser is
-// responsible for resolving quoting/case-folding into that name, the same
-// division of responsibility sqlast/parser already uses.
+// PostgreSQL folds unquoted identifiers to lower case but keeps a
+// double-quoted identifier's case, so "Users" and users name different
+// objects. ColIdent (and TableIdent) therefore store the identifier as SQL
+// text: pgparser keeps a quoted identifier's surrounding double quotes (with
+// embedded quotes doubled), and String renders the value as-is.
 type ColIdent string
 
 // String returns ColIdent's SQL text.
