@@ -275,18 +275,10 @@ func (l *Lexer) readString(startPos Position, escapes bool) (string, error) {
 		switch {
 		case l.ch == eof:
 			return "", &LexError{Pos: startPos, Msg: unterminatedStringMsg}
-		case l.ch == '\'' && l.peek() == '\'':
-			sb.WriteRune('\'')
-			l.readChar()
-			l.readChar()
 		case l.ch == '\'':
-			l.readChar() // consume closing '
-
-			if !l.skipToStringContinuation() {
+			if l.readQuoteInString(&sb) {
 				return sb.String(), nil
 			}
-
-			l.readChar() // consume the continuation's opening '
 		case l.ch == '\\' && escapes:
 			s, err := l.readEscapeSequence(startPos)
 			if err != nil {
@@ -299,6 +291,29 @@ func (l *Lexer) readString(startPos Position, escapes bool) (string, error) {
 			l.readChar()
 		}
 	}
+}
+
+// readQuoteInString consumes a ' inside a string body and reports whether it
+// ended the string: a doubled quote writes a literal ' to sb, and a closing
+// quote followed by a continuation string resumes at the continuation's body.
+func (l *Lexer) readQuoteInString(sb *strings.Builder) bool {
+	if l.peek() == '\'' {
+		sb.WriteRune('\'')
+		l.readChar()
+		l.readChar()
+
+		return false
+	}
+
+	l.readChar() // consume closing '
+
+	if !l.skipToStringContinuation() {
+		return true
+	}
+
+	l.readChar() // consume the continuation's opening '
+
+	return false
 }
 
 // skipToStringContinuation advances to the opening quote of a continuation
@@ -387,7 +402,7 @@ func (l *Lexer) readOctalEscape() string {
 	// Octal and hex escapes denote raw bytes, not code points: E'\303\251'
 	// is the two-byte UTF-8 encoding of 'é'. Like PostgreSQL, values above
 	// \377 are truncated to their low byte.
-	return string([]byte{byte(n)})
+	return string([]byte{byte(n & 0xFF)}) //nolint:gosec // masked to the low byte
 }
 
 func (l *Lexer) readHexEscape(stringStart Position) (string, error) {
@@ -644,16 +659,26 @@ func (l *Lexer) readOperator(pos Position) (Token, error) {
 		return l.readBang(pos)
 	case '-':
 		return l.readMinusOrArrow(pos), nil
+	case '|':
+		return l.readPipe(pos)
+	case ':':
+		return l.readColon(pos), nil
+	default:
+		return l.readJSONOperator(pos)
+	}
+}
+
+// readJSONOperator reads the jsonb operators starting with '#', '@' or '?',
+// falling back to single-character tokens. It is split from readOperator to
+// keep that function's cyclomatic complexity down.
+func (l *Lexer) readJSONOperator(pos Position) (Token, error) {
+	switch l.ch {
 	case '#':
 		return l.readHash(pos)
 	case '@':
 		return l.readAt(pos)
-	case '|':
-		return l.readPipe(pos)
 	case '?':
 		return l.readQuestion(pos), nil
-	case ':':
-		return l.readColon(pos), nil
 	default:
 		return l.readSingleCharToken(pos)
 	}

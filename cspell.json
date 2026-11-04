@@ -101,7 +101,14 @@
     "prealloc",
     "unparam",
     "varnamelen",
-    "wrapcheck"
+    "wrapcheck",
+    "multibyte",
+    "UXXXXXXXX",
+    "UFFFFFFFF",
+    "ÄRGER",
+    "Ärger",
+    "ſelect",
+    "ınner"
   ],
   "ignorePaths": [
     ".git",
