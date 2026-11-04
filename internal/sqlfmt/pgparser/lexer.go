@@ -298,7 +298,7 @@ func (l *Lexer) readString(startPos Position, escapes bool) (string, error) {
 // quote followed by a continuation string resumes at the continuation's body.
 func (l *Lexer) readQuoteInString(sb *strings.Builder) bool {
 	if l.peek() == '\'' {
-		sb.WriteRune('\'')
+		sb.WriteByte('\'')
 		l.readChar()
 		l.readChar()
 
@@ -402,7 +402,7 @@ func (l *Lexer) readOctalEscape() string {
 	// Octal and hex escapes denote raw bytes, not code points: E'\303\251'
 	// is the two-byte UTF-8 encoding of 'é'. Like PostgreSQL, values above
 	// \377 are truncated to their low byte.
-	return string([]byte{byte(n & 0xFF)}) //nolint:gosec // masked to the low byte
+	return string([]byte{byte(n & 0xFF)})
 }
 
 func (l *Lexer) readHexEscape(stringStart Position) (string, error) {
