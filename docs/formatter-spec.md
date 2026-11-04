@@ -862,7 +862,7 @@ sanat [flags] [pattern ...]
 | `--keyword-case` | | `upper` | Casing for operator/predicate keywords (`upper`, `lower`, `preserve`) |
 | `--comma-style` | | `trailing` | Comma placement in lists (`trailing`, `leading`) |
 | `--sql-mode` | | `default` | SQL mode controlling string-literal parsing and rendering (`default`, `no_backslash_escapes`) |
-| `--dialect` | | `mysql` | SQL dialect to parse (`mysql`, `postgresql`) |
+| `--dialect` | | `mysql` | SQL dialect to parse (`mysql`, `postgresql`). `postgresql` is not yet supported and fails formatting explicitly. |
 | `--config` | `-c` | | Configuration file path |
 
 ### Input Methods
