@@ -207,8 +207,7 @@ func TestParseUnion_errorType(t *testing.T) {
 		t.Fatal("ParseUnion(\"SELECT 1\") expected error, got nil")
 	}
 
-	var parseErr *parser.ParseError
-	if !errors.As(err, &parseErr) {
+	if _, ok := errors.AsType[*parser.ParseError](err); !ok {
 		t.Errorf("ParseUnion(\"SELECT 1\") error type = %T, want *parser.ParseError", err)
 	}
 }
@@ -224,8 +223,7 @@ func TestParseUnion_lexErrorType(t *testing.T) {
 		t.Fatalf("ParseUnion(%q) expected error, got nil", in)
 	}
 
-	var lexErr *parser.LexError
-	if !errors.As(err, &lexErr) {
+	if _, ok := errors.AsType[*parser.LexError](err); !ok {
 		t.Errorf("ParseUnion(%q) error type = %T, want *parser.LexError", in, err)
 	}
 }

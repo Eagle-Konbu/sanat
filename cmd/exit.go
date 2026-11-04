@@ -30,8 +30,7 @@ func ExitCode(err error) int {
 		return 0
 	}
 
-	var exitErr *exitError
-	if errors.As(err, &exitErr) {
+	if exitErr, ok := errors.AsType[*exitError](err); ok {
 		return exitErr.code
 	}
 

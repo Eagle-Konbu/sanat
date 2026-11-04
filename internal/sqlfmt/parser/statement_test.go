@@ -148,8 +148,7 @@ func TestParseStatement_errorType(t *testing.T) {
 		t.Fatal("ParseStatement(...) expected error, got nil")
 	}
 
-	var parseErr *parser.ParseError
-	if !errors.As(err, &parseErr) {
+	if _, ok := errors.AsType[*parser.ParseError](err); !ok {
 		t.Errorf("ParseStatement(...) error type = %T, want *parser.ParseError", err)
 	}
 }

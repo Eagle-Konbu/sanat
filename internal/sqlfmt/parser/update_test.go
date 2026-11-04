@@ -181,8 +181,7 @@ func TestParseUpdate_errorType(t *testing.T) {
 		t.Fatal("ParseUpdate expected error, got nil")
 	}
 
-	var parseErr *parser.ParseError
-	if !errors.As(err, &parseErr) {
+	if _, ok := errors.AsType[*parser.ParseError](err); !ok {
 		t.Errorf("ParseUpdate error type = %T, want *parser.ParseError", err)
 	}
 }
