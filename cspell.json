@@ -102,7 +102,9 @@
     "analysistest",
     "sqlc",
     "pflag",
-    "pkgs"
+    "pkgs",
+    "codeatlas",
+    "worktrees"
   ],
   "ignorePaths": [
     ".git",

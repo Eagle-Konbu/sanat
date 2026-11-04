@@ -15,7 +15,7 @@ Answer the given question about the existing code in the sanat repository. Do no
 3. Use Read and Grep to confirm what codeatlas found, and to read files codeatlas does not cover (README, docs, config files, YAML, testdata, etc.)
 4. Do not fill gaps with guesses. Mark anything you could not confirm as "Unverified"
 
-You cannot talk to the caller mid-task, so keep investigating until the question is answered and do not stop to ask for confirmation. When done, return without adding unrequested investigation or suggestions.
+You cannot talk to the caller mid-task, so keep investigating until the question is answered and do not stop to ask for confirmation. When done, return without adding investigation or suggestions that were not requested.
 
 ## Drift between the index and the actual code
 
