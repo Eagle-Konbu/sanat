@@ -212,6 +212,29 @@ func TestSetOp_String(t *testing.T) {
 			"SELECT * FROM t UNION (SELECT * FROM t UNION SELECT * FROM t)",
 		},
 		{
+			"nested left operand parenthesized",
+			&pgast.SetOp{
+				Left:  &pgast.SetOp{Left: selectStar(), Right: selectStar(), Op: pgast.Union},
+				Op:    pgast.Intersect,
+				Right: selectStar(),
+			},
+			"(SELECT * FROM t UNION SELECT * FROM t) INTERSECT SELECT * FROM t",
+		},
+		{
+			"select operands with local limit parenthesized",
+			func() *pgast.SetOp {
+				left := selectStar()
+				left.OrderBy = pgast.OrderBy{{Expr: col("id")}}
+				left.Limit = &pgast.Limit{Count: lit("1")}
+
+				right := selectStar()
+				right.Limit = &pgast.Limit{Count: lit("2")}
+
+				return &pgast.SetOp{Left: left, Right: right, Op: pgast.Union}
+			}(),
+			"(SELECT * FROM t ORDER BY id LIMIT 1) UNION (SELECT * FROM t LIMIT 2)",
+		},
+		{
 			"with clauses",
 			&pgast.SetOp{
 				With:    &pgast.With{Recursive: true, CTEs: []*pgast.CommonTableExpr{{Name: "cte", Subquery: selectStar()}}},
@@ -324,6 +347,11 @@ func TestMergeWhen_String(t *testing.T) {
 			"not matched by source",
 			&pgast.MergeWhen{BySource: true, DoNothing: true},
 			"WHEN NOT MATCHED BY SOURCE THEN DO NOTHING",
+		},
+		{
+			"not matched by source update",
+			&pgast.MergeWhen{BySource: true, Set: []*pgast.UpdateExpr{{Name: col("x"), Expr: lit("1")}}},
+			"WHEN NOT MATCHED BY SOURCE THEN UPDATE SET x = 1",
 		},
 		{
 			"not matched insert no columns",

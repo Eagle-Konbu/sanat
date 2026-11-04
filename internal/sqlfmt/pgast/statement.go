@@ -234,7 +234,7 @@ func (u *SetOp) String() string {
 
 	writeOptionalPrefix(&b, u.With)
 
-	b.WriteString(u.Left.String())
+	writeSetOpOperand(&b, u.Left)
 	b.WriteString(" ")
 	b.WriteString(u.Op.String())
 
@@ -252,21 +252,31 @@ func (u *SetOp) String() string {
 	return b.String()
 }
 
-// writeSetOpOperand writes stmt as a SetOp's right-hand operand, wrapping it
-// in parentheses if it is itself a *SetOp: without them, a nested SetOp's
-// own ORDER BY/LIMIT clause would render as if it scoped the whole outer
-// SetOp rather than just that operand.
+// writeSetOpOperand writes stmt as a SetOp operand, wrapping it in
+// parentheses when needed: a nested SetOp must be grouped to keep its
+// precedence relative to the outer operator, and any operand's own ORDER BY/
+// LIMIT/OFFSET/FETCH would otherwise render as if it scoped the whole SetOp.
 func writeSetOpOperand(b *strings.Builder, stmt Statement) {
-	nested, ok := stmt.(*SetOp)
-	if !ok {
+	if !needsSetOpParens(stmt) {
 		b.WriteString(stmt.String())
 
 		return
 	}
 
 	b.WriteByte('(')
-	b.WriteString(nested.String())
+	b.WriteString(stmt.String())
 	b.WriteByte(')')
+}
+
+func needsSetOpParens(stmt Statement) bool {
+	switch s := stmt.(type) {
+	case *SetOp:
+		return true
+	case *Select:
+		return len(s.OrderBy) > 0 || s.Limit != nil || s.Offset != nil || s.Fetch != nil
+	default:
+		return false
+	}
 }
 
 // With represents a WITH [RECURSIVE] clause.
@@ -352,7 +362,7 @@ type MergeWhen struct {
 	Condition Expr
 	DoNothing bool
 	Delete    bool
-	Set       []*UpdateExpr // WHEN MATCHED ... THEN UPDATE SET ...
+	Set       []*UpdateExpr // WHEN MATCHED / NOT MATCHED BY SOURCE ... THEN UPDATE SET ...
 	Columns   Columns       // WHEN NOT MATCHED ... THEN INSERT (columns...)
 	Values    []Expr        // ... VALUES (...)
 }
@@ -383,7 +393,7 @@ func (w *MergeWhen) String() string {
 		b.WriteString("DO NOTHING")
 	case w.Delete:
 		b.WriteString("DELETE")
-	case w.Matched:
+	case w.Matched || w.BySource || len(w.Set) > 0:
 		sets := make([]string, len(w.Set))
 		for i, s := range w.Set {
 			sets[i] = s.String()

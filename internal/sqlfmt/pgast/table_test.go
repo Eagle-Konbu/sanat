@@ -151,4 +151,9 @@ func TestStarExpr_String(t *testing.T) {
 		s := &pgast.StarExpr{TableName: pgast.TableName{Name: "users"}}
 		assertEqual(t, "users.*", s.String())
 	})
+
+	t.Run("schema qualified", func(t *testing.T) {
+		s := &pgast.StarExpr{TableName: pgast.TableName{Qualifier: "public", Name: "users"}}
+		assertEqual(t, "public.users.*", s.String())
+	})
 }

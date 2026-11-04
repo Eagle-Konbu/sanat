@@ -151,5 +151,5 @@ func (s *StarExpr) String() string {
 		return "*"
 	}
 
-	return s.TableName.Name.String() + ".*"
+	return s.TableName.String() + ".*"
 }

@@ -320,8 +320,10 @@ func TestArraySubscriptExpr_String(t *testing.T) {
 		want string
 	}{
 		{"subscript", &pgast.ArraySubscriptExpr{Expr: col("a"), From: lit("1")}, "a[1]"},
-		{"slice", &pgast.ArraySubscriptExpr{Expr: col("a"), From: lit("1"), To: lit("3")}, "a[1:3]"},
-		{"open slice", &pgast.ArraySubscriptExpr{Expr: col("a"), To: lit("3")}, "a[:3]"},
+		{"slice", &pgast.ArraySubscriptExpr{Expr: col("a"), From: lit("1"), To: lit("3"), Slice: true}, "a[1:3]"},
+		{"open lower slice", &pgast.ArraySubscriptExpr{Expr: col("a"), To: lit("3"), Slice: true}, "a[:3]"},
+		{"open upper slice", &pgast.ArraySubscriptExpr{Expr: col("a"), From: lit("1"), Slice: true}, "a[1:]"},
+		{"full slice", &pgast.ArraySubscriptExpr{Expr: col("a"), Slice: true}, "a[:]"},
 	}
 
 	for _, tt := range tests {

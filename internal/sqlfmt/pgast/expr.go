@@ -415,11 +415,13 @@ func (a *ArrayExpr) String() string {
 }
 
 // ArraySubscriptExpr represents array subscripting (a[1]) or slicing (a[1:3]).
-// To is nil for a plain subscript.
+// Slice is set for the slice form, where either bound may be omitted (a[1:],
+// a[:3], a[:]); From and To are nil for omitted bounds.
 type ArraySubscriptExpr struct {
-	Expr Expr
-	From Expr
-	To   Expr
+	Expr  Expr
+	From  Expr
+	To    Expr
+	Slice bool
 }
 
 // String returns ArraySubscriptExpr's SQL text.
@@ -433,8 +435,11 @@ func (a *ArraySubscriptExpr) String() string {
 		b.WriteString(a.From.String())
 	}
 
-	if a.To != nil {
+	if a.Slice {
 		b.WriteString(":")
+	}
+
+	if a.To != nil {
 		b.WriteString(a.To.String())
 	}
 
