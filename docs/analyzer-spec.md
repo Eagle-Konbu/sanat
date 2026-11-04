@@ -58,7 +58,7 @@ The `plugin` package (`github.com/Eagle-Konbu/sanat/plugin`) registers the analy
 
 ### Settings Resolution
 
-`linters.settings.custom.sanat.settings` is decoded with `register.DecodeSettings`, which rejects unknown keys and mistyped values. The keys are `indent`, `newline`, `keyword-case`, `comma-style`, `sql-mode`, and `config`.
+`linters.settings.custom.sanat.settings` is decoded with `register.DecodeSettings`, which rejects unknown keys and mistyped values. The keys are `indent`, `newline`, `keyword-case`, `comma-style`, `sql-mode`, `dialect`, and `config`.
 
 ```mermaid
 flowchart TD

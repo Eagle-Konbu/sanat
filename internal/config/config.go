@@ -36,6 +36,7 @@ const (
 	DefaultKeywordCase = KeywordCaseUpper
 	DefaultCommaStyle  = CommaStyleTrailing
 	DefaultSQLMode     = SQLModeDefault
+	DefaultDialect     = DialectMySQL
 )
 
 var (

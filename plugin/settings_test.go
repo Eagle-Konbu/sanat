@@ -20,6 +20,7 @@ func defaultOptions() gofile.Options {
 		KeywordCase: config.KeywordCaseUpper,
 		CommaStyle:  config.CommaStyleTrailing,
 		SQLMode:     config.SQLModeDefault,
+		Dialect:     config.DialectMySQL,
 	}
 }
 
@@ -70,6 +71,7 @@ func TestSettings_ExplicitValues(t *testing.T) {
 		"keyword-case": "lower",
 		"comma-style":  "leading",
 		"sql-mode":     "no_backslash_escapes",
+		"dialect":      "postgresql",
 	})
 
 	want := gofile.Options{
@@ -78,6 +80,7 @@ func TestSettings_ExplicitValues(t *testing.T) {
 		KeywordCase: config.KeywordCaseLower,
 		CommaStyle:  config.CommaStyleLeading,
 		SQLMode:     config.SQLModeNoBackslashEscapes,
+		Dialect:     config.DialectPostgreSQL,
 	}
 
 	if got != want {
@@ -90,8 +93,8 @@ func TestSettings_ConfigFileFillsUnsetKeys(t *testing.T) {
 		name    string
 		content string
 	}{
-		{".sanat.yml", "version: 1\nindent: 4\ncomma_style: leading\n"},
-		{".sanat.toml", "version = 1\nindent = 4\ncomma_style = \"leading\"\n"},
+		{".sanat.yml", "version: 1\nindent: 4\ncomma_style: leading\ndialect: postgresql\n"},
+		{".sanat.toml", "version = 1\nindent = 4\ncomma_style = \"leading\"\ndialect = \"postgresql\"\n"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			path := writeConfigFile(t, tc.name, tc.content)
@@ -101,6 +104,7 @@ func TestSettings_ConfigFileFillsUnsetKeys(t *testing.T) {
 			want := defaultOptions()
 			want.Indent = 4
 			want.CommaStyle = config.CommaStyleLeading
+			want.Dialect = config.DialectPostgreSQL
 
 			if got != want {
 				t.Errorf("got %+v, want %+v", got, want)
@@ -139,6 +143,7 @@ func TestNew_RejectsInvalidSettings(t *testing.T) {
 		{"keyword-case", map[string]any{"keyword-case": "camel"}, config.ErrInvalidKeywordCase},
 		{"comma-style", map[string]any{"comma-style": "middle"}, config.ErrInvalidCommaStyle},
 		{"sql-mode", map[string]any{"sql-mode": "ansi"}, config.ErrInvalidSQLMode},
+		{"dialect", map[string]any{"dialect": "sqlite"}, config.ErrInvalidDialect},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := plugin.New(tc.raw)

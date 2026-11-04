@@ -22,6 +22,7 @@ type Settings struct {
 	KeywordCase *string `json:"keyword-case"`
 	CommaStyle  *string `json:"comma-style"`
 	SQLMode     *string `json:"sql-mode"`
+	Dialect     *string `json:"dialect"`
 }
 
 // Options resolves each formatter option with the precedence: explicit
@@ -38,6 +39,7 @@ func (s Settings) Options() (gofile.Options, error) {
 		KeywordCase: firstSet(s.KeywordCase, fileCfg.KeywordCase, config.DefaultKeywordCase),
 		CommaStyle:  firstSet(s.CommaStyle, fileCfg.CommaStyle, config.DefaultCommaStyle),
 		SQLMode:     firstSet(s.SQLMode, fileCfg.SQLMode, config.DefaultSQLMode),
+		Dialect:     firstSet(s.Dialect, fileCfg.Dialect, config.DefaultDialect),
 	}
 
 	resolved := config.Config{
@@ -46,6 +48,7 @@ func (s Settings) Options() (gofile.Options, error) {
 		KeywordCase: &opts.KeywordCase,
 		CommaStyle:  &opts.CommaStyle,
 		SQLMode:     &opts.SQLMode,
+		Dialect:     &opts.Dialect,
 	}
 	if err := config.Validate(resolved); err != nil {
 		return gofile.Options{}, fmt.Errorf("sanat: invalid settings: %w", err)
