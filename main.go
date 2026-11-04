@@ -9,6 +9,9 @@ import (
 )
 
 // version is set by GoReleaser via ldflags. Other builds fall back to the build info.
+// Release builds cannot rely on the build info alone: files generated during the
+// release (e.g. sanat-dev, dist/) make the tree dirty, which turns the version into
+// "vX.Y.Z+dirty".
 var version = ""
 
 func main() {
