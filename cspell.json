@@ -8,6 +8,8 @@
     "Eagle-Konbu",
     "goreg",
     "goreleaser",
+    "incpatch",
+    "xattr",
     "golangci",
     "Vitess",
     "vitess",
