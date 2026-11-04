@@ -8,8 +8,6 @@ import (
 	"github.com/Eagle-Konbu/sanat/internal/config"
 )
 
-func ptr[T any](v T) *T { return &v }
-
 func assertField[T comparable](t *testing.T, name string, got *T, want *T) {
 	t.Helper()
 
@@ -30,12 +28,12 @@ func TestEncode_RoundTrip(t *testing.T) {
 	}{
 		{
 			name:   "yaml",
-			cfg:    config.Config{Write: ptr(true), Indent: ptr(4), Newline: ptr(false)},
+			cfg:    config.Config{Write: new(true), Indent: new(4), Newline: new(false)},
 			format: config.FormatYAML,
 		},
 		{
 			name:   "toml",
-			cfg:    config.Config{Write: ptr(false), Indent: ptr(8), Newline: ptr(true)},
+			cfg:    config.Config{Write: new(false), Indent: new(8), Newline: new(true)},
 			format: config.FormatTOML,
 		},
 	}
