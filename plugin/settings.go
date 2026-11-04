@@ -70,7 +70,7 @@ func (s Settings) loadConfigFile() (config.Config, error) {
 	return cfg, nil
 }
 
-//nolint:ireturn // T is a concrete type parameter (int, bool, string), not an interface
+//nolint:ireturn // returns the caller's type argument, not an interface
 func firstSet[T any](explicit, fromFile *T, fallback T) T {
 	if explicit != nil {
 		return *explicit
