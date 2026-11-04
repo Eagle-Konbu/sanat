@@ -387,7 +387,12 @@ func (w *MergeWhen) String() string {
 	}
 
 	b.WriteString(" THEN ")
+	w.writeAction(&b)
 
+	return b.String()
+}
+
+func (w *MergeWhen) writeAction(b *strings.Builder) {
 	switch {
 	case w.DoNothing:
 		b.WriteString("DO NOTHING")
@@ -414,8 +419,6 @@ func (w *MergeWhen) String() string {
 		b.WriteString(exprListString(w.Values))
 		b.WriteString(")")
 	}
-
-	return b.String()
 }
 
 // --- helpers to reduce cyclomatic complexity ---
