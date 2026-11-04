@@ -11,9 +11,14 @@ Answer the given question about the existing code in the sanat repository. Do no
 ## Procedure
 
 1. Check the index state with `get_workspace_status`. If it is not `ready`, do not use codeatlas; investigate with Read and Grep instead, and say so in the result
-2. Investigate with codeatlas. Locate code with `search_workspace` and `get_feature_pack`, then follow relationships with `get_function_dependencies`, `trace_call_path`, and `get_impact_analysis`. If nothing is found, retry with every `repoId` from `list_repos`; if still nothing, fall back to Grep
-3. Use Read and Grep to confirm what codeatlas found, and to read files codeatlas does not cover (README, docs, config files, YAML, testdata, etc.)
+2. Investigate with codeatlas. Locate code with `search_workspace` and `get_feature_pack` (or `get_entrypoint_pack` for commands and handlers), then follow relationships with `get_function_dependencies`, `trace_call_path`, and `get_impact_analysis`. Read function bodies with `get_function_source`. If nothing is found, retry with every `repoId` from `list_repos`; if still nothing, fall back to Grep
+3. Use Read and Grep only to confirm what codeatlas found, and to read files codeatlas does not cover (README, docs, config files, YAML, testdata, etc.)
 4. Do not fill gaps with guesses. Mark anything you could not confirm as "Unverified"
+
+### codeatlas comes first
+
+- Do not reconstruct call flows, dependencies, or impact by reading files with Read or Grep. Use `trace_call_path`, `get_function_dependencies`, and `get_impact_analysis` for those
+- Before falling back to Read or Grep for a question codeatlas should answer, you must have called the matching codeatlas tool and gotten no usable result. Record that fallback and the reason in the result
 
 You cannot talk to the caller mid-task, so keep investigating until the question is answered and do not stop to ask for confirmation. When done, return without adding investigation or suggestions that were not requested.
 
@@ -28,6 +33,7 @@ You cannot talk to the caller mid-task, so keep investigating until the question
 - The answer to the question (conclusion)
 - The locations that support it (`path:line`)
 - What remains unverified
+- The codeatlas tools you used and any fallbacks to Read or Grep, with the reason for each
 
 Do not return intermediate search results or full source code.
 
@@ -39,4 +45,8 @@ Evidence:
 
 Unverified:
 - (what could not be confirmed and why; "None" if nothing)
+
+Tools:
+- codeatlas: `search_workspace`, `trace_call_path` (...)
+- Fallbacks: (what you read with Read/Grep instead and why; "None" if nothing)
 </example>
