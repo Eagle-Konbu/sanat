@@ -48,19 +48,29 @@ type ComparisonExpr struct {
 	Operator ComparisonOperator
 	Left     Expr
 	Right    Expr
+	Escape   Expr // LIKE ... ESCAPE expr; nil for every other operator
 }
 
 // String returns ComparisonExpr's SQL text.
 func (c *ComparisonExpr) String() string {
-	return fmt.Sprintf("%s %s %s", c.Left.String(), c.Operator.String(), c.Right.String())
+	return fmt.Sprintf("%s %s %s", c.Left.String(), c.Operator.String(), c.Right.String()) + escapeString(c.Escape)
+}
+
+func escapeString(escape Expr) string {
+	if escape == nil {
+		return ""
+	}
+
+	return " ESCAPE " + escape.String()
 }
 
 // ILikeExpr represents a [NOT] ILIKE expression — PostgreSQL's
 // case-insensitive LIKE, with no MySQL equivalent.
 type ILikeExpr struct {
-	Not   bool
-	Left  Expr
-	Right Expr
+	Not    bool
+	Left   Expr
+	Right  Expr
+	Escape Expr
 }
 
 // String returns ILikeExpr's SQL text.
@@ -70,7 +80,7 @@ func (i *ILikeExpr) String() string {
 		op = "NOT ILIKE"
 	}
 
-	return fmt.Sprintf("%s %s %s", i.Left.String(), op, i.Right.String())
+	return fmt.Sprintf("%s %s %s", i.Left.String(), op, i.Right.String()) + escapeString(i.Escape)
 }
 
 // RangeCond represents a [NOT] BETWEEN ... AND ... expression.
@@ -108,6 +118,43 @@ func (i *IsExpr) String() string {
 	return i.Expr.String() + " IS NULL"
 }
 
+// TruthValue represents the operand of an IS [NOT] TRUE / FALSE / UNKNOWN test.
+type TruthValue int8
+
+const (
+	TruthTrue TruthValue = iota
+	TruthFalse
+	TruthUnknown
+)
+
+// String returns TruthValue's SQL text.
+func (v TruthValue) String() string {
+	switch v {
+	case TruthFalse:
+		return "FALSE"
+	case TruthUnknown:
+		return "UNKNOWN"
+	default:
+		return "TRUE"
+	}
+}
+
+// IsTruthExpr represents an IS [NOT] TRUE / FALSE / UNKNOWN expression.
+type IsTruthExpr struct {
+	Not   bool
+	Expr  Expr
+	Value TruthValue
+}
+
+// String returns IsTruthExpr's SQL text.
+func (i *IsTruthExpr) String() string {
+	if i.Not {
+		return i.Expr.String() + " IS NOT " + i.Value.String()
+	}
+
+	return i.Expr.String() + " IS " + i.Value.String()
+}
+
 // IsDistinctFromExpr represents an IS [NOT] DISTINCT FROM expression.
 type IsDistinctFromExpr struct {
 	Not   bool
@@ -134,6 +181,17 @@ func (v ValTuple) String() string {
 	return "(" + exprListString(v) + ")"
 }
 
+// RowExpr represents an explicit ROW(expr, ...) constructor. The implicit
+// (a, b) form is a ValTuple.
+type RowExpr struct {
+	Exprs []Expr
+}
+
+// String returns RowExpr's SQL text.
+func (r *RowExpr) String() string {
+	return "ROW(" + exprListString(r.Exprs) + ")"
+}
+
 // ArithmeticOperator represents a binary arithmetic operator.
 type ArithmeticOperator int8
 
@@ -143,6 +201,7 @@ const (
 	MultOp
 	DivOp
 	ModOp
+	ExpOp
 )
 
 var arithmeticOpStrings = [...]string{
@@ -151,6 +210,7 @@ var arithmeticOpStrings = [...]string{
 	MultOp:  "*",
 	DivOp:   "/",
 	ModOp:   "%",
+	ExpOp:   "^",
 }
 
 // String returns ArithmeticOperator's SQL operator text.
@@ -331,6 +391,7 @@ type FuncExpr struct {
 	Args      []Expr
 	Filter    *Where      // FILTER (WHERE ...)
 	Over      *WindowSpec // OVER (...) / OVER window_name
+	OverRef   bool        // OVER window_name, unparenthesized; the name is Over.Name
 }
 
 // String returns FuncExpr's SQL text.
@@ -364,9 +425,14 @@ func (f *FuncExpr) String() string {
 		b.WriteString(")")
 	}
 
-	if f.Over != nil {
+	switch {
+	case f.Over != nil && f.OverRef:
 		b.WriteString(" OVER ")
-		b.WriteString(f.Over.overString())
+		b.WriteString(f.Over.Name.String())
+	case f.Over != nil:
+		b.WriteString(" OVER (")
+		b.WriteString(f.Over.String())
+		b.WriteString(")")
 	}
 
 	return b.String()
@@ -414,11 +480,13 @@ func (a *ArrayExpr) String() string {
 }
 
 // ArraySubscriptExpr represents array subscripting (a[1]) or slicing (a[1:3]).
-// To is nil for a plain subscript.
+// Slice is set for the slice form, where either bound may be omitted (a[1:],
+// a[:3], a[:]); From and To are nil for omitted bounds.
 type ArraySubscriptExpr struct {
-	Expr Expr
-	From Expr
-	To   Expr
+	Expr  Expr
+	From  Expr
+	To    Expr
+	Slice bool
 }
 
 // String returns ArraySubscriptExpr's SQL text.
@@ -432,8 +500,11 @@ func (a *ArraySubscriptExpr) String() string {
 		b.WriteString(a.From.String())
 	}
 
-	if a.To != nil {
+	if a.Slice {
 		b.WriteString(":")
+	}
+
+	if a.To != nil {
 		b.WriteString(a.To.String())
 	}
 

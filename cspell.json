@@ -19,6 +19,12 @@
     "devcontainer",
     "sqlfmt",
     "sqla",
+    "pgparser",
+    "pgast",
+    "ILIKE",
+    "ISNULL",
+    "NOTNULL",
+    "pkey",
     "gofile",
     "fset",
     "cspell",
@@ -95,7 +101,14 @@
     "prealloc",
     "unparam",
     "varnamelen",
-    "wrapcheck"
+    "wrapcheck",
+    "multibyte",
+    "UXXXXXXXX",
+    "UFFFFFFFF",
+    "ÄRGER",
+    "Ärger",
+    "ſelect",
+    "ınner"
   ],
   "ignorePaths": [
     ".git",

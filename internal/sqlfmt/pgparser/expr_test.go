@@ -98,6 +98,34 @@ func TestParseExpr_arithmetic(t *testing.T) {
 			Right:    num("3"),
 		})
 	})
+
+	t.Run("exponentiation", func(t *testing.T) {
+		assertExpr(t, "2 ^ 3", &pgast.ArithmeticExpr{Operator: pgast.ExpOp, Left: num("2"), Right: num("3")})
+	})
+
+	t.Run("exponentiation is left associative", func(t *testing.T) {
+		assertExpr(t, "2 ^ 3 ^ 2", &pgast.ArithmeticExpr{
+			Operator: pgast.ExpOp,
+			Left:     &pgast.ArithmeticExpr{Operator: pgast.ExpOp, Left: num("2"), Right: num("3")},
+			Right:    num("2"),
+		})
+	})
+
+	t.Run("exponentiation binds tighter than *", func(t *testing.T) {
+		assertExpr(t, "2 * 3 ^ 2", &pgast.ArithmeticExpr{
+			Operator: pgast.MultOp,
+			Left:     num("2"),
+			Right:    &pgast.ArithmeticExpr{Operator: pgast.ExpOp, Left: num("3"), Right: num("2")},
+		})
+	})
+
+	t.Run("unary minus binds tighter than exponentiation", func(t *testing.T) {
+		assertExpr(t, "-2 ^ 2", &pgast.ArithmeticExpr{
+			Operator: pgast.ExpOp,
+			Left:     &pgast.UnaryExpr{Operator: pgast.UMinusOp, Expr: num("2")},
+			Right:    num("2"),
+		})
+	})
 }
 
 func TestParseExpr_unary(t *testing.T) {
@@ -181,6 +209,12 @@ func TestParseExpr_like(t *testing.T) {
 	assertExpr(t, "a NOT LIKE 'x%'", &pgast.ComparisonExpr{Left: col("a"), Operator: pgast.NotLikeOp, Right: num("'x%'")})
 	assertExpr(t, "a ILIKE 'x%'", &pgast.ILikeExpr{Left: col("a"), Right: num("'x%'")})
 	assertExpr(t, "a NOT ILIKE 'x%'", &pgast.ILikeExpr{Not: true, Left: col("a"), Right: num("'x%'")})
+	assertExpr(t, "a LIKE 'x!%' ESCAPE '!'", &pgast.ComparisonExpr{
+		Left: col("a"), Operator: pgast.LikeOp, Right: num("'x!%'"), Escape: num("'!'"),
+	})
+	assertExpr(t, "a NOT ILIKE 'x!%' ESCAPE '!'", &pgast.ILikeExpr{
+		Not: true, Left: col("a"), Right: num("'x!%'"), Escape: num("'!'"),
+	})
 }
 
 func TestParseExpr_is(t *testing.T) {
@@ -190,6 +224,70 @@ func TestParseExpr_is(t *testing.T) {
 	assertExpr(t, "a NOTNULL", &pgast.IsExpr{Not: true, Expr: col("a")})
 	assertExpr(t, "a IS DISTINCT FROM b", &pgast.IsDistinctFromExpr{Left: col("a"), Right: col("b")})
 	assertExpr(t, "a IS NOT DISTINCT FROM b", &pgast.IsDistinctFromExpr{Not: true, Left: col("a"), Right: col("b")})
+	assertExpr(t, "a IS TRUE", &pgast.IsTruthExpr{Expr: col("a"), Value: pgast.TruthTrue})
+	assertExpr(t, "a IS NOT FALSE", &pgast.IsTruthExpr{Not: true, Expr: col("a"), Value: pgast.TruthFalse})
+	assertExpr(t, "a IS UNKNOWN", &pgast.IsTruthExpr{Expr: col("a"), Value: pgast.TruthUnknown})
+	assertExpr(t, "a IS NOT unknown", &pgast.IsTruthExpr{Not: true, Expr: col("a"), Value: pgast.TruthUnknown})
+}
+
+func TestParseExpr_predicatePrecedence(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want pgast.Expr
+	}{
+		{
+			"IS binds looser than comparison",
+			"a = b IS NULL",
+			&pgast.IsExpr{Expr: &pgast.ComparisonExpr{Left: col("a"), Operator: pgast.EqualOp, Right: col("b")}},
+		},
+		{
+			"chained IS tests",
+			"a IS NULL IS NOT TRUE",
+			&pgast.IsTruthExpr{Not: true, Expr: &pgast.IsExpr{Expr: col("a")}, Value: pgast.TruthTrue},
+		},
+		{
+			"IN binds tighter than comparison",
+			"a IN (1) = b",
+			&pgast.ComparisonExpr{
+				Left:     &pgast.ComparisonExpr{Left: col("a"), Operator: pgast.InOp, Right: pgast.ValTuple{num("1")}},
+				Operator: pgast.EqualOp,
+				Right:    col("b"),
+			},
+		},
+		{
+			"LIKE on the right of a comparison",
+			"TRUE = a LIKE 'x'",
+			&pgast.ComparisonExpr{
+				Left:     &pgast.Literal{Val: "TRUE"},
+				Operator: pgast.EqualOp,
+				Right:    &pgast.ComparisonExpr{Left: col("a"), Operator: pgast.LikeOp, Right: num("'x'")},
+			},
+		},
+		{
+			"BETWEEN then comparison then IS",
+			"a BETWEEN 1 AND 2 = b IS NOT NULL",
+			&pgast.IsExpr{Not: true, Expr: &pgast.ComparisonExpr{
+				Left:     &pgast.RangeCond{Left: col("a"), From: num("1"), To: num("2")},
+				Operator: pgast.EqualOp,
+				Right:    col("b"),
+			}},
+		},
+		{
+			"IS DISTINCT FROM right operand includes a comparison",
+			"a IS DISTINCT FROM b = c",
+			&pgast.IsDistinctFromExpr{
+				Left:  col("a"),
+				Right: &pgast.ComparisonExpr{Left: col("b"), Operator: pgast.EqualOp, Right: col("c")},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assertExpr(t, tt.in, tt.want)
+		})
+	}
 }
 
 func TestParseExpr_case(t *testing.T) {
@@ -209,6 +307,11 @@ func TestParseExpr_case(t *testing.T) {
 }
 
 func TestParseExpr_exists(t *testing.T) {
+	exists := func(sel *pgast.Select) pgast.Expr {
+		return &pgast.ExistsExpr{Subquery: &pgast.Subquery{Select: sel}}
+	}
+	tableT := []pgast.TableExpr{&pgast.AliasedTableExpr{Expr: pgast.TableName{Name: "t"}}}
+
 	tests := []struct {
 		name string
 		in   string
@@ -217,10 +320,31 @@ func TestParseExpr_exists(t *testing.T) {
 		{
 			"basic",
 			"EXISTS (SELECT * FROM t)",
-			&pgast.ExistsExpr{Subquery: &pgast.Subquery{Select: &pgast.Select{
-				SelectExprs: []pgast.SelectExpr{&pgast.StarExpr{}},
-				From:        []pgast.TableExpr{&pgast.AliasedTableExpr{Expr: pgast.TableName{Name: "t"}}},
-			}}},
+			exists(&pgast.Select{SelectExprs: []pgast.SelectExpr{&pgast.StarExpr{}}, From: tableT}),
+		},
+		{
+			"qualified star",
+			"EXISTS (SELECT t.* FROM t)",
+			exists(&pgast.Select{
+				SelectExprs: []pgast.SelectExpr{&pgast.StarExpr{TableName: pgast.TableName{Name: "t"}}},
+				From:        tableT,
+			}),
+		},
+		{
+			"explicit aliases",
+			"EXISTS (SELECT a AS x FROM t AS u)",
+			exists(&pgast.Select{
+				SelectExprs: []pgast.SelectExpr{&pgast.AliasedExpr{Expr: col("a"), As: "x"}},
+				From:        []pgast.TableExpr{&pgast.AliasedTableExpr{Expr: pgast.TableName{Name: "t"}, As: "u"}},
+			}),
+		},
+		{
+			"bare aliases",
+			"EXISTS (SELECT a x FROM t u)",
+			exists(&pgast.Select{
+				SelectExprs: []pgast.SelectExpr{&pgast.AliasedExpr{Expr: col("a"), As: "x"}},
+				From:        []pgast.TableExpr{&pgast.AliasedTableExpr{Expr: pgast.TableName{Name: "t"}, As: "u"}},
+			}),
 		},
 	}
 
@@ -231,8 +355,44 @@ func TestParseExpr_exists(t *testing.T) {
 	}
 }
 
+func TestParseExpr_existsErrors(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+	}{
+		{"AS without select alias", "EXISTS (SELECT a AS FROM t)"},
+		{"AS without table alias", "EXISTS (SELECT a FROM t AS)"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assertExprError(t, tt.in)
+		})
+	}
+}
+
 func TestParseExpr_paren(t *testing.T) {
 	assertExpr(t, "(a)", &pgast.ParenExpr{Expr: col("a")})
+
+	t.Run("row constructor", func(t *testing.T) {
+		assertExpr(t, "(a, b)", pgast.ValTuple{col("a"), col("b")})
+	})
+
+	t.Run("explicit ROW constructor", func(t *testing.T) {
+		assertExpr(t, "ROW(a, 1)", &pgast.RowExpr{Exprs: []pgast.Expr{col("a"), num("1")}})
+		assertExpr(t, "ROW()", &pgast.RowExpr{})
+	})
+
+	t.Run("row constructor IN subquery", func(t *testing.T) {
+		assertExpr(t, "(a, b) IN (SELECT a, b FROM t)", &pgast.ComparisonExpr{
+			Left:     pgast.ValTuple{col("a"), col("b")},
+			Operator: pgast.InOp,
+			Right: &pgast.Subquery{Select: &pgast.Select{
+				SelectExprs: []pgast.SelectExpr{&pgast.AliasedExpr{Expr: col("a")}, &pgast.AliasedExpr{Expr: col("b")}},
+				From:        []pgast.TableExpr{&pgast.AliasedTableExpr{Expr: pgast.TableName{Name: "t"}}},
+			}},
+		})
+	})
 
 	t.Run("scalar subquery", func(t *testing.T) {
 		assertExpr(t, "(SELECT 1)", &pgast.Subquery{Select: &pgast.Select{
@@ -267,6 +427,82 @@ func TestParseExpr_funcCall(t *testing.T) {
 			Name: "count", Star: true, Filter: &pgast.Where{Expr: col("a")},
 		})
 	})
+}
+
+func TestParseExpr_funcCallOver(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want pgast.Expr
+	}{
+		{
+			"empty window",
+			"row_number() OVER ()",
+			&pgast.FuncExpr{Name: "row_number", Over: &pgast.WindowSpec{}},
+		},
+		{
+			"partition by",
+			"sum(a) OVER (PARTITION BY b, c)",
+			&pgast.FuncExpr{
+				Name: "sum", Args: []pgast.Expr{col("a")},
+				Over: &pgast.WindowSpec{PartitionBy: []pgast.Expr{col("b"), col("c")}},
+			},
+		},
+		{
+			"order by",
+			"row_number() OVER (ORDER BY a DESC NULLS LAST, b)",
+			&pgast.FuncExpr{Name: "row_number", Over: &pgast.WindowSpec{OrderBy: pgast.OrderBy{
+				{Expr: col("a"), Direction: pgast.DescOrder, Nulls: pgast.NullsLast},
+				{Expr: col("b")},
+			}}},
+		},
+		{
+			"partition by and order by",
+			"rank() OVER (PARTITION BY a ORDER BY b ASC NULLS FIRST)",
+			&pgast.FuncExpr{Name: "rank", Over: &pgast.WindowSpec{
+				PartitionBy: []pgast.Expr{col("a")},
+				OrderBy:     pgast.OrderBy{{Expr: col("b"), Nulls: pgast.NullsFirst}},
+			}},
+		},
+		{
+			"named window",
+			"row_number() OVER w",
+			&pgast.FuncExpr{Name: "row_number", Over: &pgast.WindowSpec{Name: "w"}, OverRef: true},
+		},
+		{
+			"refined named window",
+			"row_number() OVER (w ORDER BY a)",
+			&pgast.FuncExpr{Name: "row_number", Over: &pgast.WindowSpec{
+				Name: "w", OrderBy: pgast.OrderBy{{Expr: col("a")}},
+			}},
+		},
+		{
+			"after filter",
+			"count(*) FILTER (WHERE a) OVER w",
+			&pgast.FuncExpr{
+				Name: "count", Star: true, Filter: &pgast.Where{Expr: col("a")},
+				Over: &pgast.WindowSpec{Name: "w"}, OverRef: true,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assertExpr(t, tt.in, tt.want)
+		})
+	}
+}
+
+func TestParseExpr_quotedIdentifiers(t *testing.T) {
+	assertExpr(t, `"MyCol"`, col(`"MyCol"`))
+	assertExpr(t, `"My""Col"`, col(`"My""Col"`))
+	assertExpr(t, `"T"."C"`, &pgast.ColName{Qualifier: pgast.TableName{Name: `"T"`}, Name: `"C"`})
+
+	for _, in := range []string{`"MyCol"`, `"T"."C"`, `a::"MyType"`, `CAST(a AS "MyType")`, `"Fn"(a)`} {
+		if got := parseExpr(t, in).String(); got != in {
+			t.Errorf("ParseExpr(%q).String() = %q", in, got)
+		}
+	}
 }
 
 func TestParseExpr_cast(t *testing.T) {
@@ -312,12 +548,20 @@ func TestParseExpr_array(t *testing.T) {
 	})
 
 	t.Run("slice", func(t *testing.T) {
-		assertExpr(t, "a[1:3]", &pgast.ArraySubscriptExpr{Expr: col("a"), From: num("1"), To: num("3")})
+		assertExpr(t, "a[1:3]", &pgast.ArraySubscriptExpr{Expr: col("a"), From: num("1"), To: num("3"), Slice: true})
 	})
 
 	t.Run("open-ended slice", func(t *testing.T) {
-		assertExpr(t, "a[:3]", &pgast.ArraySubscriptExpr{Expr: col("a"), To: num("3")})
-		assertExpr(t, "a[1:]", &pgast.ArraySubscriptExpr{Expr: col("a"), From: num("1")})
+		assertExpr(t, "a[:3]", &pgast.ArraySubscriptExpr{Expr: col("a"), To: num("3"), Slice: true})
+		assertExpr(t, "a[1:]", &pgast.ArraySubscriptExpr{Expr: col("a"), From: num("1"), Slice: true})
+	})
+
+	t.Run("slice round trip", func(t *testing.T) {
+		for _, in := range []string{"a[1]", "a[1:3]", "a[:3]", "a[1:]", "a[:]"} {
+			if got := parseExpr(t, in).String(); got != in {
+				t.Errorf("ParseExpr(%q).String() = %q", in, got)
+			}
+		}
 	})
 }
 
@@ -383,7 +627,13 @@ func TestParseExpr_errors(t *testing.T) {
 		"CASE END",
 		"a IN (",
 		"1 1",
-		"^",
+		"a ^",
+		"a = b = c",
+		"a IS",
+		"a IS foo",
+		"a LIKE b ESCAPE",
+		"f() OVER",
+		"f() OVER (PARTITION a)",
 	}
 
 	for _, tt := range tests {

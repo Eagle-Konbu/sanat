@@ -29,8 +29,10 @@ func (*ComparisonExpr) iExpr()     {}
 func (*ILikeExpr) iExpr()          {}
 func (*RangeCond) iExpr()          {}
 func (*IsExpr) iExpr()             {}
+func (*IsTruthExpr) iExpr()        {}
 func (*IsDistinctFromExpr) iExpr() {}
 func (ValTuple) iExpr()            {}
+func (*RowExpr) iExpr()            {}
 func (*ArithmeticExpr) iExpr()     {}
 func (*UnaryExpr) iExpr()          {}
 func (*AndExpr) iExpr()            {}

@@ -1,10 +1,6 @@
 package pgparser
 
-import (
-	"strings"
-
-	"github.com/Eagle-Konbu/sanat/internal/sqlfmt/pgast"
-)
+import "github.com/Eagle-Konbu/sanat/internal/sqlfmt/pgast"
 
 // parseSubqueryStatement parses the SELECT statement inside a parenthesized
 // subquery, EXISTS (...), or [NOT] IN (...) predicate. WITH is deferred to
@@ -165,17 +161,6 @@ func (p *Parser) readIdent() string {
 	p.advance()
 
 	return text
-}
-
-// identText returns tok's identifier as SQL text. A QuotedIdent is
-// re-quoted: the lexer strips its quotes, but rendering it bare would let
-// PostgreSQL fold its case and change which name it refers to.
-func identText(tok Token) string {
-	if tok.Type == QuotedIdent {
-		return `"` + strings.ReplaceAll(tok.Literal, `"`, `""`) + `"`
-	}
-
-	return tok.Literal
 }
 
 func (p *Parser) parseOptionalFromClause() []pgast.TableExpr {
@@ -548,26 +533,6 @@ func (p *Parser) parseOptionalWindowClause() []*pgast.NamedWindow {
 			return windows
 		}
 	}
-}
-
-// parseOptionalOver parses a function call's trailing "OVER (...)" or
-// "OVER window_name" clause.
-func (p *Parser) parseOptionalOver() *pgast.WindowSpec {
-	if !p.consume(OVER) {
-		return nil
-	}
-
-	if isIdentToken(p.tok) {
-		return &pgast.WindowSpec{Name: pgast.ColIdent(p.readIdent())}
-	}
-
-	p.expect(LPAREN)
-
-	spec := p.parseWindowSpecBody()
-
-	p.expect(RPAREN)
-
-	return spec
 }
 
 // parseWindowSpecBody parses the content inside a window definition's

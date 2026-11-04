@@ -36,17 +36,21 @@ const (
 	STAR    // *
 	SLASH   // /
 	PERCENT // %
+	CONCAT  // ||
+	CARET   // ^
 
-	DoubleColon   // ::
-	Arrow         // ->
-	ArrowText     // ->>
-	HashArrow     // #>
-	HashArrowText // #>>
-	Contains      // @>
-	ContainedBy   // <@
-	JSONExists    // ?
-	JSONExistsAny // ?|
-	JSONExistsAll // ?&
+	DoubleColon    // ::
+	Arrow          // ->
+	ArrowText      // ->>
+	HashArrow      // #>
+	HashArrowText  // #>>
+	Contains       // @>
+	ContainedBy    // <@
+	JSONPathExists // @?
+	JSONPathMatch  // @@
+	JSONExists     // ?
+	JSONExistsAny  // ?|
+	JSONExistsAll  // ?&
 
 	LPAREN    // (
 	RPAREN    // )
@@ -69,6 +73,7 @@ const (
 	BETWEEN
 	LIKE
 	ILIKE
+	ESCAPE
 	IS
 	NULL
 	TRUE
@@ -161,17 +166,21 @@ var tokenNames = map[TokenType]string{
 	STAR:    "*",
 	SLASH:   "/",
 	PERCENT: "%",
+	CONCAT:  "||",
+	CARET:   "^",
 
-	DoubleColon:   "::",
-	Arrow:         "->",
-	ArrowText:     "->>",
-	HashArrow:     "#>",
-	HashArrowText: "#>>",
-	Contains:      "@>",
-	ContainedBy:   "<@",
-	JSONExists:    "?",
-	JSONExistsAny: "?|",
-	JSONExistsAll: "?&",
+	DoubleColon:    "::",
+	Arrow:          "->",
+	ArrowText:      "->>",
+	HashArrow:      "#>",
+	HashArrowText:  "#>>",
+	Contains:       "@>",
+	ContainedBy:    "<@",
+	JSONPathExists: "@?",
+	JSONPathMatch:  "@@",
+	JSONExists:     "?",
+	JSONExistsAny:  "?|",
+	JSONExistsAll:  "?&",
 
 	LPAREN:    "(",
 	RPAREN:    ")",
@@ -193,6 +202,7 @@ var tokenNames = map[TokenType]string{
 	BETWEEN:   "BETWEEN",
 	LIKE:      "LIKE",
 	ILIKE:     "ILIKE",
+	ESCAPE:    "ESCAPE",
 	IS:        "IS",
 	NULL:      "NULL",
 	TRUE:      "TRUE",
@@ -298,11 +308,35 @@ func buildKeywordTable() map[string]TokenType {
 // case-insensitively, per PostgreSQL's default unquoted-identifier folding),
 // or IDENT if literal is not a reserved keyword.
 func lookupIdent(literal string) TokenType {
-	if tt, ok := keywords[strings.ToUpper(literal)]; ok {
+	if tt, ok := keywords[asciiUpper(literal)]; ok {
 		return tt
 	}
 
 	return IDENT
+}
+
+// asciiUpper and asciiLower fold only ASCII letters. strings.ToUpper/ToLower
+// would also fold non-ASCII runes (e.g. 'ſ' → 'S', 'ı' → 'I'), letting
+// identifiers like "ſelect" match keywords, which PostgreSQL never does under
+// a multibyte encoding.
+func asciiUpper(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r >= 'a' && r <= 'z' {
+			return r - 'a' + 'A'
+		}
+
+		return r
+	}, s)
+}
+
+func asciiLower(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r >= 'A' && r <= 'Z' {
+			return r - 'A' + 'a'
+		}
+
+		return r
+	}, s)
 }
 
 // Position identifies a location within the lexer input.
