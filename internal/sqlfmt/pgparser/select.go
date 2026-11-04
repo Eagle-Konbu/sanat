@@ -131,7 +131,9 @@ func (p *Parser) tryParseQualifiedStar() pgast.SelectExpr {
 	p.advance() // consume '.'
 	p.advance() // consume '*'
 
-	return &pgast.StarExpr{TableName: pgast.TableName{Qualifier: pgast.TableIdent(qualifier), Name: pgast.TableIdent(name)}}
+	table := pgast.TableName{Qualifier: pgast.TableIdent(qualifier), Name: pgast.TableIdent(name)}
+
+	return &pgast.StarExpr{TableName: table}
 }
 
 func isIdentToken(tok Token) bool {
