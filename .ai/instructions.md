@@ -59,6 +59,11 @@ Follow the [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/
 - Apply guidelines consistently across all files
 - Use scope in commit message to indicate affected component
 
+## Code Investigation
+
+- Use the codeatlas MCP server to investigate existing code. Delegate non-trivial investigation to the `code-investigator` agent
+- The codeatlas index may retain deleted files. Verify any location you rely on for a conclusion against the current code with Read
+
 ## Task Commands
 
 This project uses [Task](https://taskfile.dev/) for build automation. **Prefer `task` commands over direct `go` commands when available.**
