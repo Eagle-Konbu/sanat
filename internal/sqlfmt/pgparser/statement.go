@@ -51,22 +51,30 @@ func (p *Parser) parseSelectExpr() pgast.SelectExpr {
 		return &pgast.StarExpr{}
 	}
 
+	if p.atQualifiedStar() {
+		table := pgast.TableName{Name: pgast.TableIdent(p.readIdent())}
+		p.advance() // consume '.'
+		p.advance() // consume '*'
+
+		return &pgast.StarExpr{TableName: table}
+	}
+
 	return &pgast.AliasedExpr{Expr: p.parseExpr(), As: pgast.ColIdent(p.parseOptionalAlias())}
 }
 
 // parseOptionalAlias parses an optional trailing "[AS] name" alias, returning
 // "" if none is present.
 func (p *Parser) parseOptionalAlias() string {
-	p.consume(AS)
-
-	if !p.at(IDENT) && !p.at(QuotedIdent) {
-		return ""
+	if p.consume(AS) || p.at(IDENT) || p.at(QuotedIdent) {
+		return p.readIdent()
 	}
 
-	name := p.tok.Literal
-	p.advance()
+	return ""
+}
 
-	return name
+// atQualifiedStar reports whether the upcoming tokens are "name.*".
+func (p *Parser) atQualifiedStar() bool {
+	return (p.at(IDENT) || p.at(QuotedIdent)) && p.peekAt(DOT) && p.peek2Tok.Type == STAR
 }
 
 func (p *Parser) parseTableExprList() []pgast.TableExpr {
@@ -95,8 +103,8 @@ func (p *Parser) readIdent() string {
 		p.failf("expected identifier, got %s", p.tok.Type)
 	}
 
-	lit := p.tok.Literal
+	text := identText(p.tok)
 	p.advance()
 
-	return lit
+	return text
 }

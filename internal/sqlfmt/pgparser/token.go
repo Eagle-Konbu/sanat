@@ -37,6 +37,7 @@ const (
 	SLASH   // /
 	PERCENT // %
 	CONCAT  // ||
+	CARET   // ^
 
 	DoubleColon    // ::
 	Arrow          // ->
@@ -72,6 +73,7 @@ const (
 	BETWEEN
 	LIKE
 	ILIKE
+	ESCAPE
 	IS
 	NULL
 	TRUE
@@ -165,6 +167,7 @@ var tokenNames = map[TokenType]string{
 	SLASH:   "/",
 	PERCENT: "%",
 	CONCAT:  "||",
+	CARET:   "^",
 
 	DoubleColon:    "::",
 	Arrow:          "->",
@@ -199,6 +202,7 @@ var tokenNames = map[TokenType]string{
 	BETWEEN:   "BETWEEN",
 	LIKE:      "LIKE",
 	ILIKE:     "ILIKE",
+	ESCAPE:    "ESCAPE",
 	IS:        "IS",
 	NULL:      "NULL",
 	TRUE:      "TRUE",

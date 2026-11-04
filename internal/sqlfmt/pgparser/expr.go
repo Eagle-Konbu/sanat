@@ -11,10 +11,8 @@ import (
 //
 // Precedence, loosest to tightest (per
 // https://www.postgresql.org/docs/current/sql-syntax-lexical.html#SQL-PRECEDENCE):
-// OR > AND > NOT > IS/ISNULL/NOTNULL/IS DISTINCT FROM > BETWEEN/IN/LIKE/ILIKE
-// and plain comparison (flattened into one predicate tier, matching how
-// internal/sqlfmt/parser's MySQL grammar already flattens its own predicate
-// forms) > JSON/JSONB operators > + - > * / % > unary +/- > :: cast >
+// OR > AND > NOT > IS/ISNULL/NOTNULL > plain comparison > BETWEEN/IN/LIKE/
+// ILIKE > JSON/JSONB operators > + - > * / % > ^ > unary +/- > :: cast >
 // primary (including array subscript, which is resolved inside cast's type-
 // name grammar rather than as a separate postfix tier — see parseTypeName).
 func (p *Parser) parseExpr() pgast.Expr {
@@ -43,10 +41,74 @@ func (p *Parser) parseAndExpr() pgast.Expr {
 
 func (p *Parser) parseNotExpr() pgast.Expr {
 	if !p.consume(NOT) {
-		return p.parseComparisonExpr()
+		return p.parseIsPredicateExpr()
 	}
 
 	return &pgast.NotExpr{Expr: p.parseNotExpr()}
+}
+
+// parseIsPredicateExpr parses a comparison followed by any number of
+// postfix IS [NOT] NULL / TRUE / FALSE / UNKNOWN, IS [NOT] DISTINCT FROM,
+// ISNULL, or NOTNULL tests, so "a = b IS NULL" is "(a = b) IS NULL".
+func (p *Parser) parseIsPredicateExpr() pgast.Expr {
+	left := p.parseComparisonExpr()
+
+	for {
+		switch {
+		case p.at(IS):
+			left = p.parseIsSuffix(left)
+		case p.consume(ISNULL):
+			left = &pgast.IsExpr{Expr: left}
+		case p.consume(NOTNULL):
+			left = &pgast.IsExpr{Not: true, Expr: left}
+		default:
+			return left
+		}
+	}
+}
+
+var truthValues = map[TokenType]pgast.TruthValue{
+	TRUE:  pgast.TruthTrue,
+	FALSE: pgast.TruthFalse,
+}
+
+// parseIsSuffix parses the IS-prefixed predicate forms applied to left.
+// p.tok must be IS.
+func (p *Parser) parseIsSuffix(left pgast.Expr) pgast.Expr {
+	p.advance() // consume IS
+
+	not := p.consume(NOT)
+
+	if p.consume(DISTINCT) {
+		p.expect(FROM)
+
+		return &pgast.IsDistinctFromExpr{Not: not, Left: left, Right: p.parseComparisonExpr()}
+	}
+
+	if p.consume(NULL) {
+		return &pgast.IsExpr{Not: not, Expr: left}
+	}
+
+	return &pgast.IsTruthExpr{Not: not, Expr: left, Value: p.readTruthValue()}
+}
+
+// readTruthValue reads the TRUE / FALSE / UNKNOWN operand of an IS test.
+// UNKNOWN is matched as a plain identifier because the lexer has no keyword
+// token for it.
+func (p *Parser) readTruthValue() pgast.TruthValue {
+	if value, ok := truthValues[p.tok.Type]; ok {
+		p.advance()
+
+		return value
+	}
+
+	if p.at(IDENT) && p.tok.Literal == "unknown" {
+		p.advance()
+
+		return pgast.TruthUnknown
+	}
+
+	return failReturn[pgast.TruthValue](p, "expected NULL, TRUE, FALSE, UNKNOWN, or DISTINCT FROM after IS, got %s", p.tok.Type)
 }
 
 var simpleComparisonOps = map[TokenType]pgast.ComparisonOperator{
@@ -58,20 +120,31 @@ var simpleComparisonOps = map[TokenType]pgast.ComparisonOperator{
 	GE: pgast.GreaterEqualOp,
 }
 
-// parseComparisonExpr parses a single predicate: a plain comparison, or one
-// of the [NOT] IN / [NOT] BETWEEN / [NOT] LIKE / [NOT] ILIKE / IS [NOT] NULL
-// / IS [NOT] DISTINCT FROM / ISNULL / NOTNULL forms.
+// parseComparisonExpr parses an optional plain comparison. Like PostgreSQL,
+// it is non-associative: "a = b = c" is a syntax error.
 func (p *Parser) parseComparisonExpr() pgast.Expr {
-	return p.parsePredicateSuffix(p.parseJSONExpr())
+	left := p.parseRangePredicateExpr()
+
+	op, ok := simpleComparisonOps[p.tok.Type]
+	if !ok {
+		return left
+	}
+
+	p.advance()
+
+	return &pgast.ComparisonExpr{Left: left, Operator: op, Right: p.parseRangePredicateExpr()}
 }
 
-func (p *Parser) parsePredicateSuffix(left pgast.Expr) pgast.Expr {
+// parseRangePredicateExpr parses an optional [NOT] IN / [NOT] BETWEEN /
+// [NOT] LIKE / [NOT] ILIKE predicate, which binds tighter than a plain
+// comparison, so "a IN (1) = b" is "(a IN (1)) = b".
+func (p *Parser) parseRangePredicateExpr() pgast.Expr {
+	left := p.parseJSONExpr()
 	not := p.consumeNegatedPredicateKeyword()
 
-	// not is always consistent with one of the three negatable predicate
-	// cases below: consumeNegatedPredicateKeyword only consumes NOT when the
-	// following token is already IN/BETWEEN/LIKE/ILIKE, so there is no case
-	// where not is true but none of them match.
+	// not is always consistent with one of the cases below:
+	// consumeNegatedPredicateKeyword only consumes NOT when the following
+	// token is already IN/BETWEEN/LIKE/ILIKE.
 	switch {
 	case p.at(IN):
 		return p.parseInExpr(left, not)
@@ -81,18 +154,8 @@ func (p *Parser) parsePredicateSuffix(left pgast.Expr) pgast.Expr {
 		return p.parseLikeExpr(left, not)
 	case p.at(ILIKE):
 		return p.parseILikeExpr(left, not)
-	case p.at(IS):
-		return p.parseIsExpr(left)
-	case p.at(ISNULL):
-		p.advance()
-
-		return &pgast.IsExpr{Expr: left}
-	case p.at(NOTNULL):
-		p.advance()
-
-		return &pgast.IsExpr{Not: true, Expr: left}
 	default:
-		return p.parseOptionalSimpleComparison(left)
+		return left
 	}
 }
 
@@ -108,17 +171,6 @@ func (p *Parser) consumeNegatedPredicateKeyword() bool {
 	p.advance()
 
 	return true
-}
-
-func (p *Parser) parseOptionalSimpleComparison(left pgast.Expr) pgast.Expr {
-	op, ok := simpleComparisonOps[p.tok.Type]
-	if !ok {
-		return left
-	}
-
-	p.advance()
-
-	return &pgast.ComparisonExpr{Left: left, Operator: op, Right: p.parseJSONExpr()}
 }
 
 func (p *Parser) parseInExpr(left pgast.Expr, not bool) pgast.Expr {
@@ -157,38 +209,32 @@ func (p *Parser) parseBetweenExpr(left pgast.Expr, not bool) pgast.Expr {
 func (p *Parser) parseLikeExpr(left pgast.Expr, not bool) pgast.Expr {
 	p.advance() // consume LIKE
 
-	right := p.parseJSONExpr()
-
 	op := pgast.LikeOp
 	if not {
 		op = pgast.NotLikeOp
 	}
 
-	return &pgast.ComparisonExpr{Left: left, Operator: op, Right: right}
+	right := p.parseJSONExpr()
+
+	return &pgast.ComparisonExpr{Left: left, Operator: op, Right: right, Escape: p.parseOptionalEscape()}
 }
 
 func (p *Parser) parseILikeExpr(left pgast.Expr, not bool) pgast.Expr {
 	p.advance() // consume ILIKE
 
-	return &pgast.ILikeExpr{Not: not, Left: left, Right: p.parseJSONExpr()}
+	right := p.parseJSONExpr()
+
+	return &pgast.ILikeExpr{Not: not, Left: left, Right: right, Escape: p.parseOptionalEscape()}
 }
 
-// parseIsExpr parses the IS-prefixed predicate forms: IS [NOT] NULL and
-// IS [NOT] DISTINCT FROM expr. l.tok must be IS.
-func (p *Parser) parseIsExpr(left pgast.Expr) pgast.Expr {
-	p.advance() // consume IS
-
-	not := p.consume(NOT)
-
-	if p.consume(DISTINCT) {
-		p.expect(FROM)
-
-		return &pgast.IsDistinctFromExpr{Not: not, Left: left, Right: p.parseJSONExpr()}
+// parseOptionalEscape parses a LIKE/ILIKE pattern's optional trailing
+// "ESCAPE expr", returning nil if none is present.
+func (p *Parser) parseOptionalEscape() pgast.Expr {
+	if !p.consume(ESCAPE) {
+		return nil
 	}
 
-	p.expect(NULL)
-
-	return &pgast.IsExpr{Not: not, Expr: left}
+	return p.parseJSONExpr()
 }
 
 // jsonOps maps each JSON/JSONB operator token to its pgast.JSONOp value.
@@ -228,6 +274,7 @@ var arithmeticOps = map[TokenType]pgast.ArithmeticOperator{
 	STAR:    pgast.MultOp,
 	SLASH:   pgast.DivOp,
 	PERCENT: pgast.ModOp,
+	CARET:   pgast.ExpOp,
 }
 
 func (p *Parser) parseAdditiveExpr() pgast.Expr {
@@ -244,13 +291,26 @@ func (p *Parser) parseAdditiveExpr() pgast.Expr {
 }
 
 func (p *Parser) parseMultiplicativeExpr() pgast.Expr {
-	left := p.parseUnaryExpr()
+	left := p.parseExponentExpr()
 
 	for p.at(STAR) || p.at(SLASH) || p.at(PERCENT) {
 		op := arithmeticOps[p.tok.Type]
 		p.advance()
 
-		left = &pgast.ArithmeticExpr{Left: left, Operator: op, Right: p.parseUnaryExpr()}
+		left = &pgast.ArithmeticExpr{Left: left, Operator: op, Right: p.parseExponentExpr()}
+	}
+
+	return left
+}
+
+// parseExponentExpr parses '^', which PostgreSQL makes left-associative
+// ("2 ^ 3 ^ 2" is "(2 ^ 3) ^ 2") and looser than unary minus ("-2 ^ 2" is
+// "(-2) ^ 2"), unlike the usual mathematical convention.
+func (p *Parser) parseExponentExpr() pgast.Expr {
+	left := p.parseUnaryExpr()
+
+	for p.consume(CARET) {
+		left = &pgast.ArithmeticExpr{Left: left, Operator: pgast.ExpOp, Right: p.parseUnaryExpr()}
 	}
 
 	return left
@@ -323,7 +383,7 @@ func (p *Parser) parseSubscript(left pgast.Expr) pgast.Expr {
 
 	p.expect(RBRACKET)
 
-	return &pgast.ArraySubscriptExpr{Expr: left, From: from, To: to}
+	return &pgast.ArraySubscriptExpr{Expr: left, From: from, To: to, Slice: true}
 }
 
 // parseTypeName parses a cast's target type: an identifier, optionally
@@ -354,10 +414,21 @@ func (p *Parser) readTypeIdent() string {
 		return failReturn[string](p, "expected type name, got %s", p.tok.Type)
 	}
 
-	lit := p.tok.Literal
+	text := identText(p.tok)
 	p.advance()
 
-	return lit
+	return text
+}
+
+// identText returns an identifier token as SQL text: a QuotedIdent is
+// re-quoted (doubling any embedded quotes) so its case and quoting survive
+// into the AST, per the pgast.ColIdent contract.
+func identText(tok Token) string {
+	if tok.Type != QuotedIdent {
+		return tok.Literal
+	}
+
+	return `"` + strings.ReplaceAll(tok.Literal, `"`, `""`) + `"`
 }
 
 func (p *Parser) readTypeModifier() string {
@@ -420,6 +491,8 @@ func (p *Parser) parsePrimaryExpr() pgast.Expr {
 		return p.parseCastCall()
 	case ARRAY:
 		return p.parseArrayLiteral()
+	case ROW:
+		return p.parseRowConstructor()
 	case IDENT, QuotedIdent:
 		return p.parseIdentExpr()
 	default:
@@ -488,9 +561,31 @@ func (p *Parser) parseParenExprOrSubquery() pgast.Expr {
 	}
 
 	expr := p.parseExpr()
+
+	if p.consume(COMMA) {
+		row := append([]pgast.Expr{expr}, p.parseExprList()...)
+		p.expect(RPAREN)
+
+		return pgast.ValTuple(row)
+	}
+
 	p.expect(RPAREN)
 
 	return &pgast.ParenExpr{Expr: expr}
+}
+
+func (p *Parser) parseRowConstructor() pgast.Expr {
+	p.advance() // consume ROW
+	p.expect(LPAREN)
+
+	if p.consume(RPAREN) {
+		return &pgast.RowExpr{}
+	}
+
+	exprs := p.parseExprList()
+	p.expect(RPAREN)
+
+	return &pgast.RowExpr{Exprs: exprs}
 }
 
 func (p *Parser) parseCaseExpr() pgast.Expr {
@@ -611,7 +706,8 @@ func (p *Parser) parseIdentExpr() pgast.Expr {
 }
 
 // parseFuncCall parses a function call's argument list, DISTINCT flag or
-// star form, and trailing FILTER (WHERE ...) clause. l.tok must be '('.
+// star form, and trailing FILTER (WHERE ...) and OVER clauses. l.tok must be
+// '('.
 func (p *Parser) parseFuncCall(qualifier, name string) pgast.Expr {
 	p.advance() // consume '('
 
@@ -637,7 +733,81 @@ func (p *Parser) parseFuncCall(qualifier, name string) pgast.Expr {
 		p.expect(RPAREN)
 	}
 
+	if p.consume(OVER) {
+		p.parseOverClause(f)
+	}
+
 	return f
+}
+
+// parseOverClause parses the window after OVER into f: either a bare window
+// name or a parenthesized window specification. Frame clauses (ROWS / RANGE
+// / GROUPS ...) are not supported yet.
+func (p *Parser) parseOverClause(f *pgast.FuncExpr) {
+	if !p.consume(LPAREN) {
+		f.Over = &pgast.WindowSpec{Name: pgast.ColIdent(p.readIdent())}
+		f.OverRef = true
+
+		return
+	}
+
+	spec := &pgast.WindowSpec{}
+
+	if p.at(IDENT) || p.at(QuotedIdent) {
+		spec.Name = pgast.ColIdent(p.readIdent())
+	}
+
+	if p.consume(PARTITION) {
+		p.expect(BY)
+		spec.PartitionBy = p.parseExprList()
+	}
+
+	if p.consume(ORDER) {
+		p.expect(BY)
+		spec.OrderBy = p.parseOrderByList()
+	}
+
+	p.expect(RPAREN)
+
+	f.Over = spec
+}
+
+func (p *Parser) parseOrderByList() pgast.OrderBy {
+	var orders pgast.OrderBy
+
+	for {
+		orders = append(orders, p.parseOrder())
+
+		if !p.consume(COMMA) {
+			return orders
+		}
+	}
+}
+
+func (p *Parser) parseOrder() *pgast.Order {
+	order := &pgast.Order{Expr: p.parseExpr()}
+
+	if p.consume(DESC) {
+		order.Direction = pgast.DescOrder
+	} else {
+		p.consume(ASC)
+	}
+
+	if p.consume(NULLS) {
+		order.Nulls = p.parseNullsPosition()
+	}
+
+	return order
+}
+
+func (p *Parser) parseNullsPosition() pgast.NullsOrder {
+	if p.consume(FIRST) {
+		return pgast.NullsFirst
+	}
+
+	p.expect(LAST)
+
+	return pgast.NullsLast
 }
 
 // parseExprList parses a comma-separated list of expressions.

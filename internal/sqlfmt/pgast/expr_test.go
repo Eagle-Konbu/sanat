@@ -36,6 +36,34 @@ func TestComparisonExpr_String(t *testing.T) {
 	assertEqual(t, "id = 1", c.String())
 }
 
+func TestComparisonExpr_String_escape(t *testing.T) {
+	c := &pgast.ComparisonExpr{Operator: pgast.LikeOp, Left: col("name"), Right: lit("'a!%'"), Escape: lit("'!'")}
+	assertEqual(t, "name LIKE 'a!%' ESCAPE '!'", c.String())
+}
+
+func TestIsTruthExpr_String(t *testing.T) {
+	tests := []struct {
+		name string
+		i    *pgast.IsTruthExpr
+		want string
+	}{
+		{"is true", &pgast.IsTruthExpr{Expr: col("x"), Value: pgast.TruthTrue}, "x IS TRUE"},
+		{"is not false", &pgast.IsTruthExpr{Not: true, Expr: col("x"), Value: pgast.TruthFalse}, "x IS NOT FALSE"},
+		{"is unknown", &pgast.IsTruthExpr{Expr: col("x"), Value: pgast.TruthUnknown}, "x IS UNKNOWN"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assertEqual(t, tt.want, tt.i.String())
+		})
+	}
+}
+
+func TestRowExpr_String(t *testing.T) {
+	assertEqual(t, "ROW(a, 1)", (&pgast.RowExpr{Exprs: []pgast.Expr{col("a"), lit("1")}}).String())
+	assertEqual(t, "ROW()", (&pgast.RowExpr{}).String())
+}
+
 func TestILikeExpr_String(t *testing.T) {
 	tests := []struct {
 		name string
@@ -44,6 +72,7 @@ func TestILikeExpr_String(t *testing.T) {
 	}{
 		{"positive", &pgast.ILikeExpr{Left: col("name"), Right: lit("'a%'")}, "name ILIKE 'a%'"},
 		{"negated", &pgast.ILikeExpr{Not: true, Left: col("name"), Right: lit("'a%'")}, "name NOT ILIKE 'a%'"},
+		{"escape", &pgast.ILikeExpr{Left: col("name"), Right: lit("'a!%'"), Escape: lit("'!'")}, "name ILIKE 'a!%' ESCAPE '!'"},
 	}
 
 	for _, tt := range tests {
@@ -127,6 +156,7 @@ func TestArithmeticOperator_String(t *testing.T) {
 		{pgast.MultOp, "*"},
 		{pgast.DivOp, "/"},
 		{pgast.ModOp, "%"},
+		{pgast.ExpOp, "^"},
 		{pgast.ArithmeticOperator(99), "+"},
 	}
 
@@ -276,6 +306,11 @@ func TestFuncExpr_String(t *testing.T) {
 				Over: &pgast.WindowSpec{OrderBy: pgast.OrderBy{{Expr: col("id")}}},
 			},
 			"row_number() OVER (ORDER BY id)",
+		},
+		{
+			"over window name",
+			&pgast.FuncExpr{Name: "row_number", Over: &pgast.WindowSpec{Name: "w"}, OverRef: true},
+			"row_number() OVER w",
 		},
 	}
 
