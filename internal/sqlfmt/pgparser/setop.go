@@ -17,12 +17,7 @@ func ParseSetOp(input string) (setOp *pgast.SetOp, err error) {
 	p := NewParser(input)
 	start := p.tok.Pos
 	stmt := p.parseQuery()
-
-	p.consume(SEMICOLON)
-
-	if !p.at(EOF) {
-		p.failf("unexpected token %s after statement", p.tok.Type)
-	}
+	p.expectStatementEnd()
 
 	result, ok := stmt.(*pgast.SetOp)
 	if !ok {
@@ -38,12 +33,13 @@ func ParseSetOp(input string) (setOp *pgast.SetOp, err error) {
 // whole query, so it is attached to the outermost statement. The current
 // token must be WITH, SELECT, or '('.
 func (p *Parser) parseQuery() pgast.Statement {
-	pos := p.tok.Pos
-	with := p.parseOptionalWith()
-	stmt := p.parseQueryFrom(p.parseSetOpOperand())
-	attachWith(stmt, with, pos)
+	return parseWithPrefixed(p, (*Parser).parseQueryAfterWith)
+}
 
-	return stmt
+// parseQueryAfterWith parses a query whose optional WITH clause has already
+// been consumed. The current token must be SELECT or '('.
+func (p *Parser) parseQueryAfterWith() pgast.Statement {
+	return p.parseQueryFrom(p.parseSetOpOperand())
 }
 
 // parseQueryFrom parses the rest of a query whose first operand has already

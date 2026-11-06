@@ -565,28 +565,131 @@ func TestParseExpr_array(t *testing.T) {
 	})
 }
 
-func TestParseExpr_jsonOperators(t *testing.T) {
+func opExpr(left pgast.Expr, symbol string, right pgast.Expr) *pgast.OperatorExpr {
+	return &pgast.OperatorExpr{Left: left, Operator: pgast.Operator{Symbol: symbol}, Right: right}
+}
+
+func TestParseExpr_genericOperators(t *testing.T) {
 	tests := []struct {
 		in    string
-		op    pgast.JSONOp
+		op    string
 		right pgast.Expr
 	}{
-		{"a -> 'k'", pgast.JSONArrow, num("'k'")},
-		{"a ->> 'k'", pgast.JSONArrowText, num("'k'")},
-		{"a #> 'k'", pgast.JSONHashArrow, num("'k'")},
-		{"a #>> 'k'", pgast.JSONHashArrowText, num("'k'")},
-		{"a @> b", pgast.JSONContains, col("b")},
-		{"a <@ b", pgast.JSONContainedBy, col("b")},
-		{"a ? 'k'", pgast.JSONExists, num("'k'")},
-		{"a ?| b", pgast.JSONExistsAny, col("b")},
-		{"a ?& b", pgast.JSONExistsAll, col("b")},
+		{"a -> 'k'", "->", num("'k'")},
+		{"a ->> 'k'", "->>", num("'k'")},
+		{"a #> 'k'", "#>", num("'k'")},
+		{"a #>> 'k'", "#>>", num("'k'")},
+		{"a @> b", "@>", col("b")},
+		{"a <@ b", "<@", col("b")},
+		{"a ? 'k'", "?", num("'k'")},
+		{"a ?| b", "?|", col("b")},
+		{"a ?& b", "?&", col("b")},
+		{"a @? b", "@?", col("b")},
+		{"a @@ b", "@@", col("b")},
+		{"a || b", "||", col("b")},
+		{"a ~ 'x'", "~", num("'x'")},
+		{"a ~* 'x'", "~*", num("'x'")},
+		{"a !~ 'x'", "!~", num("'x'")},
+		{"a !~* 'x'", "!~*", num("'x'")},
+		{"a & b", "&", col("b")},
+		{"a && b", "&&", col("b")},
+		{"a | b", "|", col("b")},
+		{"a << b", "<<", col("b")},
+		{"a >> b", ">>", col("b")},
+		{"a # b", "#", col("b")},
+		{"a <-> b", "<->", col("b")},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.in, func(t *testing.T) {
-			assertExpr(t, tt.in, &pgast.JSONOpExpr{Left: col("a"), Op: tt.op, Right: tt.right})
+			assertExpr(t, tt.in, opExpr(col("a"), tt.op, tt.right))
 		})
 	}
+}
+
+func TestParseExpr_operatorPrecedence(t *testing.T) {
+	t.Run("left-associative", func(t *testing.T) {
+		assertExpr(t, "a || b || c", opExpr(opExpr(col("a"), "||", col("b")), "||", col("c")))
+	})
+
+	t.Run("mixed generic operators share one level", func(t *testing.T) {
+		assertExpr(t, "a -> 'k' || b", opExpr(opExpr(col("a"), "->", num("'k'")), "||", col("b")))
+	})
+
+	t.Run("plus binds tighter", func(t *testing.T) {
+		assertExpr(t, "a || b + 1", opExpr(col("a"), "||", &pgast.ArithmeticExpr{
+			Left: col("b"), Operator: pgast.PlusOp, Right: num("1"),
+		}))
+	})
+
+	t.Run("comparison binds looser", func(t *testing.T) {
+		assertExpr(t, "a ~ b = c", &pgast.ComparisonExpr{
+			Left: opExpr(col("a"), "~", col("b")), Operator: pgast.EqualOp, Right: col("c"),
+		})
+	})
+
+	t.Run("like binds looser", func(t *testing.T) {
+		assertExpr(t, "a || b LIKE c", &pgast.ComparisonExpr{
+			Left: opExpr(col("a"), "||", col("b")), Operator: pgast.LikeOp, Right: col("c"),
+		})
+	})
+
+	t.Run("prefix operand extends over plus", func(t *testing.T) {
+		assertExpr(t, "~ a + b", &pgast.OperatorExpr{
+			Operator: pgast.Operator{Symbol: "~"},
+			Right:    &pgast.ArithmeticExpr{Left: col("a"), Operator: pgast.PlusOp, Right: col("b")},
+		})
+	})
+
+	t.Run("prefix operand stops at a generic operator", func(t *testing.T) {
+		assertExpr(t, "~ a || b", opExpr(&pgast.OperatorExpr{Operator: pgast.Operator{Symbol: "~"}, Right: col("a")}, "||", col("b")))
+	})
+}
+
+func TestParseExpr_operatorRoundTrip(t *testing.T) {
+	tests := []struct {
+		in, want string
+	}{
+		{"a||b", "a || b"},
+		{"a<->b", "a <-> b"},
+		{"a=-1", "a = -1"},
+		{"@ -5", "@ -5"},
+		{"!! 5", "!! 5"},
+		{"- ~a", "- ~ a"},
+		{"- -a", "- -a"},
+		{"-+1", "- +1"},
+		{"-(-a)", "-(-a)"},
+		{"a OPERATOR(+) b", "a OPERATOR(+) b"},
+		{"a operator(pg_catalog.~) 'x'", "a OPERATOR(pg_catalog.~) 'x'"},
+		{"a OPERATOR(pg_catalog.<>) b", "a OPERATOR(pg_catalog.<>) b"},
+		{"f(a => 1, b := 2)", "f(a => 1, b := 2)"},
+		{"f(1, first => x || y)", "f(1, first => x || y)"},
+		{"operator", "operator"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.in, func(t *testing.T) {
+			if got := parseExpr(t, tt.in).String(); got != tt.want {
+				t.Errorf("ParseExpr(%q).String() = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParseExpr_namedArguments(t *testing.T) {
+	t.Run("both spellings", func(t *testing.T) {
+		assertExpr(t, "f(a => 1, b := 2)", &pgast.FuncExpr{Name: "f", Args: []pgast.Expr{
+			&pgast.NamedArgExpr{Name: "a", Value: num("1")},
+			&pgast.NamedArgExpr{Name: "b", Value: num("2"), ColonEquals: true},
+		}})
+	})
+
+	t.Run("keyword name and operator value", func(t *testing.T) {
+		assertExpr(t, "f(1, first => x || y)", &pgast.FuncExpr{Name: "f", Args: []pgast.Expr{
+			num("1"),
+			&pgast.NamedArgExpr{Name: "first", Value: opExpr(col("x"), "||", col("y"))},
+		}})
+	})
 }
 
 func TestParseExpr_precedenceInteraction(t *testing.T) {
@@ -602,16 +705,12 @@ func TestParseExpr_precedenceInteraction(t *testing.T) {
 	})
 
 	t.Run("cast binds tighter than a JSON operator", func(t *testing.T) {
-		assertExpr(t, "a @> b::jsonb", &pgast.JSONOpExpr{
-			Left:  col("a"),
-			Op:    pgast.JSONContains,
-			Right: &pgast.CastExpr{Expr: col("b"), Type: "jsonb"},
-		})
+		assertExpr(t, "a @> b::jsonb", opExpr(col("a"), "@>", &pgast.CastExpr{Expr: col("b"), Type: "jsonb"}))
 	})
 
 	t.Run("JSON operator binds tighter than comparison", func(t *testing.T) {
 		assertExpr(t, "a -> 'k' = b", &pgast.ComparisonExpr{
-			Left:     &pgast.JSONOpExpr{Left: col("a"), Op: pgast.JSONArrow, Right: num("'k'")},
+			Left:     opExpr(col("a"), "->", num("'k'")),
 			Operator: pgast.EqualOp,
 			Right:    col("b"),
 		})
@@ -634,6 +733,11 @@ func TestParseExpr_errors(t *testing.T) {
 		"a LIKE b ESCAPE",
 		"f() OVER",
 		"f() OVER (PARTITION a)",
+		"a ||",
+		"a OPERATOR(",
+		"a OPERATOR(x)",
+		"a OPERATOR(+",
+		"f(a =>)",
 	}
 
 	for _, tt := range tests {

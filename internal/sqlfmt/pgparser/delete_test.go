@@ -46,6 +46,7 @@ func TestParseDelete_target(t *testing.T) {
 		{"only parenthesized name", "DELETE FROM ONLY (users) u", "DELETE FROM ONLY users u"},
 		{"include descendants", "DELETE FROM users *", "DELETE FROM users *"},
 		{"include descendants with alias", "DELETE FROM users * AS u", "DELETE FROM users * u"},
+		{"set alias keeps as", "DELETE FROM users AS set WHERE set.id = 1", "DELETE FROM users AS set WHERE set.id = 1"},
 	}
 
 	for _, tt := range tests {
@@ -152,6 +153,7 @@ func TestParseDelete_errors(t *testing.T) {
 		"DELETE FROM users RETURNING",
 		"DELETE FROM users ORDER BY id",
 		"DELETE FROM users LIMIT 1",
+		"DELETE FROM users set",
 	}
 
 	for _, tt := range tests {

@@ -35,6 +35,11 @@ type Lexer struct {
 	ch      rune
 	line    int
 	col     int // rune column of ch, 1-based
+
+	// signRunEnd is the byte offset where the trailing '+'/'-' characters
+	// split off the last operator end. Each of them is a one-character
+	// operator, so the run is not scanned again for each of them.
+	signRunEnd int
 }
 
 // New creates a Lexer over input.
@@ -95,6 +100,10 @@ func (l *Lexer) readIdentifierOrEscapeString(pos Position) (Token, error) {
 		return Token{Type: STRING, Literal: lit, Pos: pos}, nil
 	}
 
+	if l.startsUnicodeEscapeConstant() {
+		return Token{}, &LexError{Pos: pos, Msg: "Unicode escape strings (U&'...') are not supported"}
+	}
+
 	lit := l.readIdentifier()
 
 	tt := lookupIdent(lit)
@@ -103,6 +112,16 @@ func (l *Lexer) readIdentifierOrEscapeString(pos Position) (Token, error) {
 	}
 
 	return Token{Type: tt, Literal: lit, Pos: pos}, nil
+}
+
+// startsUnicodeEscapeConstant reports whether l.ch starts an unsupported
+// U&'...' string or U&"..." identifier, which would otherwise lex as the
+// identifier u, the & operator, and a string, silently changing the
+// statement's meaning.
+func (l *Lexer) startsUnicodeEscapeConstant() bool {
+	next := l.peekAt(2)
+
+	return (l.ch == 'u' || l.ch == 'U') && l.peek() == '&' && (next == '\'' || next == '"')
 }
 
 func (l *Lexer) currentPos() Position {
@@ -649,190 +668,120 @@ func (l *Lexer) tryReadExponent() bool {
 	return true
 }
 
+// readOperator reads an operator or punctuation token. A run of operator
+// characters is one operator, as in PostgreSQL's scanner (scan.l), so any
+// operator, including a user-defined one, lexes as a single token.
 func (l *Lexer) readOperator(pos Position) (Token, error) {
-	switch l.ch {
-	case '<':
-		return l.readLess(pos), nil
-	case '>':
-		return l.readGreater(pos), nil
-	case '!':
-		return l.readBang(pos)
-	case '-':
-		return l.readMinusOrArrow(pos), nil
-	case '|':
-		return l.readPipe(pos)
-	case ':':
+	switch {
+	case l.ch == ':':
 		return l.readColon(pos), nil
-	default:
-		return l.readJSONOperator(pos)
-	}
-}
+	case l.pos < l.signRunEnd:
+		text := string(l.ch)
+		l.readChar()
 
-// readJSONOperator reads the jsonb operators starting with '#', '@' or '?',
-// falling back to single-character tokens. It is split from readOperator to
-// keep that function's cyclomatic complexity down.
-func (l *Lexer) readJSONOperator(pos Position) (Token, error) {
-	switch l.ch {
-	case '#':
-		return l.readHash(pos)
-	case '@':
-		return l.readAt(pos)
-	case '?':
-		return l.readQuestion(pos), nil
+		return Token{Type: operatorTokenType(text), Literal: text, Pos: pos}, nil
+	case isOperatorChar(l.ch):
+		text, runLen := operatorText(l.input[l.pos:])
+		l.signRunEnd = l.pos + runLen
+
+		for range len(text) {
+			l.readChar()
+		}
+
+		return Token{Type: operatorTokenType(text), Literal: text, Pos: pos}, nil
 	default:
 		return l.readSingleCharToken(pos)
 	}
 }
 
-func (l *Lexer) readLess(pos Position) Token {
-	l.readChar() // consume '<'
+// isOperatorChar reports whether ch can be part of an operator
+// (PostgreSQL's op_chars). All of them are ASCII.
+func isOperatorChar(ch rune) bool {
+	return strings.ContainsRune("~!@#^&|`?+-*/%<>=", ch)
+}
 
-	switch l.ch {
-	case '>':
-		l.readChar()
+// operatorText returns the operator at the start of input, following
+// scan.l: the longest run of operator characters, cut short where a "--" or
+// "/*" comment starts. For SQL compatibility a multi-character operator may
+// not end in '+' or '-' unless it also contains a character SQL's own
+// operators never use, so "=-1" lexes as "=" then "-1" but "?-" stays whole.
+// It also returns the length of the run before that trailing '+'/'-' is
+// dropped; what was dropped lexes as one-character operators.
+func operatorText(input string) (string, int) {
+	n := 0
+	for n < len(input) && isOperatorChar(rune(input[n])) {
+		n++
+	}
 
-		return Token{Type: NE, Literal: "<>", Pos: pos}
-	case '=':
-		l.readChar()
+	run := input[:n]
+	if i := commentStart(run); i >= 0 {
+		run = run[:i]
+	}
 
-		return Token{Type: LE, Literal: "<=", Pos: pos}
-	case '@':
-		l.readChar()
+	if strings.ContainsAny(run, "~!@#^&|`?%") {
+		return run, len(run)
+	}
 
-		return Token{Type: ContainedBy, Literal: "<@", Pos: pos}
+	return run[:max(1, len(strings.TrimRight(run, "+-")))], len(run)
+}
+
+// commentStart returns the index of the first "--" or "/*" in text, or -1.
+func commentStart(text string) int {
+	dashes, slashStar := strings.Index(text, "--"), strings.Index(text, "/*")
+
+	switch {
+	case dashes < 0:
+		return slashStar
+	case slashStar < 0:
+		return dashes
 	default:
-		return Token{Type: LT, Literal: "<", Pos: pos}
+		return min(dashes, slashStar)
 	}
 }
 
-func (l *Lexer) readGreater(pos Position) Token {
-	l.readChar() // consume '>'
-
-	if l.ch == '=' {
-		l.readChar()
-
-		return Token{Type: GE, Literal: ">=", Pos: pos}
-	}
-
-	return Token{Type: GT, Literal: ">", Pos: pos}
+// fixedOperators are the operators that keep their own token type, because
+// the grammar gives them a precedence level or meaning of their own. Every
+// other operator is an Op.
+var fixedOperators = map[string]TokenType{
+	"=":  EQ,
+	"<>": NE,
+	"!=": NE,
+	"<":  LT,
+	">":  GT,
+	"<=": LE,
+	">=": GE,
+	"+":  PLUS,
+	"-":  MINUS,
+	"*":  STAR,
+	"/":  SLASH,
+	"%":  PERCENT,
+	"^":  CARET,
+	"=>": EqualsGreater,
 }
 
-func (l *Lexer) readBang(pos Position) (Token, error) {
-	if l.peek() == '=' {
-		l.readChar()
-		l.readChar()
-
-		return Token{Type: NE, Literal: "!=", Pos: pos}, nil
+func operatorTokenType(text string) TokenType {
+	if tt, ok := fixedOperators[text]; ok {
+		return tt
 	}
 
-	ch := l.ch
-	l.readChar()
-
-	return Token{}, &LexError{Pos: pos, Msg: fmt.Sprintf("unexpected character %q", ch)}
-}
-
-func (l *Lexer) readMinusOrArrow(pos Position) Token {
-	l.readChar() // consume '-'
-
-	if l.ch != '>' {
-		return Token{Type: MINUS, Literal: "-", Pos: pos}
-	}
-
-	l.readChar() // consume '>'
-
-	if l.ch == '>' {
-		l.readChar()
-
-		return Token{Type: ArrowText, Literal: "->>", Pos: pos}
-	}
-
-	return Token{Type: Arrow, Literal: "->", Pos: pos}
-}
-
-func (l *Lexer) readHash(pos Position) (Token, error) {
-	if l.peek() != '>' {
-		ch := l.ch
-		l.readChar()
-
-		return Token{}, &LexError{Pos: pos, Msg: fmt.Sprintf("unexpected character %q", ch)}
-	}
-
-	l.readChar() // consume '#'
-	l.readChar() // consume '>'
-
-	if l.ch == '>' {
-		l.readChar()
-
-		return Token{Type: HashArrowText, Literal: "#>>", Pos: pos}, nil
-	}
-
-	return Token{Type: HashArrow, Literal: "#>", Pos: pos}, nil
-}
-
-var atOperators = map[rune]TokenType{
-	'>': Contains,
-	'?': JSONPathExists,
-	'@': JSONPathMatch,
-}
-
-func (l *Lexer) readAt(pos Position) (Token, error) {
-	tt, ok := atOperators[l.peek()]
-	if !ok {
-		ch := l.ch
-		l.readChar()
-
-		return Token{}, &LexError{Pos: pos, Msg: fmt.Sprintf("unexpected character %q", ch)}
-	}
-
-	lit := "@" + string(l.peek())
-
-	l.readChar() // consume '@'
-	l.readChar() // consume the operator's second character
-
-	return Token{Type: tt, Literal: lit, Pos: pos}, nil
-}
-
-func (l *Lexer) readPipe(pos Position) (Token, error) {
-	if l.peek() != '|' {
-		ch := l.ch
-		l.readChar()
-
-		return Token{}, &LexError{Pos: pos, Msg: fmt.Sprintf("unexpected character %q", ch)}
-	}
-
-	l.readChar()
-	l.readChar()
-
-	return Token{Type: CONCAT, Literal: "||", Pos: pos}, nil
-}
-
-func (l *Lexer) readQuestion(pos Position) Token {
-	l.readChar() // consume '?'
-
-	switch l.ch {
-	case '|':
-		l.readChar()
-
-		return Token{Type: JSONExistsAny, Literal: "?|", Pos: pos}
-	case '&':
-		l.readChar()
-
-		return Token{Type: JSONExistsAll, Literal: "?&", Pos: pos}
-	default:
-		return Token{Type: JSONExists, Literal: "?", Pos: pos}
-	}
+	return Op
 }
 
 func (l *Lexer) readColon(pos Position) Token {
 	l.readChar() // consume ':'
 
-	if l.ch == ':' {
+	switch l.ch {
+	case ':':
 		l.readChar()
 
 		return Token{Type: DoubleColon, Literal: "::", Pos: pos}
-	}
+	case '=':
+		l.readChar()
 
-	return Token{Type: COLON, Literal: ":", Pos: pos}
+		return Token{Type: ColonEquals, Literal: ":=", Pos: pos}
+	default:
+		return Token{Type: COLON, Literal: ":", Pos: pos}
+	}
 }
 
 func (l *Lexer) readSingleCharToken(pos Position) (Token, error) {
@@ -851,12 +800,6 @@ func (l *Lexer) readSingleCharToken(pos Position) (Token, error) {
 }
 
 var singleCharTokens = map[rune]TokenType{
-	'=': EQ,
-	'+': PLUS,
-	'*': STAR,
-	'/': SLASH,
-	'%': PERCENT,
-	'^': CARET,
 	'(': LPAREN,
 	')': RPAREN,
 	'[': LBRACKET,

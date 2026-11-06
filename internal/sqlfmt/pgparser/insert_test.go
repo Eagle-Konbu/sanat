@@ -119,6 +119,26 @@ func TestParseInsert_onConflict(t *testing.T) {
 			"INSERT INTO t (id, a, b) VALUES (1, 2, 3) ON CONFLICT (id) DO UPDATE SET a = excluded.a + t.a, b = DEFAULT",
 		},
 		{
+			"do update multi-column assignment",
+			"INSERT INTO t (a, b) VALUES (1, 2) ON CONFLICT (a) DO UPDATE SET (a, b) = (EXCLUDED.a, EXCLUDED.b)",
+			"INSERT INTO t (a, b) VALUES (1, 2) ON CONFLICT (a) DO UPDATE SET (a, b) = (excluded.a, excluded.b)",
+		},
+		{
+			"do update row constructor assignment",
+			"INSERT INTO t (a, b) VALUES (1, 2) ON CONFLICT (a) DO UPDATE SET (a, b) = ROW(excluded.a, DEFAULT)",
+			"INSERT INTO t (a, b) VALUES (1, 2) ON CONFLICT (a) DO UPDATE SET (a, b) = ROW(excluded.a, DEFAULT)",
+		},
+		{
+			"do update sub-select assignment",
+			"INSERT INTO t (a, b) VALUES (1, 2) ON CONFLICT (a) DO UPDATE SET (a, b) = (SELECT x, y FROM u)",
+			"INSERT INTO t (a, b) VALUES (1, 2) ON CONFLICT (a) DO UPDATE SET (a, b) = (SELECT x, y FROM u)",
+		},
+		{
+			"do update composite field assignment",
+			"INSERT INTO t (a) VALUES (1) ON CONFLICT (a) DO UPDATE SET c.f = 1",
+			"INSERT INTO t (a) VALUES (1) ON CONFLICT (a) DO UPDATE SET c.f = 1",
+		},
+		{
 			"do update with where",
 			"INSERT INTO t AS x (id, n) VALUES (1, 2) ON CONFLICT (id) DO UPDATE SET n = excluded.n WHERE x.n < excluded.n",
 			"INSERT INTO t AS x (id, n) VALUES (1, 2) ON CONFLICT (id) DO UPDATE SET n = excluded.n WHERE x.n < excluded.n",

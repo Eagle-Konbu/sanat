@@ -57,6 +57,11 @@ func (s *Select) String() string {
 }
 
 // Insert represents an INSERT statement.
+//
+// Its target is a TableName plus an Alias rather than the *AliasedTableExpr
+// UPDATE, DELETE, and MERGE use, because PostgreSQL's INSERT target is a
+// different production: it takes no ONLY or "*", and its alias requires AS,
+// so Alias renders with AS where an AliasedTableExpr's would not.
 type Insert struct {
 	With       *With
 	Table      TableName
@@ -124,16 +129,12 @@ func (v Values) String() string {
 
 // Update represents an UPDATE statement.
 type Update struct {
-	With  *With
-	Only  bool // UPDATE ONLY t: exclude inheritance descendants
-	Table *AliasedTableExpr
-	// Descendants records an explicit "t *" (include descendants, which is
-	// already PostgreSQL's default) so the target round-trips as written.
-	Descendants bool
-	Set         []*UpdateExpr
-	From        []TableExpr
-	Where       *Where
-	Returning   *Returning
+	With      *With
+	Table     *AliasedTableExpr
+	Set       []*UpdateExpr
+	From      []TableExpr
+	Where     *Where
+	Returning *Returning
 }
 
 // String returns Update's SQL text.
@@ -143,7 +144,7 @@ func (u *Update) String() string {
 	writeOptionalPrefix(&b, u.With)
 
 	b.WriteString("UPDATE ")
-	b.WriteString(u.targetString())
+	b.WriteString(dmlTargetString(u.Table))
 
 	sets := make([]string, len(u.Set))
 	for i, e := range u.Set {
@@ -163,31 +164,18 @@ func (u *Update) String() string {
 	return b.String()
 }
 
-// targetString renders the target table, placing ONLY before the table name
-// and an explicit "*" between the table name and its alias.
-func (u *Update) targetString() string {
-	if !u.Only && !u.Descendants {
-		return u.Table.String()
+// dmlTargetString renders an UPDATE or DELETE target. Its alias renders
+// without AS, except an alias named set: PostgreSQL never reads a bare SET
+// after the target as an alias.
+func dmlTargetString(t *AliasedTableExpr) string {
+	if t.As != "set" {
+		return t.String()
 	}
 
-	var b strings.Builder
+	bare := *t
+	bare.As = ""
 
-	if u.Only {
-		b.WriteString("ONLY ")
-	}
-
-	b.WriteString(u.Table.Expr.String())
-
-	if u.Descendants {
-		b.WriteString(" *")
-	}
-
-	if !u.Table.As.IsEmpty() {
-		b.WriteString(" ")
-		b.WriteString(u.Table.As.String())
-	}
-
-	return b.String()
+	return bare.String() + " AS set"
 }
 
 // Delete represents a DELETE statement.
@@ -206,7 +194,7 @@ func (d *Delete) String() string {
 	writeOptionalPrefix(&b, d.With)
 
 	b.WriteString("DELETE FROM ")
-	b.WriteString(d.Table.String())
+	b.WriteString(dmlTargetString(d.Table))
 
 	if len(d.Using) > 0 {
 		strs := make([]string, len(d.Using))
@@ -419,13 +407,15 @@ func (c *CommonTableExpr) String() string {
 	return b.String()
 }
 
-// Merge represents a MERGE statement.
+// Merge represents a MERGE statement (PostgreSQL 15+). Target carries ONLY
+// and "*" the same way UPDATE's and DELETE's targets do.
 type Merge struct {
-	With   *With
-	Target *AliasedTableExpr
-	Source TableExpr
-	On     Expr
-	Whens  []*MergeWhen
+	With      *With
+	Target    *AliasedTableExpr
+	Source    TableExpr
+	On        Expr
+	Whens     []*MergeWhen
+	Returning *Returning // PostgreSQL 17+
 }
 
 // String returns Merge's SQL text.
@@ -446,36 +436,58 @@ func (m *Merge) String() string {
 		b.WriteString(w.String())
 	}
 
+	writeSuffix(&b, m.Returning)
+
 	return b.String()
 }
 
-// MergeWhen represents one WHEN [NOT] MATCHED [BY SOURCE] THEN ... clause of
-// a MERGE statement. Exactly one of DoNothing/Delete/Set/(Columns+Values) is
-// set, depending on the clause's action.
+// MergeMatchKind is the condition a MERGE WHEN clause applies to.
+type MergeMatchKind int8
+
+const (
+	// MergeMatched is "WHEN MATCHED".
+	MergeMatched MergeMatchKind = iota
+	// MergeNotMatched is "WHEN NOT MATCHED".
+	MergeNotMatched
+	// MergeNotMatchedByTarget is "WHEN NOT MATCHED BY TARGET" (PostgreSQL
+	// 17+). It means the same as MergeNotMatched, and is kept apart only so
+	// the clause round-trips as written.
+	MergeNotMatchedByTarget
+	// MergeNotMatchedBySource is "WHEN NOT MATCHED BY SOURCE" (PostgreSQL
+	// 17+).
+	MergeNotMatchedBySource
+)
+
+// String returns MergeMatchKind's SQL text.
+func (k MergeMatchKind) String() string {
+	switch k {
+	case MergeNotMatched:
+		return "NOT MATCHED"
+	case MergeNotMatchedByTarget:
+		return "NOT MATCHED BY TARGET"
+	case MergeNotMatchedBySource:
+		return "NOT MATCHED BY SOURCE"
+	default:
+		return "MATCHED"
+	}
+}
+
+// MergeWhen represents one "WHEN match [AND condition] THEN action" clause
+// of a MERGE statement. Which actions a match kind admits (INSERT only when
+// NOT MATCHED [BY TARGET], UPDATE and DELETE otherwise) is enforced by the
+// parser, as in PostgreSQL's grammar.
 type MergeWhen struct {
-	Matched   bool
-	BySource  bool
+	Match     MergeMatchKind
 	Condition Expr
-	DoNothing bool
-	Delete    bool
-	Set       []*UpdateExpr // WHEN MATCHED / NOT MATCHED BY SOURCE ... THEN UPDATE SET ...
-	Columns   Columns       // WHEN NOT MATCHED ... THEN INSERT (columns...)
-	Values    []Expr        // ... VALUES (...)
+	Action    MergeAction
 }
 
 // String returns MergeWhen's SQL text.
 func (w *MergeWhen) String() string {
 	var b strings.Builder
 
-	if w.Matched {
-		b.WriteString("WHEN MATCHED")
-	} else {
-		b.WriteString("WHEN NOT MATCHED")
-
-		if w.BySource {
-			b.WriteString(" BY SOURCE")
-		}
-	}
+	b.WriteString("WHEN ")
+	b.WriteString(w.Match.String())
 
 	if w.Condition != nil {
 		b.WriteString(" AND ")
@@ -483,37 +495,95 @@ func (w *MergeWhen) String() string {
 	}
 
 	b.WriteString(" THEN ")
-	w.writeAction(&b)
+	b.WriteString(w.Action.String())
 
 	return b.String()
 }
 
-func (w *MergeWhen) writeAction(b *strings.Builder) {
-	switch {
-	case w.DoNothing:
-		b.WriteString("DO NOTHING")
-	case w.Delete:
-		b.WriteString("DELETE")
-	case w.Matched || w.BySource || len(w.Set) > 0:
-		sets := make([]string, len(w.Set))
-		for i, s := range w.Set {
-			sets[i] = s.String()
-		}
+// MergeUpdate represents a MERGE "UPDATE SET ..." action.
+type MergeUpdate struct {
+	Set []*UpdateExpr
+}
 
-		b.WriteString("UPDATE SET ")
-		b.WriteString(strings.Join(sets, ", "))
-	default:
-		b.WriteString("INSERT")
+// String returns MergeUpdate's SQL text.
+func (u *MergeUpdate) String() string {
+	sets := make([]string, len(u.Set))
+	for i, e := range u.Set {
+		sets[i] = e.String()
+	}
 
-		if len(w.Columns) > 0 {
-			b.WriteString(" (")
-			b.WriteString(w.Columns.String())
-			b.WriteString(")")
-		}
+	return "UPDATE SET " + strings.Join(sets, ", ")
+}
 
-		b.WriteString(" VALUES (")
-		b.WriteString(exprListString(w.Values))
+// MergeDelete represents a MERGE "DELETE" action.
+type MergeDelete struct{}
+
+// String returns MergeDelete's SQL text.
+func (MergeDelete) String() string { return "DELETE" }
+
+// MergeDoNothing represents a MERGE "DO NOTHING" action.
+type MergeDoNothing struct{}
+
+// String returns MergeDoNothing's SQL text.
+func (MergeDoNothing) String() string { return "DO NOTHING" }
+
+// MergeInsert represents a MERGE
+// "INSERT [(columns)] [OVERRIDING ...] {VALUES (...) | DEFAULT VALUES}"
+// action. A nil Values renders DEFAULT VALUES, which PostgreSQL allows only
+// without Columns or Overriding. An empty VALUES row is not valid SQL, so
+// nil is unambiguous.
+type MergeInsert struct {
+	Columns    Columns
+	Overriding Overriding
+	Values     []Expr
+}
+
+// String returns MergeInsert's SQL text.
+func (ins *MergeInsert) String() string {
+	var b strings.Builder
+
+	b.WriteString("INSERT")
+
+	if len(ins.Columns) > 0 {
+		b.WriteString(" (")
+		b.WriteString(ins.Columns.String())
 		b.WriteString(")")
+	}
+
+	writeSuffix(&b, ins.Overriding)
+
+	if ins.Values == nil {
+		b.WriteString(" DEFAULT VALUES")
+
+		return b.String()
+	}
+
+	b.WriteString(" VALUES (")
+	b.WriteString(exprListString(ins.Values))
+	b.WriteString(")")
+
+	return b.String()
+}
+
+// Overriding is an INSERT's "OVERRIDING {SYSTEM | USER} VALUE" clause, which
+// controls how values for identity columns are treated.
+type Overriding int8
+
+const (
+	OverridingNone Overriding = iota
+	OverridingSystemValue
+	OverridingUserValue
+)
+
+// String returns Overriding's SQL text, or "" when there is no clause.
+func (o Overriding) String() string {
+	switch o {
+	case OverridingSystemValue:
+		return "OVERRIDING SYSTEM VALUE"
+	case OverridingUserValue:
+		return "OVERRIDING USER VALUE"
+	default:
+		return ""
 	}
 }
 

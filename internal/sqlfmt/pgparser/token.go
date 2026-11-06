@@ -36,21 +36,14 @@ const (
 	STAR    // *
 	SLASH   // /
 	PERCENT // %
-	CONCAT  // ||
 	CARET   // ^
+	// Op is any other operator, such as ||, ~, @>, ->, or a user-defined
+	// one (Literal is its text).
+	Op
 
-	DoubleColon    // ::
-	Arrow          // ->
-	ArrowText      // ->>
-	HashArrow      // #>
-	HashArrowText  // #>>
-	Contains       // @>
-	ContainedBy    // <@
-	JSONPathExists // @?
-	JSONPathMatch  // @@
-	JSONExists     // ?
-	JSONExistsAny  // ?|
-	JSONExistsAll  // ?&
+	DoubleColon   // ::
+	EqualsGreater // => (named argument)
+	ColonEquals   // := (named argument)
 
 	LPAREN    // (
 	RPAREN    // )
@@ -157,6 +150,7 @@ const (
 	RETURNING
 	RECURSIVE
 	MATERIALIZED
+	OPERATOR
 	keywordEnd
 )
 
@@ -181,21 +175,12 @@ var tokenNames = map[TokenType]string{
 	STAR:    "*",
 	SLASH:   "/",
 	PERCENT: "%",
-	CONCAT:  "||",
 	CARET:   "^",
 
-	DoubleColon:    "::",
-	Arrow:          "->",
-	ArrowText:      "->>",
-	HashArrow:      "#>",
-	HashArrowText:  "#>>",
-	Contains:       "@>",
-	ContainedBy:    "<@",
-	JSONPathExists: "@?",
-	JSONPathMatch:  "@@",
-	JSONExists:     "?",
-	JSONExistsAny:  "?|",
-	JSONExistsAll:  "?&",
+	DoubleColon:   "::",
+	Op:            "OP",
+	EqualsGreater: "=>",
+	ColonEquals:   ":=",
 
 	LPAREN:    "(",
 	RPAREN:    ")",
@@ -301,6 +286,7 @@ var tokenNames = map[TokenType]string{
 	RETURNING:    "RETURNING",
 	RECURSIVE:    "RECURSIVE",
 	MATERIALIZED: "MATERIALIZED",
+	OPERATOR:     "OPERATOR",
 }
 
 // String returns the token type's display name, used in error messages.
@@ -328,6 +314,10 @@ func buildKeywordTable() map[string]TokenType {
 			panic(fmt.Sprintf("pgparser: keyword token %d has no tokenNames entry", tt))
 		}
 
+		if _, ok := keywordClasses[tt]; !ok {
+			panic(fmt.Sprintf("pgparser: keyword %s has no keywordClasses entry", name))
+		}
+
 		m[name] = tt
 	}
 
@@ -336,7 +326,7 @@ func buildKeywordTable() map[string]TokenType {
 
 // lookupIdent returns the keyword TokenType for literal (matched
 // case-insensitively, per PostgreSQL's default unquoted-identifier folding),
-// or IDENT if literal is not a reserved keyword.
+// or IDENT if literal is not a keyword.
 func lookupIdent(literal string) TokenType {
 	if tt, ok := keywords[asciiUpper(literal)]; ok {
 		return tt

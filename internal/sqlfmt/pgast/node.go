@@ -48,6 +48,13 @@ type InsertRows interface {
 	iInsertRows()
 }
 
+// MergeAction represents the action of a MERGE WHEN clause: *MergeUpdate,
+// MergeDelete, *MergeInsert, or MergeDoNothing.
+type MergeAction interface {
+	SQLNode
+	iMergeAction()
+}
+
 // ColIdent represents a column identifier.
 //
 // PostgreSQL folds unquoted identifiers to lower case but keeps a

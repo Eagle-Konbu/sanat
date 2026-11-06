@@ -2,6 +2,7 @@ package pgparser_test
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/Eagle-Konbu/sanat/internal/sqlfmt/pgparser"
@@ -464,20 +465,10 @@ func TestLexer_Operators(t *testing.T) {
 		{"*", pgparser.STAR},
 		{"/", pgparser.SLASH},
 		{"%", pgparser.PERCENT},
-		{"||", pgparser.CONCAT},
 		{"^", pgparser.CARET},
 		{"::", pgparser.DoubleColon},
-		{"->", pgparser.Arrow},
-		{"->>", pgparser.ArrowText},
-		{"#>", pgparser.HashArrow},
-		{"#>>", pgparser.HashArrowText},
-		{"@>", pgparser.Contains},
-		{"<@", pgparser.ContainedBy},
-		{"@?", pgparser.JSONPathExists},
-		{"@@", pgparser.JSONPathMatch},
-		{"?", pgparser.JSONExists},
-		{"?|", pgparser.JSONExistsAny},
-		{"?&", pgparser.JSONExistsAll},
+		{"=>", pgparser.EqualsGreater},
+		{":=", pgparser.ColonEquals},
 		{"(", pgparser.LPAREN},
 		{")", pgparser.RPAREN},
 		{"[", pgparser.LBRACKET},
@@ -496,26 +487,121 @@ func TestLexer_Operators(t *testing.T) {
 			})
 		})
 	}
+}
 
-	t.Run("unexpected bang", func(t *testing.T) {
-		assertLexError(t, "!a")
-	})
+func TestLexer_genericOperators(t *testing.T) {
+	for _, in := range []string{
+		"||", "->", "->>", "#>", "#>>", "#-", "@>", "<@", "@?", "@@", "?", "?|", "?&",
+		"~", "~*", "!~", "!~*", "~~", "&", "&&", "|", "<<", ">>", "#", "@", "!", "<->",
+		"|/", "||/", "`", "?-", "@-", "%+", "<=>", "=~",
+	} {
+		t.Run(in, func(t *testing.T) {
+			assertTokens(t, in, []wantToken{
+				{pgparser.Op, in},
+				{pgparser.EOF, ""},
+			})
+		})
+	}
+}
 
-	t.Run("unexpected hash", func(t *testing.T) {
-		assertLexError(t, "#a")
-	})
+// A run of operator characters is one operator, except that it stops at a
+// comment start, and a trailing + or - is split off unless the run contains
+// a character SQL's own operators never use (scan.l's rule).
+func TestLexer_operatorBoundaries(t *testing.T) {
+	tests := []struct {
+		name, in string
+		want     []wantToken
+	}{
+		{"trailing minus split off", "a=-1", []wantToken{
+			{pgparser.IDENT, "a"}, {pgparser.EQ, "="}, {pgparser.MINUS, "-"}, {pgparser.INT, "1"},
+		}},
+		{"trailing minus after less-than", "a<-1", []wantToken{
+			{pgparser.IDENT, "a"}, {pgparser.LT, "<"}, {pgparser.MINUS, "-"}, {pgparser.INT, "1"},
+		}},
+		{"several trailing signs split off", "a*+-b", []wantToken{
+			{pgparser.IDENT, "a"}, {pgparser.STAR, "*"}, {pgparser.PLUS, "+"}, {pgparser.MINUS, "-"}, {pgparser.IDENT, "b"},
+		}},
+		{"split leaves a two-character fixed operator", "a<>-1", []wantToken{
+			{pgparser.IDENT, "a"}, {pgparser.NE, "<>"}, {pgparser.MINUS, "-"}, {pgparser.INT, "1"},
+		}},
+		{"trailing minus kept after a non-SQL character", "a@-1", []wantToken{
+			{pgparser.IDENT, "a"}, {pgparser.Op, "@-"}, {pgparser.INT, "1"},
+		}},
+		{"distance operator stays whole", "a<->b", []wantToken{
+			{pgparser.IDENT, "a"}, {pgparser.Op, "<->"}, {pgparser.IDENT, "b"},
+		}},
+		{"stops at line comment", "a+--c\nb", []wantToken{
+			{pgparser.IDENT, "a"}, {pgparser.PLUS, "+"}, {pgparser.IDENT, "b"},
+		}},
+		{"stops at block comment", "a||/* c */b", []wantToken{
+			{pgparser.IDENT, "a"}, {pgparser.Op, "||"}, {pgparser.IDENT, "b"},
+		}},
+		{"named argument arrow", "a=>1", []wantToken{
+			{pgparser.IDENT, "a"}, {pgparser.EqualsGreater, "=>"}, {pgparser.INT, "1"},
+		}},
+		{"split-off signs stop at a comment", "a<+-+--c\nb", []wantToken{
+			{pgparser.IDENT, "a"}, {pgparser.LT, "<"}, {pgparser.PLUS, "+"}, {pgparser.MINUS, "-"},
+			{pgparser.PLUS, "+"}, {pgparser.IDENT, "b"},
+		}},
+		{"operator after split-off signs is lexed afresh", "a*+ +@b", []wantToken{
+			{pgparser.IDENT, "a"}, {pgparser.STAR, "*"}, {pgparser.PLUS, "+"}, {pgparser.Op, "+@"}, {pgparser.IDENT, "b"},
+		}},
+	}
 
-	t.Run("unexpected at", func(t *testing.T) {
-		assertLexError(t, "@a")
-	})
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assertTokens(t, tt.in, append(tt.want, wantToken{pgparser.EOF, ""}))
+		})
+	}
+}
 
-	t.Run("unexpected pipe", func(t *testing.T) {
-		assertLexError(t, "|a")
-	})
+// A long run of signs splits into one-character operators; lexing it must
+// not scan the rest of the run again for each one.
+func TestLexer_longSignRun(t *testing.T) {
+	const n = 1 << 16
 
-	t.Run("unexpected character", func(t *testing.T) {
-		assertLexError(t, "~")
+	l := pgparser.New("a" + strings.Repeat("+", n) + "1")
+
+	count := 0
+
+	for {
+		tok, err := l.Next()
+		if err != nil {
+			t.Fatalf("Next() error = %v", err)
+		}
+
+		if tok.Type == pgparser.EOF {
+			break
+		}
+
+		count++
+	}
+
+	if want := n + 2; count != want {
+		t.Errorf("token count = %d, want %d", count, want)
+	}
+}
+
+func TestLexer_unicodeEscapeConstantUnsupported(t *testing.T) {
+	for _, in := range []string{"U&'x'", `u&"x"`} {
+		t.Run(in, func(t *testing.T) {
+			assertLexError(t, in)
+		})
+	}
+
+	t.Run("u followed by the & operator", func(t *testing.T) {
+		assertTokens(t, "u & 'x'", []wantToken{
+			{pgparser.IDENT, "u"}, {pgparser.Op, "&"}, {pgparser.STRING, "x"}, {pgparser.EOF, ""},
+		})
 	})
+}
+
+func TestLexer_unexpectedCharacter(t *testing.T) {
+	for _, in := range []string{"{", "}", "\\", "a \\ b"} {
+		t.Run(in, func(t *testing.T) {
+			assertLexError(t, in)
+		})
+	}
 }
 
 func TestLexer_Comments(t *testing.T) {
