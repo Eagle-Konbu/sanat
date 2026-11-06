@@ -49,9 +49,13 @@ reviews:
     # The check scores the share of all functions in a PR that have a doc
     # comment, including _test.go functions and AST marker methods, and it
     # cannot be scoped by path. That made it warn on every parser PR even
-    # though all exported API is documented. Doc-comment quality is reviewed
-    # instead through path_instructions below, which ask for comments that
-    # explain "why" rather than for a coverage percentage.
+    # though all exported API is documented. Two guardrails replace it:
+    # - CI's "Check doc comments on new exported identifiers" step (and
+    #   `task lint:exported`) runs revive's exported rule from
+    #   .golangci.exported.yml on the diff, failing on a new or changed
+    #   exported identifier without a doc comment.
+    # - path_instructions below ask for doc comments that are accurate and
+    #   explain "why", and flag new exported identifiers that lack one.
     docstrings:
       mode: "off"
 
@@ -70,7 +74,8 @@ reviews:
         Go (effective Go conventions for error handling, naming, and
         receivers) over non-idiomatic patterns. For doc comments on exported
         identifiers, prioritize whether the explanation is accurate and
-        clear over simply being present.
+        clear over simply being present. Still flag a new or changed
+        exported identifier that has no doc comment at all.
 
         This package implements an in-house SQL lexer/parser and formatter
         (see docs/parser-spec.md, docs/formatter-spec.md), so bring a
@@ -116,6 +121,45 @@ reviews:
         (e.g. this parser alongside a third-party parser elsewhere),
         flag behavioral divergence between them for the same construct
         unless the PR explains the divergence is intentional.
+    - path: "internal/sqlfmt/pgast/**"
+      instructions: >
+        This package defines the PostgreSQL AST, mirroring sqlast's shape,
+        and uses marker methods (gathered in markers.go) to seal each node
+        interface (Statement, Expr, TableExpr, SelectExpr, SimpleTableExpr,
+        InsertRows, MergeAction) to types declared in this package. Review
+        new or changed node types as a tree-design problem: every node must
+        implement the marker method(s) for the interface(s) it claims, have
+        a String() that renders valid PostgreSQL (not MySQL) syntax, and use
+        receiver types (value vs. pointer) consistently with sibling node
+        types. Check that a new or changed node type is handled everywhere
+        nodes of its interface are switched over (pgparser, String()
+        implementations, and any formatter or visitor) — a missed case is a
+        silent formatting bug, not a compile error. Prefer minimal,
+        composable node shapes over reusing an unrelated node type, and
+        flag a node copied from sqlast that carries MySQL-only semantics.
+    - path: "internal/sqlfmt/pgparser/**"
+      instructions: >
+        This is a hand-written PostgreSQL lexer and recursive-descent parser
+        producing the pgast tree (see docs/postgres-parser-spec.md). Review
+        precedence and associativity against PostgreSQL's documented
+        operator precedence table and gram.y, not just internal consistency
+        or MySQL's rules: for example, NOT binds looser than IS, comparison
+        operators are non-associative, '^' is left-associative and looser
+        than unary minus, '::' binds tighter than unary minus, and any
+        operator without its own precedence level shares the generic
+        operator level. A precedence error silently misgroups a valid query
+        rather than failing loudly. Check lexing against PostgreSQL's
+        scanner (scan.l) under standard_conforming_strings = on: no
+        backslash escapes in plain '...' strings, E'...' escapes,
+        dollar-quoted strings, nested block comments, double-quoted
+        identifiers that preserve case while unquoted ones fold to lower
+        case, "$n" placeholders, and multi-character operator runs. Check
+        that keyword handling follows PostgreSQL's keyword categories
+        (unreserved, col_name, type_func_name, reserved) so non-reserved
+        keywords still parse as names. This package deliberately mirrors
+        internal/sqlfmt/parser's structure, so flag MySQL behavior carried
+        over by mistake (backtick quoting, '#' comments, backslash escapes
+        in plain strings, MySQL-only syntax) unless the PR explains it.
     - path: "**/*_test.go"
       instructions: >
         Test coverage percentage and lint/formatting issues are already
