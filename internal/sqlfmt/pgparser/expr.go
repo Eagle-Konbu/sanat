@@ -425,6 +425,10 @@ func (p *Parser) readTypeIdent() string {
 // re-quoted (doubling any embedded quotes) so its case and quoting survive
 // into the AST, per the pgast.ColIdent contract.
 func identText(tok Token) string {
+	if tok.Type.IsKeyword() {
+		return asciiLower(tok.Literal)
+	}
+
 	if tok.Type != QuotedIdent {
 		return tok.Literal
 	}
@@ -494,7 +498,7 @@ func (p *Parser) parsePrimaryExpr() pgast.Expr {
 		return p.parseArrayLiteral()
 	case ROW:
 		return p.parseRowConstructor()
-	case IDENT, QuotedIdent:
+	case IDENT, QuotedIdent, SET:
 		return p.parseIdentExpr()
 	default:
 		return failReturn[pgast.Expr](p, "unexpected token %s in expression", p.tok.Type)

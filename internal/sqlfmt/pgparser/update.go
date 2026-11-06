@@ -60,7 +60,16 @@ func (p *Parser) parseUpdateTarget(upd *pgast.Update) {
 		upd.Descendants = p.consume(STAR)
 	}
 
-	alias := p.parseOptionalAlias()
+	// As in PostgreSQL, a bare SET here always starts the SET clause. "AS set"
+	// is rejected too: aliases render without AS, so it could not round-trip.
+	if p.at(AS) && p.peekAt(SET) {
+		p.failf("SET cannot be used as an UPDATE target alias")
+	}
+
+	var alias string
+	if !p.at(SET) {
+		alias = p.parseOptionalAlias()
+	}
 
 	upd.Table = &pgast.AliasedTableExpr{Expr: name, As: pgast.TableIdent(alias)}
 }

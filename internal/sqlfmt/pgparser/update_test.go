@@ -43,6 +43,7 @@ func TestParseUpdate_basic(t *testing.T) {
 		{"subquery value", "UPDATE t SET a = (SELECT max(b) FROM u)", "UPDATE t SET a = (SELECT max(b) FROM u)"},
 		{"trailing semicolon", "UPDATE t SET a = 1;", "UPDATE t SET a = 1"},
 		{"lowercase keywords", "update t set a = 1 where b = 2", "UPDATE t SET a = 1 WHERE b = 2"},
+		{"set as column name", "UPDATE t SET set = set + 1", "UPDATE t SET set = set + 1"},
 	}
 
 	for _, tt := range tests {
@@ -177,6 +178,7 @@ func TestParseUpdate_errors(t *testing.T) {
 		"UPDATE t SET a = 1 ORDER BY a",
 		"UPDATE t SET a = 1 LIMIT 1",
 		"UPDATE t SET a = 1; garbage",
+		"UPDATE t AS set SET a = 1",
 	}
 
 	for _, tt := range tests {

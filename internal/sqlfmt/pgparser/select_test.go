@@ -57,6 +57,7 @@ func TestParseSelect_basic(t *testing.T) {
 		{"qualified table", "SELECT * FROM public.users", "SELECT * FROM public.users"},
 		{"comma tables", "SELECT * FROM a, b", "SELECT * FROM a, b"},
 		{"where", "SELECT * FROM t WHERE a = 1", "SELECT * FROM t WHERE a = 1"},
+		{"set as column name", "SELECT SET FROM t WHERE t.set = 1", "SELECT set FROM t WHERE t.set = 1"},
 	}
 
 	for _, tt := range tests {
