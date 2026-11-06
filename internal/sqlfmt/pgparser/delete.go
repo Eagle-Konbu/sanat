@@ -68,11 +68,3 @@ func (p *Parser) parseOptionallyParenthesizedTableName() pgast.TableName {
 
 	return name
 }
-
-func (p *Parser) parseOptionalReturning() *pgast.Returning {
-	if !p.consume(RETURNING) {
-		return nil
-	}
-
-	return &pgast.Returning{Exprs: p.parseSelectExprList()}
-}
