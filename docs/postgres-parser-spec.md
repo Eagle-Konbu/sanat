@@ -41,7 +41,8 @@ INSERT INTO table_name [ AS alias ] [ ( column [, ...] ) ]
 - **`DEFAULT`**: accepted only as a `VALUES` item or as the right-hand side of
   a `DO UPDATE SET` assignment, not as a general expression. It is modeled as
   a `pgast.Literal` rendered verbatim.
-- **`select`** row source: a plain `SELECT` statement (`parseSelectStatement`),
+- **`select`** row source: a query (`parseQuery`) — a `SELECT` or a set
+  operation, stored in `Insert.Rows` as a `pgast.Select` or `pgast.SetOp` —
   which may lead with its own `WITH` clause.
 - **Conflict target**: optional for `DO NOTHING`, required for `DO UPDATE`.
   PostgreSQL rejects a `DO UPDATE` without a target during analysis, not in
@@ -310,8 +311,12 @@ with_query  := cte_name [ ( column [, ...] ) ] AS [ [ NOT ] MATERIALIZED ]
 - **Multiple `WITH` clauses**: a `WITH` before a parenthesized query that has
   its own `WITH`, as in `(WITH a AS (...) (WITH b AS (...) SELECT 1))`, fails
   with `multiple WITH clauses not allowed`, as in PostgreSQL.
-- **`INSERT ... SELECT`**: the `SELECT` row source may lead with its own
+- **`INSERT ... SELECT`**: the query row source may lead with its own
   `WITH`, separate from the one on the `INSERT`.
+- **`RECURSIVE` and `MATERIALIZED`** are keywords only at their fixed points
+  in a `WITH` clause. Elsewhere they are accepted as unquoted identifiers, as
+  PostgreSQL's unreserved keywords are, so `SELECT materialized FROM recursive`
+  parses.
 - Data-modifying statements are accepted only as CTE bodies (and at the top
   level), not in other subquery positions, matching PostgreSQL.
 

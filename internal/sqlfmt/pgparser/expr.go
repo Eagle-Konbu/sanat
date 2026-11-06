@@ -516,9 +516,11 @@ func (p *Parser) parsePrimaryExpr() pgast.Expr {
 		return p.parseArrayLiteral()
 	case ROW:
 		return p.parseRowConstructor()
-	case IDENT, QuotedIdent, SET:
-		return p.parseIdentExpr()
 	default:
+		if isIdentToken(p.tok) {
+			return p.parseIdentExpr()
+		}
+
 		return failReturn[pgast.Expr](p, "unexpected token %s in expression", p.tok.Type)
 	}
 }

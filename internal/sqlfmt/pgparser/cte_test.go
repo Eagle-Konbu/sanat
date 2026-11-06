@@ -222,6 +222,16 @@ func TestParseInsert_with(t *testing.T) {
 			"INSERT INTO t WITH src AS (SELECT 1) SELECT * FROM src",
 		},
 		{
+			"set operation row source",
+			"INSERT INTO t SELECT 1 UNION SELECT 2 ORDER BY 1",
+			"INSERT INTO t SELECT 1 UNION SELECT 2 ORDER BY 1",
+		},
+		{
+			"with on set operation row source",
+			"INSERT INTO t WITH x AS (SELECT 1) SELECT * FROM x UNION ALL SELECT 2 ON CONFLICT DO NOTHING RETURNING *",
+			"INSERT INTO t WITH x AS (SELECT 1) SELECT * FROM x UNION ALL SELECT 2 ON CONFLICT DO NOTHING RETURNING *",
+		},
+		{
 			"with on statement and row source",
 			"WITH a AS (SELECT 1) INSERT INTO t WITH b AS (SELECT * FROM a) SELECT * FROM b RETURNING *",
 			"WITH a AS (SELECT 1) INSERT INTO t WITH b AS (SELECT * FROM a) SELECT * FROM b RETURNING *",
@@ -231,6 +241,53 @@ func TestParseInsert_with(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			assertInsertRoundTrip(t, tt.in, tt.want)
+		})
+	}
+}
+
+func TestParseInsert_setOpRowSourceStructure(t *testing.T) {
+	ins, err := pgparser.ParseInsert("INSERT INTO t WITH x AS (SELECT 1) SELECT a FROM x UNION SELECT 2")
+	if err != nil {
+		t.Fatalf("ParseInsert error = %v", err)
+	}
+
+	setOp, ok := ins.Rows.(*pgast.SetOp)
+	if !ok {
+		t.Fatalf("Rows = %T, want *pgast.SetOp", ins.Rows)
+	}
+
+	if setOp.With == nil || ins.With != nil {
+		t.Errorf("SetOp.With = %#v, Insert.With = %#v, want WITH on the row source only", setOp.With, ins.With)
+	}
+}
+
+func TestParse_withKeywordsAsIdentifiers(t *testing.T) {
+	tests := []struct {
+		name, in, want string
+	}{
+		{"column and table", "SELECT materialized FROM recursive", "SELECT materialized FROM recursive"},
+		{"upper-case folds to lower", "SELECT MATERIALIZED FROM RECURSIVE", "SELECT materialized FROM recursive"},
+		{
+			"qualified column and aliases",
+			"SELECT recursive.materialized AS recursive FROM recursive materialized",
+			"SELECT recursive.materialized AS recursive FROM recursive materialized",
+		},
+		{"in expression", "SELECT 1 WHERE materialized > recursive + 1", "SELECT 1 WHERE materialized > recursive + 1"},
+		{
+			"cte named materialized",
+			"WITH materialized AS MATERIALIZED (SELECT 1) SELECT * FROM materialized",
+			"WITH materialized AS MATERIALIZED (SELECT 1) SELECT * FROM materialized",
+		},
+		{
+			"recursive cte named materialized",
+			"WITH RECURSIVE materialized (recursive) AS (SELECT 1) SELECT recursive FROM materialized",
+			"WITH RECURSIVE materialized (recursive) AS (SELECT 1) SELECT recursive FROM materialized",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assertSelectRoundTrip(t, tt.in, tt.want)
 		})
 	}
 }
@@ -402,6 +459,8 @@ func TestParse_multipleWithClauses(t *testing.T) {
 	}
 }
 
+// parseInsertErr, parseUpdateErr, and parseDeleteErr adapt each entry point
+// to a common signature so error cases can share one table.
 func parseInsertErr(in string) error {
 	_, err := pgparser.ParseInsert(in)
 

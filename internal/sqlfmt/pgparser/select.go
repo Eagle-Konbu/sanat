@@ -142,12 +142,18 @@ func (p *Parser) tryParseQualifiedStar() pgast.SelectExpr {
 	return &pgast.StarExpr{TableName: table}
 }
 
-// isIdentToken reports whether tok can name a column or table. SET is an
-// unreserved keyword in PostgreSQL, so it doubles as an identifier; the
-// UPDATE grammar keeps it unambiguous by never reading a bare SET as the
-// target alias.
+// isIdentToken reports whether tok can name a column or table. SET,
+// RECURSIVE, and MATERIALIZED are unreserved keywords in PostgreSQL, so they
+// double as identifiers. The UPDATE grammar keeps SET unambiguous by never
+// reading a bare SET as the target alias, and RECURSIVE and MATERIALIZED
+// are only keywords at fixed points in a WITH clause.
 func isIdentToken(tok Token) bool {
-	return tok.Type == IDENT || tok.Type == QuotedIdent || tok.Type == SET
+	switch tok.Type {
+	case IDENT, QuotedIdent, SET, RECURSIVE, MATERIALIZED:
+		return true
+	default:
+		return false
+	}
 }
 
 // parseOptionalAlias parses an optional trailing "[AS] name" alias (used for

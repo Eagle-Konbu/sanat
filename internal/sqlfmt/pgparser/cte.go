@@ -44,6 +44,8 @@ func (p *Parser) parseCommonTableExpr() *pgast.CommonTableExpr {
 	return cte
 }
 
+// parseCTEMaterialization parses the optional [NOT] MATERIALIZED hint
+// between a CTE's AS and its parenthesized body.
 func (p *Parser) parseCTEMaterialization() pgast.CTEMaterialization {
 	switch {
 	case p.consume(MATERIALIZED):

@@ -50,7 +50,8 @@ func (p *Parser) parseInsertStatement() *pgast.Insert {
 }
 
 // parseInsertRows parses the row source of an INSERT statement: DEFAULT
-// VALUES, a VALUES list, or a SELECT (which may lead with its own WITH).
+// VALUES, a VALUES list, or a query (a SELECT or set operation, which may
+// lead with its own WITH).
 func (p *Parser) parseInsertRows() pgast.InsertRows {
 	switch p.tok.Type {
 	case DEFAULT:
@@ -61,7 +62,9 @@ func (p *Parser) parseInsertRows() pgast.InsertRows {
 	case VALUES:
 		return p.parseValuesRows()
 	case SELECT, WITH:
-		return p.parseSelectStatement()
+		// parseQuery only returns a *pgast.Select or *pgast.SetOp, both of
+		// which are InsertRows.
+		return p.parseQuery().(pgast.InsertRows) //nolint:forcetypeassert // see above
 	default:
 		return failReturn[pgast.InsertRows](p, "expected VALUES, DEFAULT VALUES, or SELECT, got %s", p.tok.Type)
 	}
