@@ -413,8 +413,8 @@ func (p *Parser) parseParenTableExpr() pgast.TableExpr {
 }
 
 // tryContinueQueryFromTables continues a query from tables if they are a
-// lone derived table without an alias (possibly inside redundant unaliased
-// parentheses) followed by a set operator or trailing clause, as in
+// lone derived table without an alias (possibly inside redundant parentheses
+// that have no alias either) followed by a set operator or trailing clause, as in
 // "FROM ((SELECT 1) UNION SELECT 2) t" — which reads like a parenthesized
 // table reference until the UNION. It returns nil, consuming nothing,
 // otherwise.
@@ -423,17 +423,7 @@ func (p *Parser) tryContinueQueryFromTables(tables []pgast.TableExpr) pgast.Stat
 		return nil
 	}
 
-	table := tables[0]
-	for {
-		paren, ok := table.(*pgast.ParenTableExpr)
-		if !ok || len(paren.Exprs) != 1 || !paren.As.IsEmpty() {
-			break
-		}
-
-		table = paren.Exprs[0]
-	}
-
-	aliased, ok := table.(*pgast.AliasedTableExpr)
+	aliased, ok := unwrapParenTable(tables[0]).(*pgast.AliasedTableExpr)
 	if !ok || !aliased.As.IsEmpty() || aliased.Lateral {
 		return nil
 	}
@@ -444,6 +434,19 @@ func (p *Parser) tryContinueQueryFromTables(tables []pgast.TableExpr) pgast.Stat
 	}
 
 	return p.parseQueryFrom(derived.Select)
+}
+
+// unwrapParenTable strips any parentheses around table that hold a single
+// item and have no alias, as in "((SELECT 1))".
+func unwrapParenTable(table pgast.TableExpr) pgast.TableExpr {
+	for {
+		paren, ok := table.(*pgast.ParenTableExpr)
+		if !ok || len(paren.Exprs) != 1 || !paren.As.IsEmpty() {
+			return table
+		}
+
+		table = paren.Exprs[0]
+	}
 }
 
 // parseDerivedTable parses a derived table whose query starts with SELECT,
