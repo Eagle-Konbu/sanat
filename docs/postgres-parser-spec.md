@@ -29,8 +29,9 @@ Like `ParseSelect`, it fully consumes `input`, accepting one optional trailing
 ```text
 INSERT INTO table_name [ AS alias ] [ ( column [, ...] ) ]
     { DEFAULT VALUES | VALUES ( { expr | DEFAULT } [, ...] ) [, ...] | select }
-    [ ON CONFLICT [ ( column [, ...] ) ] { DO NOTHING | DO UPDATE SET
-          column = { expr | DEFAULT } [, ...] [ WHERE condition ] } ]
+    [ ON CONFLICT { [ ( column [, ...] ) ] DO NOTHING
+                  | ( column [, ...] ) DO UPDATE SET
+                        column = { expr | DEFAULT } [, ...] [ WHERE condition ] } ]
     [ RETURNING { * | output_expr [ [ AS ] output_name ] } [, ...] ]
 ```
 
@@ -40,6 +41,9 @@ INSERT INTO table_name [ AS alias ] [ ( column [, ...] ) ]
   a `DO UPDATE SET` assignment, not as a general expression. It is modeled as
   a `pgast.Literal` rendered verbatim.
 - **`select`** row source: a plain `SELECT` statement (`parseSelectStatement`).
+- **Conflict target**: optional for `DO NOTHING`, required for `DO UPDATE`.
+  PostgreSQL rejects a targetless `DO UPDATE` during analysis rather than in
+  its grammar, but no input with one is valid, so it fails at parse time here.
 - **`EXCLUDED.col`**: needs no special handling — it parses as an ordinary
   column reference qualified by the `EXCLUDED` pseudo-table, inside the
   `DO UPDATE SET` and `WHERE` expressions.

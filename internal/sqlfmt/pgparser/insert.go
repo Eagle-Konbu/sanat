@@ -114,7 +114,8 @@ func (p *Parser) parseExprOrDefault() pgast.Expr {
 // parseOptionalOnConflict parses an optional ON CONFLICT [(col, ...)]
 // {DO NOTHING | DO UPDATE SET ... [WHERE ...]} clause. The ON CONSTRAINT
 // target, expression/COLLATE/operator-class targets, and a WHERE index
-// predicate on the target are not supported.
+// predicate on the target are not supported. The conflict target is optional
+// for DO NOTHING but required for DO UPDATE, as in PostgreSQL.
 func (p *Parser) parseOptionalOnConflict() *pgast.OnConflict {
 	if !p.at(ON) || !p.peekAt(CONFLICT) {
 		return nil
@@ -136,6 +137,10 @@ func (p *Parser) parseOptionalOnConflict() *pgast.OnConflict {
 		oc.DoNothing = true
 
 		return oc
+	}
+
+	if oc.Columns == nil {
+		p.failf("ON CONFLICT DO UPDATE requires a conflict target")
 	}
 
 	p.expect(UPDATE)

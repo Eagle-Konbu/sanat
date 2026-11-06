@@ -1,6 +1,7 @@
 package pgparser_test
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/Eagle-Konbu/sanat/internal/sqlfmt/pgparser"
@@ -24,8 +25,13 @@ func assertInsertRoundTrip(t *testing.T, input, want string) {
 func assertInsertError(t *testing.T, input string) {
 	t.Helper()
 
-	if _, err := pgparser.ParseInsert(input); err == nil {
-		t.Errorf("ParseInsert(%q) error = nil, want error", input)
+	_, err := pgparser.ParseInsert(input)
+	if err == nil {
+		t.Fatalf("ParseInsert(%q) error = nil, want error", input)
+	}
+
+	if _, ok := errors.AsType[*pgparser.ParseError](err); !ok {
+		t.Errorf("ParseInsert(%q) error type = %T, want *pgparser.ParseError", input, err)
 	}
 }
 
@@ -175,11 +181,11 @@ func TestParseInsert_errors(t *testing.T) {
 		{"on without conflict", "INSERT INTO t VALUES (1) ON DO NOTHING"},
 		{"conflict without action", "INSERT INTO t VALUES (1) ON CONFLICT (a)"},
 		{"do without action", "INSERT INTO t VALUES (1) ON CONFLICT DO"},
+		{"do update without target", "INSERT INTO t VALUES (1) ON CONFLICT DO UPDATE SET a = 1"},
 		{"do update without set", "INSERT INTO t VALUES (1) ON CONFLICT (a) DO UPDATE a = 1"},
 		{"set without equals", "INSERT INTO t VALUES (1) ON CONFLICT (a) DO UPDATE SET a 1"},
 		{"returning without items", "INSERT INTO t VALUES (1) RETURNING"},
 		{"trailing tokens", "INSERT INTO t VALUES (1) garbage"},
-		{"lex error", "INSERT INTO t VALUES ('unterminated)"},
 	}
 
 	for _, tt := range tests {
@@ -187,4 +193,11 @@ func TestParseInsert_errors(t *testing.T) {
 			assertInsertError(t, tt.in)
 		})
 	}
+
+	t.Run("lex error", func(t *testing.T) {
+		_, err := pgparser.ParseInsert("INSERT INTO t VALUES ('unterminated)")
+		if _, ok := errors.AsType[*pgparser.LexError](err); !ok {
+			t.Errorf("error type = %T, want *pgparser.LexError", err)
+		}
+	})
 }
