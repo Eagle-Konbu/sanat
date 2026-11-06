@@ -1,0 +1,23 @@
+version: "2"
+
+# Requires a doc comment, starting with the identifier's name, on exported
+# identifiers in new or changed code. It replaces CodeRabbit's docstring
+# coverage check, which is turned off in .coderabbit.yaml.
+#
+# This is a separate config rather than a rule in .golangci.yml because it
+# must only report issues in the diff (run with --new-from-merge-base or
+# golangci-lint-action's only-new-issues), while every linter in
+# .golangci.yml keeps checking the whole repository. Existing undocumented
+# exported identifiers are left alone until their code is touched.
+
+run:
+  timeout: 5m
+
+linters:
+  default: none
+  enable:
+    - revive
+  settings:
+    revive:
+      rules:
+        - name: exported

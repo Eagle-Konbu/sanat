@@ -30,6 +30,13 @@ tasks:
     cmds:
       - golangci-lint run ./...
 
+  lint:exported:
+    desc: Check that exported identifiers changed since BASE (default origin/main) have doc comments
+    vars:
+      BASE: '{{.BASE | default "origin/main"}}'
+    cmds:
+      - golangci-lint run --config .golangci.exported.yml --new-from-merge-base={{.BASE}} ./...
+
   lint:fix:
     desc: Run linter with auto-fix
     cmds:
