@@ -42,7 +42,7 @@ INSERT INTO table_name [ AS alias ] [ ( column [, ...] ) ]
   a `pgast.Literal` rendered verbatim.
 - **`select`** row source: a plain `SELECT` statement (`parseSelectStatement`).
 - **Conflict target**: optional for `DO NOTHING`, required for `DO UPDATE`.
-  PostgreSQL rejects a targetless `DO UPDATE` during analysis rather than in
+  PostgreSQL rejects a `DO UPDATE` without a target during analysis, not in
   its grammar, but no input with one is valid, so it fails at parse time here.
 - **`EXCLUDED.col`**: needs no special handling — it parses as an ordinary
   column reference qualified by the `EXCLUDED` pseudo-table, inside the
