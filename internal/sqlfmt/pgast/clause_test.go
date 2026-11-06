@@ -391,6 +391,12 @@ func TestReturning_String(t *testing.T) {
 func TestUpdateExpr_String(t *testing.T) {
 	u := &pgast.UpdateExpr{Name: col("name"), Expr: lit("'bob'")}
 	assertEqual(t, "name = 'bob'", u.String())
+
+	multi := &pgast.UpdateExpr{
+		Names: []*pgast.ColName{col("a"), col("b")},
+		Expr:  pgast.ValTuple{lit("1"), pgast.Default{}},
+	}
+	assertEqual(t, "(a, b) = (1, DEFAULT)", multi.String())
 }
 
 func TestOnConflict_String(t *testing.T) {

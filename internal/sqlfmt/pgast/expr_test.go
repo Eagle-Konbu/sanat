@@ -64,6 +64,10 @@ func TestRowExpr_String(t *testing.T) {
 	assertEqual(t, "ROW()", (&pgast.RowExpr{}).String())
 }
 
+func TestDefault_String(t *testing.T) {
+	assertEqual(t, "DEFAULT", pgast.Default{}.String())
+}
+
 func TestILikeExpr_String(t *testing.T) {
 	tests := []struct {
 		name string
