@@ -466,15 +466,26 @@ func (r *Returning) String() string {
 }
 
 // UpdateExpr represents a "col = expr" SET assignment, shared by UPDATE and
-// the DO UPDATE SET clause of ON CONFLICT.
+// the DO UPDATE SET clause of ON CONFLICT. The multi-column
+// "(col, ...) = source" form sets Names instead of Name.
 type UpdateExpr struct {
-	Name *ColName
-	Expr Expr
+	Name  *ColName
+	Names []*ColName
+	Expr  Expr
 }
 
 // String returns UpdateExpr's SQL text.
 func (u *UpdateExpr) String() string {
-	return u.Name.String() + " = " + u.Expr.String()
+	if len(u.Names) == 0 {
+		return u.Name.String() + " = " + u.Expr.String()
+	}
+
+	names := make([]string, len(u.Names))
+	for i, n := range u.Names {
+		names[i] = n.String()
+	}
+
+	return "(" + strings.Join(names, ", ") + ") = " + u.Expr.String()
 }
 
 // OnConflict represents an INSERT ... ON CONFLICT clause.

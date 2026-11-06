@@ -129,6 +129,24 @@ func TestUpdate_String(t *testing.T) {
 			},
 			"WITH cte AS (SELECT * FROM t) UPDATE users SET name = 'a' FROM other WHERE active RETURNING id",
 		},
+		{
+			"only with alias",
+			&pgast.Update{
+				Only:  true,
+				Table: &pgast.AliasedTableExpr{Expr: pgast.TableName{Name: "users"}, As: "u"},
+				Set:   []*pgast.UpdateExpr{{Name: col("name"), Expr: lit("'a'")}},
+			},
+			"UPDATE ONLY users u SET name = 'a'",
+		},
+		{
+			"descendants without alias",
+			&pgast.Update{
+				Table:       &pgast.AliasedTableExpr{Expr: pgast.TableName{Name: "users"}},
+				Descendants: true,
+				Set:         []*pgast.UpdateExpr{{Name: col("name"), Expr: lit("'a'")}},
+			},
+			"UPDATE users * SET name = 'a'",
+		},
 	}
 
 	for _, tt := range tests {
