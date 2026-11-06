@@ -366,6 +366,8 @@ func (p *Parser) parseTableFactor() pgast.TableExpr {
 	return &pgast.AliasedTableExpr{Expr: name, As: pgast.TableIdent(alias)}
 }
 
+// parseLateralDerivedTable parses the parenthesized query and optional alias
+// following LATERAL.
 func (p *Parser) parseLateralDerivedTable() pgast.TableExpr {
 	p.expect(LPAREN)
 
@@ -388,6 +390,8 @@ func (p *Parser) parseTableName() pgast.TableName {
 	return pgast.TableName{Name: pgast.TableIdent(name)}
 }
 
+// parseParenTableExpr parses a parenthesized FROM-item: a derived table, or a
+// parenthesized table reference list with an optional alias.
 func (p *Parser) parseParenTableExpr() pgast.TableExpr {
 	p.advance() // consume '('
 
@@ -409,16 +413,27 @@ func (p *Parser) parseParenTableExpr() pgast.TableExpr {
 }
 
 // tryContinueQueryFromTables continues a query from tables if they are a
-// lone derived table without an alias followed by a set operator or trailing
-// clause, as in "FROM ((SELECT 1) UNION SELECT 2) t" — which reads like a
-// parenthesized table reference until the UNION. It returns nil, consuming
-// nothing, otherwise.
+// lone derived table without an alias (possibly inside redundant unaliased
+// parentheses) followed by a set operator or trailing clause, as in
+// "FROM ((SELECT 1) UNION SELECT 2) t" — which reads like a parenthesized
+// table reference until the UNION. It returns nil, consuming nothing,
+// otherwise.
 func (p *Parser) tryContinueQueryFromTables(tables []pgast.TableExpr) pgast.Statement {
 	if len(tables) != 1 || !p.isQueryContinuation() {
 		return nil
 	}
 
-	aliased, ok := tables[0].(*pgast.AliasedTableExpr)
+	table := tables[0]
+	for {
+		paren, ok := table.(*pgast.ParenTableExpr)
+		if !ok || len(paren.Exprs) != 1 || !paren.As.IsEmpty() {
+			break
+		}
+
+		table = paren.Exprs[0]
+	}
+
+	aliased, ok := table.(*pgast.AliasedTableExpr)
 	if !ok || !aliased.As.IsEmpty() || aliased.Lateral {
 		return nil
 	}
@@ -431,6 +446,8 @@ func (p *Parser) tryContinueQueryFromTables(tables []pgast.TableExpr) pgast.Stat
 	return p.parseQueryFrom(derived.Select)
 }
 
+// parseDerivedTable parses a derived table whose query starts with SELECT,
+// just after its opening '('.
 func (p *Parser) parseDerivedTable() pgast.TableExpr {
 	return p.finishDerivedTable(p.parseSubqueryStatement())
 }

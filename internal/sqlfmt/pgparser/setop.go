@@ -70,12 +70,23 @@ func (p *Parser) tryContinueQueryFromExpr(expr pgast.Expr) pgast.Statement {
 		return nil
 	}
 
+	sub := unwrapSubquery(expr)
+	if sub == nil {
+		return nil
+	}
+
+	return p.parseQueryFrom(sub.Select)
+}
+
+// unwrapSubquery returns expr's subquery if expr is a scalar subquery wrapped
+// in any number of redundant parentheses, or nil otherwise.
+func unwrapSubquery(expr pgast.Expr) *pgast.Subquery {
 	for {
 		switch e := expr.(type) {
 		case *pgast.ParenExpr:
 			expr = e.Expr
 		case *pgast.Subquery:
-			return p.parseQueryFrom(e.Select)
+			return e
 		default:
 			return nil
 		}
@@ -94,12 +105,13 @@ func (p *Parser) parseUnionChain(first pgast.Statement) pgast.Statement {
 			op = pgast.Except
 		}
 
+		pos := p.tok.Pos
 		p.advance()
 
 		all := p.parseSetQuantifier()
 		right := p.parseIntersectChain(p.parseSetOpOperand())
 
-		left = &pgast.SetOp{Left: left, Op: op, All: all, Right: right}
+		left = newSetOp(pos, left, op, all, right)
 	}
 
 	return left
@@ -110,14 +122,39 @@ func (p *Parser) parseUnionChain(first pgast.Statement) pgast.Statement {
 func (p *Parser) parseIntersectChain(first pgast.Statement) pgast.Statement {
 	left := first
 
-	for p.consume(INTERSECT) {
+	for p.at(INTERSECT) {
+		pos := p.tok.Pos
+		p.advance()
+
 		all := p.parseSetQuantifier()
 		right := p.parseSetOpOperand()
 
-		left = &pgast.SetOp{Left: left, Op: pgast.Intersect, All: all, Right: right}
+		left = newSetOp(pos, left, pgast.Intersect, all, right)
 	}
 
 	return left
+}
+
+// lockingClauseMsg is the error for a locking clause on a set operation or
+// on one of its operands, which PostgreSQL rejects alike.
+const lockingClauseMsg = "FOR UPDATE/SHARE is not allowed with UNION/INTERSECT/EXCEPT"
+
+// newSetOp combines left and right with the set operator at pos. Like
+// PostgreSQL, it rejects an operand that carries its own locking clause,
+// as in "(SELECT 1 FOR UPDATE) UNION SELECT 2".
+func newSetOp(pos Position, left pgast.Statement, op pgast.SetOpType, all bool, right pgast.Statement) *pgast.SetOp {
+	if hasLockingClause(left) || hasLockingClause(right) {
+		panic(&ParseError{Pos: pos, Msg: lockingClauseMsg})
+	}
+
+	return &pgast.SetOp{Left: left, Op: op, All: all, Right: right}
+}
+
+// hasLockingClause reports whether stmt is a SELECT with a locking clause.
+func hasLockingClause(stmt pgast.Statement) bool {
+	sel, ok := stmt.(*pgast.Select)
+
+	return ok && len(sel.Locks) > 0
 }
 
 // parseSetQuantifier parses the optional ALL or DISTINCT following a set
@@ -158,6 +195,8 @@ type queryTail struct {
 	locks   []*pgast.Lock
 }
 
+// parseQueryTail parses the optional ORDER BY, LIMIT/OFFSET/FETCH, and
+// locking clauses that can follow a query's set-operation chain.
 func (p *Parser) parseQueryTail() *queryTail {
 	tail := &queryTail{pos: p.tok.Pos}
 	tail.orderBy = p.parseOptionalOrderBy()
@@ -189,7 +228,7 @@ func (p *Parser) attachQueryTail(stmt pgast.Statement, tail *queryTail) {
 		// PostgreSQL rejects locking a set operation's result outright, so
 		// pgast.SetOp has nowhere to hold one.
 		if len(tail.locks) > 0 {
-			panic(&ParseError{Pos: tail.pos, Msg: "FOR UPDATE/SHARE is not allowed with UNION/INTERSECT/EXCEPT"})
+			panic(&ParseError{Pos: tail.pos, Msg: lockingClauseMsg})
 		}
 
 		s.OrderBy = mergeOrderBy(s.OrderBy, tail.orderBy)
@@ -213,6 +252,7 @@ func checkTailConflicts(tail *queryTail, hasOrderBy, hasLimit, hasOffset bool) {
 	}
 }
 
+// mergeOrderBy returns added if it is non-empty, or existing otherwise.
 func mergeOrderBy(existing, added pgast.OrderBy) pgast.OrderBy {
 	if len(added) > 0 {
 		return added
@@ -221,6 +261,7 @@ func mergeOrderBy(existing, added pgast.OrderBy) pgast.OrderBy {
 	return existing
 }
 
+// mergeClause returns added if it is non-nil, or existing otherwise.
 func mergeClause[T any](existing, added *T) *T {
 	if added != nil {
 		return added

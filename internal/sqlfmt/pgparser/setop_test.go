@@ -204,11 +204,6 @@ func TestParseSetOp_trailingClauses(t *testing.T) {
 			"(SELECT 1 ORDER BY 1 LIMIT 2) UNION SELECT 3",
 		},
 		{
-			"locked operand",
-			"(SELECT * FROM t FOR UPDATE SKIP LOCKED) UNION SELECT * FROM u",
-			"(SELECT * FROM t FOR UPDATE SKIP LOCKED) UNION SELECT * FROM u",
-		},
-		{
 			"nested set operation with its own clauses",
 			"(SELECT 1 UNION SELECT 2 LIMIT 1) INTERSECT SELECT 3 ORDER BY 1",
 			"(SELECT 1 UNION SELECT 2 LIMIT 1) INTERSECT SELECT 3 ORDER BY 1",
@@ -267,6 +262,16 @@ func TestParseSelect_setOpSubqueries(t *testing.T) {
 			"SELECT * FROM t WHERE id IN ((SELECT 1), 2)",
 		},
 		{
+			"in doubly parenthesized subquery is a subquery",
+			"SELECT * FROM t WHERE id IN ((SELECT a FROM x))",
+			"SELECT * FROM t WHERE id IN (SELECT a FROM x)",
+		},
+		{
+			"not in triply parenthesized subquery is a subquery",
+			"SELECT * FROM t WHERE id NOT IN (((SELECT a FROM x)))",
+			"SELECT * FROM t WHERE id NOT IN (SELECT a FROM x)",
+		},
+		{
 			"scalar subquery",
 			"SELECT (SELECT 1 UNION ALL SELECT 2 LIMIT 1) FROM t",
 			"SELECT (SELECT 1 UNION ALL SELECT 2 LIMIT 1) FROM t",
@@ -300,6 +305,16 @@ func TestParseSelect_setOpSubqueries(t *testing.T) {
 			"derived table with leading parenthesized operand",
 			"SELECT * FROM ((SELECT a FROM x) UNION (SELECT b FROM y)) u",
 			"SELECT * FROM (SELECT a FROM x UNION SELECT b FROM y) u",
+		},
+		{
+			"derived table with redundantly parenthesized leading operand",
+			"SELECT * FROM (((SELECT a FROM x)) UNION SELECT b FROM y) u",
+			"SELECT * FROM (SELECT a FROM x UNION SELECT b FROM y) u",
+		},
+		{
+			"derived table with redundantly parenthesized select and trailing limit",
+			"SELECT * FROM (((SELECT a FROM x)) LIMIT 1) u",
+			"SELECT * FROM (SELECT a FROM x LIMIT 1) u",
 		},
 		{
 			"parenthesized join with derived table is still a join",
@@ -339,6 +354,9 @@ func TestParseSetOp_errors(t *testing.T) {
 		{"limit on bare left operand", "SELECT 1 LIMIT 1 UNION SELECT 2"},
 		{"locking on bare left operand", "SELECT 1 FOR UPDATE UNION SELECT 2"},
 		{"locking a set operation", "SELECT 1 UNION SELECT 2 FOR UPDATE"},
+		{"locked left operand", "(SELECT * FROM t FOR UPDATE SKIP LOCKED) UNION SELECT * FROM u"},
+		{"locked right operand", "SELECT 1 INTERSECT (SELECT 2 FOR SHARE)"},
+		{"doubly parenthesized locked operand", "((SELECT 1 FOR UPDATE)) EXCEPT SELECT 2"},
 		{"multiple order by", "(SELECT 1 UNION SELECT 2 ORDER BY 1) ORDER BY 2"},
 		{"multiple limit", "(SELECT 1 UNION SELECT 2 LIMIT 1) LIMIT 2"},
 		{"limit then fetch", "(SELECT 1 UNION SELECT 2 LIMIT 1) FETCH FIRST ROW ONLY"},
@@ -371,6 +389,7 @@ func TestParseSetOp_errorPositions(t *testing.T) {
 	}{
 		{"not a set operation", "  SELECT 1", "expected UNION, INTERSECT, or EXCEPT", 3},
 		{"locking a set operation", "SELECT 1 UNION SELECT 2 FOR UPDATE", "FOR UPDATE/SHARE is not allowed with UNION/INTERSECT/EXCEPT", 25},
+		{"locked operand", "(SELECT 1 FOR UPDATE) UNION SELECT 2", "FOR UPDATE/SHARE is not allowed with UNION/INTERSECT/EXCEPT", 23},
 		{"multiple order by", "(SELECT 1 UNION SELECT 2 ORDER BY 1) ORDER BY 2", "multiple ORDER BY clauses not allowed", 38},
 	}
 

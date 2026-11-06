@@ -194,8 +194,9 @@ func ParseSetOp(input string) (*pgast.SetOp, error)
 `ParseSetOp` parses two or more SELECT operands combined by set operators,
 plus any trailing clauses on the combined result, and an optional trailing
 `;`. It fails with a `*ParseError` when the input is a single (possibly
-parenthesized) SELECT with no set operator; use `ParseSelect` for that case.
-`ParseSelect` in turn rejects a top-level set operation.
+parenthesized) SELECT with no set operator. Use `ParseSelect` only for an
+unparenthesized single SELECT: it requires the input to start with `SELECT`,
+so it rejects a leading `(`, and it also rejects a top-level set operation.
 
 ### Grammar
 
@@ -204,7 +205,10 @@ query      := union_term trailing
 union_term := intersect_term { ( UNION | EXCEPT ) [ ALL | DISTINCT ] intersect_term }
 intersect_term := operand { INTERSECT [ ALL | DISTINCT ] operand }
 operand    := simple_select | "(" query ")"
-trailing   := [ ORDER BY ... ] [ LIMIT ... | OFFSET ... ] [ FETCH ... ] { FOR ... }
+trailing   := [ ORDER BY ... ] [ row_limit ] { FOR ... }
+row_limit  := LIMIT ... [ OFFSET ... ]
+            | OFFSET ... [ LIMIT ... | FETCH ... ]
+            | FETCH ...
 ```
 
 - `simple_select` is a SELECT from the `SELECT` keyword through its
@@ -226,9 +230,13 @@ trailing   := [ ORDER BY ... ] [ LIMIT ... | OFFSET ... ] [ FETCH ... ] { FOR ..
   giving the same clause at both levels is an error (`multiple ORDER BY
   clauses not allowed`, likewise for `LIMIT` — which `FETCH` counts as — and
   `OFFSET`).
-- A locking clause (`FOR UPDATE` and friends) on a set operation is a
-  `*ParseError`, matching PostgreSQL's rejection of it; `pgast.SetOp` has no
-  field for one. A parenthesized SELECT operand may still carry its own.
+- `LIMIT` and `OFFSET` may each appear once, in either order. `FETCH` is the
+  SQL-standard spelling of `LIMIT`, so it cannot be combined with `LIMIT`.
+- A locking clause (`FOR UPDATE` and friends) on a set operation, or on any
+  of its operands (including a parenthesized SELECT operand such as
+  `(SELECT 1 FOR UPDATE) UNION SELECT 2`), is a `*ParseError`, matching
+  PostgreSQL's rejection of it; `pgast.SetOp` has no field for one. A
+  locking clause inside a subquery within an operand is unaffected.
 - `VALUES` and `TABLE name` operands, and `WITH` (deferred to
   [#86](https://github.com/Eagle-Konbu/sanat/issues/86)), are not supported
   yet.
@@ -242,8 +250,11 @@ leading parenthesized operand such as `IN ((SELECT 1) UNION SELECT 2)` or
 `FROM ((SELECT 1) UNION SELECT 2) t` cannot be told apart from a
 parenthesized expression or table reference until the token after its `)`,
 so those contexts parse the operand first and continue the query when a set
-operator or trailing clause follows. `IN ((SELECT 1), 2)` stays a value list
-and `FROM ((SELECT 1) a JOIN b ON TRUE)` stays a parenthesized join.
+operator or trailing clause follows; redundant parentheses around that
+operand (`FROM (((SELECT 1)) UNION SELECT 2) t`) are unwrapped first. A lone
+parenthesized query such as `IN ((SELECT 1))` is a subquery, not a one-item
+value list. `IN ((SELECT 1), 2)` stays a value list and
+`FROM ((SELECT 1) a JOIN b ON TRUE)` stays a parenthesized join.
 
 ### Rendering
 

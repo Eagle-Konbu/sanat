@@ -174,6 +174,8 @@ func (p *Parser) consumeNegatedPredicateKeyword() bool {
 	return true
 }
 
+// parseInExpr parses the "IN (...)" suffix of a [NOT] IN predicate applied to
+// left: a subquery or set operation, or a parenthesized value list.
 func (p *Parser) parseInExpr(left pgast.Expr, not bool) pgast.Expr {
 	p.advance() // consume IN
 	p.expect(LPAREN)
@@ -197,6 +199,13 @@ func (p *Parser) parseInExpr(left pgast.Expr, not bool) pgast.Expr {
 			p.expect(RPAREN)
 
 			return &pgast.ComparisonExpr{Left: left, Operator: op, Right: &pgast.Subquery{Select: query}}
+		}
+
+		// "IN ((SELECT ...))" is still a subquery, not a one-item value list.
+		if sub := unwrapSubquery(values[0]); sub != nil {
+			p.expect(RPAREN)
+
+			return &pgast.ComparisonExpr{Left: left, Operator: op, Right: sub}
 		}
 	}
 
@@ -564,6 +573,8 @@ func (p *Parser) parseStringLiteral() pgast.Expr {
 	return &pgast.Literal{Val: "'" + strings.ReplaceAll(tok.Literal, "'", "''") + "'"}
 }
 
+// parseParenExprOrSubquery parses a parenthesized expression, row value, or
+// scalar subquery (which may be a set operation).
 func (p *Parser) parseParenExprOrSubquery() pgast.Expr {
 	p.advance() // consume '('
 
@@ -663,6 +674,7 @@ func (p *Parser) parseWhen() *pgast.When {
 	return &pgast.When{Cond: cond, Val: val}
 }
 
+// parseExistsExpr parses an "EXISTS (query)" predicate.
 func (p *Parser) parseExistsExpr() pgast.Expr {
 	p.advance() // consume EXISTS
 	p.expect(LPAREN)
