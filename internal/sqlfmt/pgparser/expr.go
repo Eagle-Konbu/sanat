@@ -569,21 +569,21 @@ func (p *Parser) parsePrimaryExpr() pgast.Expr {
 
 // tryParseKeywordLedExpr parses an expression introduced by its own keyword
 // (CASE, EXISTS, CAST, ARRAY, or ROW), reporting ok=false without consuming
-// anything if the current token starts none. These are checked before the
-// identifier rules, so ROW and EXISTS, which can also be column names, start
-// their constructs here. Split out of parsePrimaryExpr to keep its
-// cyclomatic complexity down.
+// anything if the current token starts none. ROW and EXISTS are col_name
+// keywords, so they start their constructs only when "(" follows; otherwise
+// they are column names, as in "SELECT row FROM t" or "row.x". Split out of
+// parsePrimaryExpr to keep its cyclomatic complexity down.
 func (p *Parser) tryParseKeywordLedExpr() (pgast.Expr, bool) {
-	switch p.tok.Type {
-	case CASE:
+	switch {
+	case p.at(CASE):
 		return p.parseCaseExpr(), true
-	case EXISTS:
+	case p.at(EXISTS) && p.peekAt(LPAREN):
 		return p.parseExistsExpr(), true
-	case CAST:
+	case p.at(CAST):
 		return p.parseCastCall(), true
-	case ARRAY:
+	case p.at(ARRAY):
 		return p.parseArrayLiteral(), true
-	case ROW:
+	case p.at(ROW) && p.peekAt(LPAREN):
 		return p.parseRowConstructor(), true
 	default:
 		return nil, false

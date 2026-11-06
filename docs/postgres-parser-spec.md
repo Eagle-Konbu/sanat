@@ -286,7 +286,7 @@ that `INSERT`, `UPDATE`, and `DELETE` share, and that `MERGE`'s actions reuse:
   mutually exclusive, as in PostgreSQL. `ONLY (table_name)` is accepted and
   normalized to `ONLY table_name`. The alias renders without `AS`, like table
   aliases in `SELECT`. A bare `SET` is never taken as the alias, as in
-  PostgreSQL, and `AS set` is rejected because it could not round-trip.
+  PostgreSQL, so `AS set` is accepted and keeps its `AS` when rendered.
 - **SET assignment list** (`parseSetClauseList`), used by `UPDATE` and
   `ON CONFLICT DO UPDATE`; see [UPDATE](#update-statement-grammar) for its
   forms.
