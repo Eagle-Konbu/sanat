@@ -74,7 +74,8 @@ DELETE FROM [ ONLY ] table_name [ * ] [ [ AS ] alias ]
 ```
 
 `ParseDelete` fully consumes `input`, accepting one optional trailing `;`
-and failing with `*ParseError` on any other trailing token.
+and failing with a `*ParseError` on any other trailing token. Malformed input
+reached during lookahead may fail with a `*LexError` instead.
 
 **Target table**: an optionally schema-qualified name, parsed into
 `pgast.Delete.Table` (an `*pgast.AliasedTableExpr`). PostgreSQL's

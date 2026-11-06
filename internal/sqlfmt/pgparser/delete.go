@@ -58,6 +58,8 @@ func (p *Parser) parseRelationExpr() *pgast.AliasedTableExpr {
 	return target
 }
 
+// parseOptionallyParenthesizedTableName parses the table name after ONLY,
+// accepting PostgreSQL's "ONLY (name)" spelling as well as a bare name.
 func (p *Parser) parseOptionallyParenthesizedTableName() pgast.TableName {
 	if !p.consume(LPAREN) {
 		return p.parseTableName()

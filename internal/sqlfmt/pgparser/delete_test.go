@@ -1,6 +1,7 @@
 package pgparser_test
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/Eagle-Konbu/sanat/internal/sqlfmt/pgparser"
@@ -21,6 +22,7 @@ func assertDeleteRoundTrip(t *testing.T, input, want string) {
 	}
 }
 
+// assertDeleteError checks that parsing input fails.
 func assertDeleteError(t *testing.T, input string) {
 	t.Helper()
 
@@ -150,12 +152,26 @@ func TestParseDelete_errors(t *testing.T) {
 		"DELETE FROM users RETURNING",
 		"DELETE FROM users ORDER BY id",
 		"DELETE FROM users LIMIT 1",
-		"DELETE FROM users; garbage",
 	}
 
 	for _, tt := range tests {
 		t.Run(tt, func(t *testing.T) {
 			assertDeleteError(t, tt)
 		})
+	}
+}
+
+func TestParseDelete_trailingTokenAfterSemicolon(t *testing.T) {
+	const input = "DELETE FROM users; garbage"
+
+	_, err := pgparser.ParseDelete(input)
+
+	parseErr, ok := errors.AsType[*pgparser.ParseError](err)
+	if !ok {
+		t.Fatalf("ParseDelete(%q) error = %v, want *pgparser.ParseError", input, err)
+	}
+
+	if want := "unexpected token IDENT after statement"; parseErr.Msg != want {
+		t.Errorf("ParseDelete(%q) error message = %q, want %q", input, parseErr.Msg, want)
 	}
 }
