@@ -142,8 +142,15 @@ const (
 	PRECEDING
 	FOLLOWING
 	CURRENT
-	SET
+	INSERT
+	INTO
+	VALUES
 	DEFAULT
+	CONFLICT
+	DO
+	NOTHING
+	SET
+	DELETE
 	RETURNING
 	keywordEnd
 )
@@ -274,8 +281,15 @@ var tokenNames = map[TokenType]string{
 	PRECEDING: "PRECEDING",
 	FOLLOWING: "FOLLOWING",
 	CURRENT:   "CURRENT",
-	SET:       "SET",
+	INSERT:    "INSERT",
+	INTO:      "INTO",
+	VALUES:    "VALUES",
 	DEFAULT:   "DEFAULT",
+	CONFLICT:  "CONFLICT",
+	DO:        "DO",
+	NOTHING:   "NOTHING",
+	SET:       "SET",
+	DELETE:    "DELETE",
 	RETURNING: "RETURNING",
 }
 

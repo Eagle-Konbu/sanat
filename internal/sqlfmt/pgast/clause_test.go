@@ -394,7 +394,7 @@ func TestUpdateExpr_String(t *testing.T) {
 
 	multi := &pgast.UpdateExpr{
 		Names: []*pgast.ColName{col("a"), col("b")},
-		Expr:  pgast.ValTuple{lit("1"), pgast.Default{}},
+		Expr:  pgast.ValTuple{lit("1"), lit("DEFAULT")},
 	}
 	assertEqual(t, "(a, b) = (1, DEFAULT)", multi.String())
 }

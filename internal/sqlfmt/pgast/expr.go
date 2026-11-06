@@ -192,13 +192,6 @@ func (r *RowExpr) String() string {
 	return "ROW(" + exprListString(r.Exprs) + ")"
 }
 
-// Default represents the DEFAULT keyword used as a value, e.g. in an
-// UPDATE SET assignment or a VALUES row.
-type Default struct{}
-
-// String returns Default's SQL text.
-func (Default) String() string { return "DEFAULT" }
-
 // ArithmeticOperator represents a binary arithmetic operator.
 type ArithmeticOperator int8
 

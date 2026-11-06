@@ -27,6 +27,16 @@ func TestAliasedTableExpr_String(t *testing.T) {
 			},
 			"LATERAL (SELECT * FROM t) sub",
 		},
+		{
+			"only",
+			&pgast.AliasedTableExpr{Expr: pgast.TableName{Name: "users"}, As: "u", Only: true},
+			"ONLY users u",
+		},
+		{
+			"include descendants",
+			&pgast.AliasedTableExpr{Expr: pgast.TableName{Name: "users"}, As: "u", IncludeDescendants: true},
+			"users * u",
+		},
 	}
 
 	for _, tt := range tests {

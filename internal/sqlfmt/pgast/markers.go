@@ -33,7 +33,6 @@ func (*IsTruthExpr) iExpr()        {}
 func (*IsDistinctFromExpr) iExpr() {}
 func (ValTuple) iExpr()            {}
 func (*RowExpr) iExpr()            {}
-func (Default) iExpr()             {}
 func (*ArithmeticExpr) iExpr()     {}
 func (*UnaryExpr) iExpr()          {}
 func (*AndExpr) iExpr()            {}

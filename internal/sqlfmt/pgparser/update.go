@@ -172,14 +172,6 @@ func (p *Parser) parseParenExprOrDefaultList() []pgast.Expr {
 	return exprs
 }
 
-func (p *Parser) parseExprOrDefault() pgast.Expr {
-	if p.consume(DEFAULT) {
-		return pgast.Default{}
-	}
-
-	return p.parseExpr()
-}
-
 // parseUpdateWhereClause parses an optional WHERE clause, rejecting the
 // positioned "WHERE CURRENT OF cursor" form explicitly: it needs DECLARE
 // CURSOR session state, which is out of scope for a formatter.
@@ -189,12 +181,4 @@ func (p *Parser) parseUpdateWhereClause() *pgast.Where {
 	}
 
 	return p.parseOptionalWhereClause(WHERE)
-}
-
-func (p *Parser) parseOptionalReturning() *pgast.Returning {
-	if !p.consume(RETURNING) {
-		return nil
-	}
-
-	return &pgast.Returning{Exprs: p.parseSelectExprList()}
 }
