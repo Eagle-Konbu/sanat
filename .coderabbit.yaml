@@ -46,6 +46,14 @@ reviews:
       mode: warning
     issue_assessment:
       mode: "off"
+    # The check scores the share of all functions in a PR that have a doc
+    # comment, including _test.go functions and AST marker methods, and it
+    # cannot be scoped by path. That made it warn on every parser PR even
+    # though all exported API is documented. Doc-comment quality is reviewed
+    # instead through path_instructions below, which ask for comments that
+    # explain "why" rather than for a coverage percentage.
+    docstrings:
+      mode: "off"
 
   finishing_touches:
     autofix:
