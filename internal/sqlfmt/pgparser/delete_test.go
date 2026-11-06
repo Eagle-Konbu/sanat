@@ -152,6 +152,8 @@ func TestParseDelete_errors(t *testing.T) {
 		"DELETE FROM users RETURNING",
 		"DELETE FROM users ORDER BY id",
 		"DELETE FROM users LIMIT 1",
+		"DELETE FROM users set",
+		"DELETE FROM users AS set",
 	}
 
 	for _, tt := range tests {

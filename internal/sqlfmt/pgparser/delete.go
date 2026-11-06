@@ -27,34 +27,3 @@ func (p *Parser) parseDeleteAfterWith() *pgast.Delete {
 
 	return del
 }
-
-// parseRelationExpr parses a DML target table:
-// "[ONLY] name [*] [[AS] alias]", where ONLY may also parenthesize the name.
-func (p *Parser) parseRelationExpr() *pgast.AliasedTableExpr {
-	target := &pgast.AliasedTableExpr{}
-
-	if p.consume(ONLY) {
-		target.Only = true
-		target.Expr = p.parseOptionallyParenthesizedTableName()
-	} else {
-		target.Expr = p.parseTableName()
-		target.IncludeDescendants = p.consume(STAR)
-	}
-
-	target.As = pgast.TableIdent(p.parseOptionalAlias())
-
-	return target
-}
-
-// parseOptionallyParenthesizedTableName parses the table name after ONLY,
-// accepting PostgreSQL's "ONLY (name)" spelling as well as a bare name.
-func (p *Parser) parseOptionallyParenthesizedTableName() pgast.TableName {
-	if !p.consume(LPAREN) {
-		return p.parseTableName()
-	}
-
-	name := p.parseTableName()
-	p.expect(RPAREN)
-
-	return name
-}

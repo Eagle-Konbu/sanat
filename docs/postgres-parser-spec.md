@@ -44,6 +44,30 @@ a panic.
 dispatch to each statement kind, with and without a leading `WITH`, and for
 errors.
 
+## Shared DML Grammar
+
+`internal/sqlfmt/pgparser/dml.go`
+([#130](https://github.com/Eagle-Konbu/sanat/issues/130)) holds the pieces
+that `INSERT`, `UPDATE`, and `DELETE` share, and that `MERGE`'s actions reuse:
+
+- **Target relation** (`parseRelationExpr`): `[ ONLY ] table_name [ * ] [ [ AS ] alias ]`,
+  parsed into an `*pgast.AliasedTableExpr` by `UPDATE` and `DELETE`. `ONLY`
+  sets `Only`; an explicit `*` (include inheritance descendants, already the
+  default) sets `IncludeDescendants` so it round-trips as written. The two are
+  mutually exclusive, as in PostgreSQL. `ONLY (table_name)` is accepted and
+  normalized to `ONLY table_name`. The alias renders without `AS`, like table
+  aliases in `SELECT`. A bare `SET` is never taken as the alias, as in
+  PostgreSQL, and `AS set` is rejected because it could not round-trip.
+- **SET assignment list** (`parseSetClauseList`), used by `UPDATE` and
+  `ON CONFLICT DO UPDATE`; see [UPDATE](#update-statement-grammar) for its
+  forms.
+- **A single `VALUES` row** (`parseParenExprOrDefaultList`):
+  `( { expr | DEFAULT } [, ...] )`, used per row by `INSERT ... VALUES` and by
+  `ROW(...)` sources in `SET`.
+- **Optional column list** (`parseOptionalParenColumnList`), used after an
+  `INSERT` target, by `ON CONFLICT`, and by CTE names.
+- **`RETURNING`** (`parseOptionalReturning`).
+
 ## INSERT Statement Grammar
 
 Implemented in `internal/sqlfmt/pgparser/insert.go`
@@ -61,13 +85,18 @@ Like `ParseSelect`, it fully consumes `input`, accepting one optional trailing
 INSERT INTO table_name [ AS alias ] [ ( column [, ...] ) ]
     { DEFAULT VALUES | VALUES ( { expr | DEFAULT } [, ...] ) [, ...] | select }
     [ ON CONFLICT { [ ( column [, ...] ) ] DO NOTHING
-                  | ( column [, ...] ) DO UPDATE SET
-                        column = { expr | DEFAULT } [, ...] [ WHERE condition ] } ]
+                  | ( column [, ...] ) DO UPDATE SET set_clause [, ...]
+                        [ WHERE condition ] } ]
     [ RETURNING { * | output_expr [ [ AS ] output_name ] } [, ...] ]
 ```
 
 - **Target alias**: PostgreSQL requires `AS` before an `INSERT` target alias
-  (unlike a `FROM` item), so `INSERT INTO t x ...` is rejected.
+  (unlike a `FROM` item), so `INSERT INTO t x ...` is rejected. The target is
+  a different production from the other DML targets — no `ONLY` or `*`, and
+  `AS` is mandatory — so `pgast.Insert` stores it as `Table` plus `Alias`
+  (rendered with `AS`) rather than as an `*pgast.AliasedTableExpr`.
+- **`DO UPDATE SET`** shares `UPDATE`'s `SET` grammar, including multi-column
+  `(a, b) = (...)`, `ROW(...)`, and sub-SELECT sources.
 - **`DEFAULT`**: accepted only as a `VALUES` item or as the right-hand side of
   a `DO UPDATE SET` assignment, not as a general expression. It is modeled as
   a `pgast.Literal` rendered verbatim.
@@ -124,12 +153,9 @@ flowchart TD
     RE --> END
 ```
 
-**Target table.** `ONLY` sets `Update.Only`; an explicit `*` after the table
-name (include inheritance descendants, already the default) sets
-`Update.Descendants` so it round-trips as written. The two are mutually
-exclusive, as in PostgreSQL. `ONLY (table_name)` is accepted and normalized
-to `ONLY table_name`. The alias renders without `AS`, like table aliases in
-`SELECT`.
+**Target table.** `Update.Table` is an `*pgast.AliasedTableExpr` parsed by
+the shared [target relation](#shared-dml-grammar) grammar, the same as
+`DELETE`'s.
 
 **SET assignments** are `pgast.UpdateExpr` values:
 
@@ -183,14 +209,9 @@ and failing with a `*ParseError` on any other trailing token. Malformed input
 reached during lookahead may fail with a `*LexError` instead.
 
 **Target table**: an optionally schema-qualified name, parsed into
-`pgast.Delete.Table` (an `*pgast.AliasedTableExpr`). PostgreSQL's
-table-inheritance markers are preserved: `ONLY name` sets
-`AliasedTableExpr.Only` (the `ONLY (name)` spelling is also accepted and
-renders as `ONLY name`), and a trailing `name *` sets
-`AliasedTableExpr.IncludeDescendants`. The two are mutually exclusive —
-`ONLY name *` is rejected, matching PostgreSQL. The alias may be written with
-or without `AS`; `String()` always renders it without `AS`, the same as
-`SELECT` table aliases.
+`pgast.Delete.Table` (an `*pgast.AliasedTableExpr`) by the shared
+[target relation](#shared-dml-grammar) grammar, so `ONLY`, `*`, and the alias
+behave exactly as for `UPDATE`.
 
 **`USING`** is PostgreSQL's mechanism for joining other tables into a
 `DELETE`. It takes the same `from_item` list as `SELECT`'s `FROM` clause

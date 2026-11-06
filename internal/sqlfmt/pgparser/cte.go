@@ -25,11 +25,7 @@ func (p *Parser) parseOptionalWith() *pgast.With {
 // "name [(column, ...)] AS [[NOT] MATERIALIZED] (statement)".
 func (p *Parser) parseCommonTableExpr() *pgast.CommonTableExpr {
 	cte := &pgast.CommonTableExpr{Name: pgast.TableIdent(p.readIdent())}
-
-	if p.consume(LPAREN) {
-		cte.Columns = p.parseColumnList()
-		p.expect(RPAREN)
-	}
+	cte.Columns = p.parseOptionalParenColumnList()
 
 	p.expect(AS)
 

@@ -57,6 +57,11 @@ func (s *Select) String() string {
 }
 
 // Insert represents an INSERT statement.
+//
+// Its target is a TableName plus an Alias rather than the *AliasedTableExpr
+// UPDATE, DELETE, and MERGE use, because PostgreSQL's INSERT target is a
+// different production: it takes no ONLY or "*", and its alias requires AS,
+// so Alias renders with AS where an AliasedTableExpr's would not.
 type Insert struct {
 	With       *With
 	Table      TableName
@@ -124,16 +129,12 @@ func (v Values) String() string {
 
 // Update represents an UPDATE statement.
 type Update struct {
-	With  *With
-	Only  bool // UPDATE ONLY t: exclude inheritance descendants
-	Table *AliasedTableExpr
-	// Descendants records an explicit "t *" (include descendants, which is
-	// already PostgreSQL's default) so the target round-trips as written.
-	Descendants bool
-	Set         []*UpdateExpr
-	From        []TableExpr
-	Where       *Where
-	Returning   *Returning
+	With      *With
+	Table     *AliasedTableExpr
+	Set       []*UpdateExpr
+	From      []TableExpr
+	Where     *Where
+	Returning *Returning
 }
 
 // String returns Update's SQL text.
@@ -143,7 +144,7 @@ func (u *Update) String() string {
 	writeOptionalPrefix(&b, u.With)
 
 	b.WriteString("UPDATE ")
-	b.WriteString(u.targetString())
+	b.WriteString(u.Table.String())
 
 	sets := make([]string, len(u.Set))
 	for i, e := range u.Set {
@@ -158,33 +159,6 @@ func (u *Update) String() string {
 	if s := u.Returning.String(); s != "" {
 		b.WriteString(" ")
 		b.WriteString(s)
-	}
-
-	return b.String()
-}
-
-// targetString renders the target table, placing ONLY before the table name
-// and an explicit "*" between the table name and its alias.
-func (u *Update) targetString() string {
-	if !u.Only && !u.Descendants {
-		return u.Table.String()
-	}
-
-	var b strings.Builder
-
-	if u.Only {
-		b.WriteString("ONLY ")
-	}
-
-	b.WriteString(u.Table.Expr.String())
-
-	if u.Descendants {
-		b.WriteString(" *")
-	}
-
-	if !u.Table.As.IsEmpty() {
-		b.WriteString(" ")
-		b.WriteString(u.Table.As.String())
 	}
 
 	return b.String()

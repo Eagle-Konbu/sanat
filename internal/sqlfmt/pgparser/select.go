@@ -338,6 +338,20 @@ func (p *Parser) parseOptionalJoinCondition() *pgast.JoinCondition {
 	return nil
 }
 
+// parseOptionalParenColumnList parses an optional "(column, ...)" list, as
+// after an INSERT target, a CTE name, or ON CONFLICT, returning nil if there
+// is none.
+func (p *Parser) parseOptionalParenColumnList() pgast.Columns {
+	if !p.consume(LPAREN) {
+		return nil
+	}
+
+	cols := p.parseColumnList()
+	p.expect(RPAREN)
+
+	return cols
+}
+
 func (p *Parser) parseColumnList() pgast.Columns {
 	var cols pgast.Columns
 

@@ -23,11 +23,7 @@ func (p *Parser) parseInsertAfterWith() *pgast.Insert {
 		ins.Alias = pgast.TableIdent(p.readIdent())
 	}
 
-	if p.consume(LPAREN) {
-		ins.Columns = p.parseColumnList()
-		p.expect(RPAREN)
-	}
-
+	ins.Columns = p.parseOptionalParenColumnList()
 	ins.Rows = p.parseInsertRows()
 	ins.OnConflict = p.parseOptionalOnConflict()
 	ins.Returning = p.parseOptionalReturning()
@@ -56,52 +52,6 @@ func (p *Parser) parseInsertRows() pgast.InsertRows {
 	}
 }
 
-// parseValuesRows parses a VALUES clause: one or more parenthesized,
-// comma-separated lists of expressions or DEFAULT. The current token must be
-// VALUES.
-func (p *Parser) parseValuesRows() pgast.Values {
-	p.advance()
-
-	var rows pgast.Values
-
-	for {
-		p.expect(LPAREN)
-
-		rows = append(rows, p.parseExprOrDefaultList())
-
-		p.expect(RPAREN)
-
-		if !p.consume(COMMA) {
-			return rows
-		}
-	}
-}
-
-func (p *Parser) parseExprOrDefaultList() []pgast.Expr {
-	var exprs []pgast.Expr
-
-	for {
-		exprs = append(exprs, p.parseExprOrDefault())
-
-		if !p.consume(COMMA) {
-			return exprs
-		}
-	}
-}
-
-// parseExprOrDefault parses an expression, or the DEFAULT keyword that
-// PostgreSQL accepts in its place only as a VALUES item or a SET assignment's
-// right-hand side. DEFAULT is not a value of its own, so it is modeled as a
-// Literal rendered verbatim rather than accepted by the general expression
-// grammar.
-func (p *Parser) parseExprOrDefault() pgast.Expr {
-	if p.consume(DEFAULT) {
-		return &pgast.Literal{Val: "DEFAULT"}
-	}
-
-	return p.parseExpr()
-}
-
 // parseOptionalOnConflict parses an optional ON CONFLICT [(col, ...)]
 // {DO NOTHING | DO UPDATE SET ... [WHERE ...]} clause. The ON CONSTRAINT
 // target, expression/COLLATE/operator-class targets, and a WHERE index
@@ -115,12 +65,7 @@ func (p *Parser) parseOptionalOnConflict() *pgast.OnConflict {
 	p.advance() // consume ON
 	p.advance() // consume CONFLICT
 
-	oc := &pgast.OnConflict{}
-
-	if p.consume(LPAREN) {
-		oc.Columns = p.parseColumnList()
-		p.expect(RPAREN)
-	}
+	oc := &pgast.OnConflict{Columns: p.parseOptionalParenColumnList()}
 
 	p.expect(DO)
 
@@ -137,38 +82,8 @@ func (p *Parser) parseOptionalOnConflict() *pgast.OnConflict {
 	p.expect(UPDATE)
 	p.expect(SET)
 
-	oc.Set = p.parseConflictAssignments()
+	oc.Set = p.parseSetClauseList()
 	oc.Where = p.parseOptionalWhereClause(WHERE)
 
 	return oc
-}
-
-// parseConflictAssignments parses the comma-separated "col = {expr |
-// DEFAULT}" list of an ON CONFLICT DO UPDATE SET clause. EXCLUDED.col needs
-// no special handling: it parses as an ordinary column reference qualified
-// by the EXCLUDED pseudo-table.
-func (p *Parser) parseConflictAssignments() []*pgast.UpdateExpr {
-	var sets []*pgast.UpdateExpr
-
-	for {
-		name := &pgast.ColName{Name: pgast.ColIdent(p.readIdent())}
-
-		p.expect(EQ)
-
-		sets = append(sets, &pgast.UpdateExpr{Name: name, Expr: p.parseExprOrDefault()})
-
-		if !p.consume(COMMA) {
-			return sets
-		}
-	}
-}
-
-// parseOptionalReturning parses an optional RETURNING clause, whose item
-// grammar is the same as a SELECT list.
-func (p *Parser) parseOptionalReturning() *pgast.Returning {
-	if !p.consume(RETURNING) {
-		return nil
-	}
-
-	return &pgast.Returning{Exprs: p.parseSelectExprList()}
 }

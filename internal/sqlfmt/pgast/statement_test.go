@@ -132,8 +132,7 @@ func TestUpdate_String(t *testing.T) {
 		{
 			"only with alias",
 			&pgast.Update{
-				Only:  true,
-				Table: &pgast.AliasedTableExpr{Expr: pgast.TableName{Name: "users"}, As: "u"},
+				Table: &pgast.AliasedTableExpr{Expr: pgast.TableName{Name: "users"}, As: "u", Only: true},
 				Set:   []*pgast.UpdateExpr{{Name: col("name"), Expr: lit("'a'")}},
 			},
 			"UPDATE ONLY users u SET name = 'a'",
@@ -141,9 +140,8 @@ func TestUpdate_String(t *testing.T) {
 		{
 			"descendants without alias",
 			&pgast.Update{
-				Table:       &pgast.AliasedTableExpr{Expr: pgast.TableName{Name: "users"}},
-				Descendants: true,
-				Set:         []*pgast.UpdateExpr{{Name: col("name"), Expr: lit("'a'")}},
+				Table: &pgast.AliasedTableExpr{Expr: pgast.TableName{Name: "users"}, IncludeDescendants: true},
+				Set:   []*pgast.UpdateExpr{{Name: col("name"), Expr: lit("'a'")}},
 			},
 			"UPDATE users * SET name = 'a'",
 		},
