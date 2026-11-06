@@ -602,12 +602,14 @@ func (p *Parser) tryParseLiteral() (pgast.Expr, bool) {
 	}
 
 	switch p.tok.Type {
-	case INT, FLOAT:
+	case INT, FLOAT, BitString:
 		return p.parseLiteralToken(), true
 	case Placeholder:
 		return p.parsePlaceholder(), true
 	case STRING:
 		return p.parseStringLiteral(), true
+	case NationalString:
+		return &pgast.Literal{Val: "N" + p.readStringLiteralText()}, true
 	default:
 		return nil, false
 	}
@@ -634,10 +636,20 @@ func (p *Parser) parsePlaceholder() pgast.Expr {
 // ever needed on the way back out, unlike internal/sqlfmt/parser's MySQL
 // literal re-encoding, which has a ModeDefault/ModeNoBackslashEscapes split.
 func (p *Parser) parseStringLiteral() pgast.Expr {
-	tok := p.tok
+	return &pgast.Literal{Val: p.readStringLiteralText()}
+}
+
+// readStringLiteralText consumes a STRING or NationalString token and returns
+// its content re-encoded as a plain '...' literal.
+func (p *Parser) readStringLiteralText() string {
+	text := quoteString(p.tok.Literal)
 	p.advance()
 
-	return &pgast.Literal{Val: "'" + strings.ReplaceAll(tok.Literal, "'", "''") + "'"}
+	return text
+}
+
+func quoteString(content string) string {
+	return "'" + strings.ReplaceAll(content, "'", "''") + "'"
 }
 
 // parseParenExprOrSubquery parses a parenthesized expression, row value, or

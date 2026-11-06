@@ -24,6 +24,12 @@ const (
 	FLOAT       // 123.45
 	STRING      // 'abc', E'abc', or $tag$abc$tag$ (Literal is the decoded content)
 	Placeholder // $1, $2, ... (Literal is the digits, without the leading $)
+	// BitString is a B'0101' or X'1F' bit-string constant (Literal is its
+	// SQL text, with an upper-case prefix).
+	BitString
+	// NationalString is an N'abc' national character string (Literal is the
+	// decoded content, like STRING's).
+	NationalString
 
 	EQ      // =
 	NE      // <> or !=
@@ -163,6 +169,9 @@ var tokenNames = map[TokenType]string{
 	FLOAT:       "FLOAT",
 	STRING:      "STRING",
 	Placeholder: "PLACEHOLDER",
+
+	BitString:      "BIT_STRING",
+	NationalString: "NATIONAL_STRING",
 
 	EQ:      "=",
 	NE:      "<>",

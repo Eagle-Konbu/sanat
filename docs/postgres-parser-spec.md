@@ -22,8 +22,10 @@ returns a `*Lexer` whose `Next()` yields one `Token` (type, literal, and
 1-based line/column position) at a time, ending with `EOF`, or a `*LexError`
 for malformed input.
 
-- **Identifiers**: an unquoted identifier starts with a letter or `_` and may
-  continue with letters, digits, `_`, and `$`. It is folded to lower case, as
+- **Identifiers**: an unquoted identifier starts with an ASCII letter, `_`, or
+  any non-ASCII character, and may continue with those, digits, and `$`. As in
+  PostgreSQL's scanner, every character from U+0080 up counts, including
+  combining marks and symbols. It is folded to lower case, as
   PostgreSQL does, unless it is a keyword (see [Keywords](#keywords)). A
   double-quoted identifier (`QuotedIdent`) keeps its case, and `""` inside it
   is a literal `"`.
@@ -31,13 +33,25 @@ for malformed input.
   `standard_conforming_strings = on` (no backslash escapes); `E'...'` with
   backslash escapes, including `\xHH`, octal, and `\uXXXX`/`\UXXXXXXXX`
   (a UTF-16 surrogate pair is combined); and dollar-quoted `$$...$$` or
-  `$tag$...$tag$`. Adjacent string constants separated by whitespace that
+  `$tag$...$tag$`. An escape that denotes a zero byte (`E'\0'`, `E'\x00'`,
+  `E'\u0000'`) is a `*LexError`, since PostgreSQL text cannot hold one.
+  Adjacent string constants separated by whitespace that
   contains a newline are joined, per PostgreSQL's continuation rule. The
   `STRING` token's literal is the decoded content.
+- **Bit strings and national strings**: `B'0101'` and `X'1F'` lex as one
+  `BitString` token whose literal is the constant's SQL text with an
+  upper-case prefix; a digit outside the prefix's base is a `*LexError`.
+  `N'...'` lexes as a `NationalString` token holding the decoded content, and
+  renders back as `N'...'`.
 - **Numbers**: integers (`INT`) and decimals with an optional fraction and
   exponent (`FLOAT`), including a leading-dot `.5` and a trailing-dot `1.`;
-  `1..2` leaves `..` intact.
+  `1..2` leaves `..` intact. Like PostgreSQL 15+, an identifier character
+  directly after a number (`123abc`, `1.col`, `0x1F`) is a `*LexError`
+  ("trailing junk"), not a number followed by an alias.
 - **Placeholders**: `$1`, `$2`, ... (`Placeholder`, literal without the `$`).
+  `$1abc` is a `*LexError`.
+- **Whitespace**: space, tab, newline, carriage return, form feed, and
+  vertical tab.
 - **Comments**: `--` to end of line (no space required after the dashes) and
   nesting `/* ... */` block comments are skipped.
 - **Operators** follow PostgreSQL's scanner (`scan.l`): the longest run of
@@ -54,11 +68,10 @@ for malformed input.
 Not supported:
 
 - `U&'...'` Unicode-escape strings and `U&"..."` identifiers, rejected with a
-  `*LexError` rather than read as `u & '...'`.
-- `B'...'` and `X'...'` bit-string constants.
-- PostgreSQL 16's non-decimal integer literals and digit separators: like
-  PostgreSQL 15 and earlier, `0x1F` lexes as `0` followed by the identifier
-  `x1f`, so `SELECT 0x1F` parses as `SELECT 0 AS x1f`.
+  dedicated `*LexError` rather than read as `u & '...'`.
+- PostgreSQL 16's non-decimal integer literals (`0x1F`, `0o17`, `0b101`) and
+  digit separators (`1_000`), rejected as trailing junk, as PostgreSQL 15
+  does.
 
 ## Keywords
 

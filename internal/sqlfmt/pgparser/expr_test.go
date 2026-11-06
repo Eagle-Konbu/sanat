@@ -67,6 +67,9 @@ func TestParseExpr_stringLiteral(t *testing.T) {
 		{"escape string re-encodes to plain", `E'a\nb'`, "'a\nb'"},
 		{"escape string embedded quote", `E'it\'s'`, "'it''s'"},
 		{"dollar-quoted re-encodes to plain", "$$it's a test$$", "'it''s a test'"},
+		{"bit string", "b'0101'", "B'0101'"},
+		{"hex bit string", "X'1F'", "X'1F'"},
+		{"national string", "n'it''s'", "N'it''s'"},
 	}
 
 	for _, tt := range tests {
