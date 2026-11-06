@@ -249,6 +249,14 @@ func (t SetOpType) String() string {
 	}
 }
 
+func (t SetOpType) precedence() int {
+	if t == Intersect {
+		return 2
+	}
+
+	return 1
+}
+
 // SetOp represents a UNION/INTERSECT/EXCEPT statement.
 type SetOp struct {
 	With    *With
@@ -268,7 +276,7 @@ func (u *SetOp) String() string {
 
 	writeOptionalPrefix(&b, u.With)
 
-	writeSetOpOperand(&b, u.Left)
+	writeSetOpOperand(&b, u.Left, needsSetOpParens(u.Left, u.Op, false))
 	b.WriteString(" ")
 	b.WriteString(u.Op.String())
 
@@ -277,7 +285,7 @@ func (u *SetOp) String() string {
 	}
 
 	b.WriteString(" ")
-	writeSetOpOperand(&b, u.Right)
+	writeSetOpOperand(&b, u.Right, needsSetOpParens(u.Right, u.Op, true))
 	writeSuffix(&b, u.OrderBy)
 	writeSuffix(&b, u.Limit)
 	writeSuffix(&b, u.Offset)
@@ -286,12 +294,8 @@ func (u *SetOp) String() string {
 	return b.String()
 }
 
-// writeSetOpOperand writes stmt as a SetOp operand, wrapping it in
-// parentheses when needed: a nested SetOp must be grouped to keep its
-// precedence relative to the outer operator, and any operand's own ORDER BY/
-// LIMIT/OFFSET/FETCH would otherwise render as if it scoped the whole SetOp.
-func writeSetOpOperand(b *strings.Builder, stmt Statement) {
-	if !needsSetOpParens(stmt) {
+func writeSetOpOperand(b *strings.Builder, stmt Statement, parens bool) {
+	if !parens {
 		b.WriteString(stmt.String())
 
 		return
@@ -302,15 +306,40 @@ func writeSetOpOperand(b *strings.Builder, stmt Statement) {
 	b.WriteByte(')')
 }
 
-func needsSetOpParens(stmt Statement) bool {
+// needsSetOpParens reports whether stmt must be parenthesized as an operand
+// of a parentOp set operation: when it has a WITH or trailing clause of its
+// own, which would otherwise render as if scoping the whole set operation,
+// or when it is a nested SetOp whose grouping precedence doesn't imply.
+func needsSetOpParens(stmt Statement, parentOp SetOpType, isRight bool) bool {
 	switch s := stmt.(type) {
 	case *SetOp:
-		return true
+		return s.hasOperandScopedClauses() || !s.Op.groupsWithoutParens(parentOp, isRight)
 	case *Select:
-		return len(s.OrderBy) > 0 || s.Limit != nil || s.Offset != nil || s.Fetch != nil
+		return s.hasOperandScopedClauses()
 	default:
 		return false
 	}
+}
+
+func (u *SetOp) hasOperandScopedClauses() bool {
+	return u.With != nil || len(u.OrderBy) > 0 || u.Limit != nil || u.Offset != nil || u.Fetch != nil
+}
+
+func (s *Select) hasOperandScopedClauses() bool {
+	return s.With != nil || len(s.OrderBy) > 0 || s.Limit != nil || s.Offset != nil || s.Fetch != nil ||
+		len(s.Locks) > 0
+}
+
+// groupsWithoutParens reports whether a nested t operation, as the left or
+// right operand of a parent operation, already groups as intended without
+// parentheses: INTERSECT binds tighter than UNION/EXCEPT, and operators of
+// equal precedence associate left.
+func (t SetOpType) groupsWithoutParens(parent SetOpType, isRight bool) bool {
+	if isRight {
+		return t.precedence() > parent.precedence()
+	}
+
+	return t.precedence() >= parent.precedence()
 }
 
 // With represents a WITH [RECURSIVE] clause.

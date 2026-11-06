@@ -2,18 +2,29 @@ package pgparser
 
 import "github.com/Eagle-Konbu/sanat/internal/sqlfmt/pgast"
 
-// parseSubqueryStatement parses the SELECT statement inside a parenthesized
-// subquery, EXISTS (...), or [NOT] IN (...) predicate. WITH is deferred to
-// #86 (PostgreSQL CTEs can wrap DML bodies, not just SELECT, so CTE support
-// is sequenced after INSERT/UPDATE/DELETE land), so the current token must
-// be SELECT.
+// parseSubqueryStatement parses the query inside a parenthesized subquery,
+// EXISTS (...), [NOT] IN (...) predicate, or derived table: a SELECT or a
+// set operation of SELECTs. WITH is deferred to #86 (PostgreSQL CTEs can
+// wrap DML bodies, not just SELECT, so CTE support is sequenced after
+// INSERT/UPDATE/DELETE land), so the current token must be SELECT or '('.
 func (p *Parser) parseSubqueryStatement() pgast.Statement {
-	return p.parseSelectStatement()
+	return p.parseQuery()
 }
 
-// parseSelectStatement parses a SELECT statement. The current token must be
-// SELECT.
+// parseSelectStatement parses a single SELECT statement, including its
+// trailing ORDER BY/LIMIT/OFFSET/FETCH and locking clauses. The current
+// token must be SELECT.
 func (p *Parser) parseSelectStatement() *pgast.Select {
+	sel := p.parseSimpleSelect()
+	p.attachQueryTail(sel, p.parseQueryTail())
+
+	return sel
+}
+
+// parseSimpleSelect parses a SELECT from the SELECT keyword through its
+// WINDOW clause. The trailing clauses are left to the caller, since after a
+// set-operation operand they apply to the whole set operation instead.
+func (p *Parser) parseSimpleSelect() *pgast.Select {
 	p.expect(SELECT)
 
 	sel := &pgast.Select{}
@@ -25,12 +36,6 @@ func (p *Parser) parseSelectStatement() *pgast.Select {
 	sel.GroupBy = p.parseOptionalGroupBy()
 	sel.Having = p.parseOptionalWhereClause(HAVING)
 	sel.Window = p.parseOptionalWindowClause()
-	sel.OrderBy = p.parseOptionalOrderBy()
-	p.parseRowLimitClauses(sel)
-
-	for lock := p.parseOptionalLock(); lock != nil; lock = p.parseOptionalLock() {
-		sel.Locks = append(sel.Locks, lock)
-	}
 
 	return sel
 }
@@ -38,19 +43,19 @@ func (p *Parser) parseSelectStatement() *pgast.Select {
 // parseRowLimitClauses parses LIMIT and OFFSET (each at most once, in either
 // order, as PostgreSQL allows) followed by an optional FETCH. FETCH is the
 // SQL-standard spelling of LIMIT, so PostgreSQL rejects the two together.
-func (p *Parser) parseRowLimitClauses(sel *pgast.Select) {
+func (p *Parser) parseRowLimitClauses(tail *queryTail) {
 	for {
 		switch {
-		case sel.Limit == nil && p.at(LIMIT):
-			sel.Limit = p.parseOptionalLimit()
-		case sel.Offset == nil && p.at(OFFSET):
-			sel.Offset = p.parseOptionalOffset()
+		case tail.limit == nil && p.at(LIMIT):
+			tail.limit = p.parseOptionalLimit()
+		case tail.offset == nil && p.at(OFFSET):
+			tail.offset = p.parseOptionalOffset()
 		default:
-			if sel.Limit != nil && p.at(FETCH) {
+			if tail.limit != nil && p.at(FETCH) {
 				p.failf("FETCH cannot be combined with LIMIT")
 			}
 
-			sel.Fetch = p.parseOptionalFetch()
+			tail.fetch = p.parseOptionalFetch()
 
 			return
 		}
@@ -361,6 +366,8 @@ func (p *Parser) parseTableFactor() pgast.TableExpr {
 	return &pgast.AliasedTableExpr{Expr: name, As: pgast.TableIdent(alias)}
 }
 
+// parseLateralDerivedTable parses the parenthesized query and optional alias
+// following LATERAL.
 func (p *Parser) parseLateralDerivedTable() pgast.TableExpr {
 	p.expect(LPAREN)
 
@@ -383,6 +390,8 @@ func (p *Parser) parseTableName() pgast.TableName {
 	return pgast.TableName{Name: pgast.TableIdent(name)}
 }
 
+// parseParenTableExpr parses a parenthesized FROM-item: a derived table, or a
+// parenthesized table reference list with an optional alias.
 func (p *Parser) parseParenTableExpr() pgast.TableExpr {
 	p.advance() // consume '('
 
@@ -390,14 +399,10 @@ func (p *Parser) parseParenTableExpr() pgast.TableExpr {
 		return p.parseDerivedTable()
 	}
 
-	var tables []pgast.TableExpr
+	tables := p.parseTableReferenceList()
 
-	for {
-		tables = append(tables, p.parseTableReference())
-
-		if !p.consume(COMMA) {
-			break
-		}
+	if query := p.tryContinueQueryFromTables(tables); query != nil {
+		return p.finishDerivedTable(query)
 	}
 
 	p.expect(RPAREN)
@@ -407,14 +412,57 @@ func (p *Parser) parseParenTableExpr() pgast.TableExpr {
 	return &pgast.ParenTableExpr{Exprs: tables, As: pgast.TableIdent(alias)}
 }
 
-func (p *Parser) parseDerivedTable() pgast.TableExpr {
-	sel := p.parseSubqueryStatement()
+// tryContinueQueryFromTables continues a query from tables if they are a
+// lone derived table without an alias (possibly inside redundant parentheses
+// that have no alias either) followed by a set operator or trailing clause, as in
+// "FROM ((SELECT 1) UNION SELECT 2) t" — which reads like a parenthesized
+// table reference until the UNION. It returns nil, consuming nothing,
+// otherwise.
+func (p *Parser) tryContinueQueryFromTables(tables []pgast.TableExpr) pgast.Statement {
+	if len(tables) != 1 || !p.isQueryContinuation() {
+		return nil
+	}
 
+	aliased, ok := unwrapParenTable(tables[0]).(*pgast.AliasedTableExpr)
+	if !ok || !aliased.As.IsEmpty() || aliased.Lateral {
+		return nil
+	}
+
+	derived, ok := aliased.Expr.(*pgast.DerivedTable)
+	if !ok {
+		return nil
+	}
+
+	return p.parseQueryFrom(derived.Select)
+}
+
+// unwrapParenTable strips any parentheses around table that hold a single
+// item and have no alias, as in "((SELECT 1))".
+func unwrapParenTable(table pgast.TableExpr) pgast.TableExpr {
+	for {
+		paren, ok := table.(*pgast.ParenTableExpr)
+		if !ok || len(paren.Exprs) != 1 || !paren.As.IsEmpty() {
+			return table
+		}
+
+		table = paren.Exprs[0]
+	}
+}
+
+// parseDerivedTable parses a derived table whose query starts with SELECT,
+// just after its opening '('.
+func (p *Parser) parseDerivedTable() pgast.TableExpr {
+	return p.finishDerivedTable(p.parseSubqueryStatement())
+}
+
+// finishDerivedTable consumes the ')' closing a derived table's query and
+// its optional alias.
+func (p *Parser) finishDerivedTable(query pgast.Statement) pgast.TableExpr {
 	p.expect(RPAREN)
 
 	alias := p.parseOptionalAlias()
 
-	return &pgast.AliasedTableExpr{Expr: &pgast.DerivedTable{Select: sel}, As: pgast.TableIdent(alias)}
+	return &pgast.AliasedTableExpr{Expr: &pgast.DerivedTable{Select: query}, As: pgast.TableIdent(alias)}
 }
 
 func (p *Parser) parseOptionalWhereClause(kw TokenType) *pgast.Where {
