@@ -150,6 +150,7 @@ const (
 	DO
 	NOTHING
 	SET
+	DELETE
 	RETURNING
 	keywordEnd
 )
@@ -288,6 +289,7 @@ var tokenNames = map[TokenType]string{
 	DO:        "DO",
 	NOTHING:   "NOTHING",
 	SET:       "SET",
+	DELETE:    "DELETE",
 	RETURNING: "RETURNING",
 }
 

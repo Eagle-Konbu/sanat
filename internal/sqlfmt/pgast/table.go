@@ -6,10 +6,16 @@ import "strings"
 // LATERAL is only meaningful when Expr is a *DerivedTable or a function
 // call, but is stored here (not on DerivedTable) since PostgreSQL's grammar
 // attaches LATERAL to the FROM item, not to the subquery itself.
+//
+// Only and IncludeDescendants render PostgreSQL's table-inheritance markers
+// ("ONLY name" and "name *"). They are only meaningful when Expr is a
+// TableName, and the parser never sets both.
 type AliasedTableExpr struct {
-	Expr    SimpleTableExpr
-	As      TableIdent
-	Lateral bool
+	Expr               SimpleTableExpr
+	As                 TableIdent
+	Lateral            bool
+	Only               bool
+	IncludeDescendants bool
 }
 
 // String returns AliasedTableExpr's SQL text.
@@ -20,7 +26,15 @@ func (a *AliasedTableExpr) String() string {
 		b.WriteString("LATERAL ")
 	}
 
+	if a.Only {
+		b.WriteString("ONLY ")
+	}
+
 	b.WriteString(a.Expr.String())
+
+	if a.IncludeDescendants {
+		b.WriteString(" *")
+	}
 
 	if !a.As.IsEmpty() {
 		b.WriteString(" ")
