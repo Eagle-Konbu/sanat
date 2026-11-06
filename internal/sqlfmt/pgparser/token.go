@@ -142,6 +142,15 @@ const (
 	PRECEDING
 	FOLLOWING
 	CURRENT
+	INSERT
+	INTO
+	VALUES
+	DEFAULT
+	CONFLICT
+	DO
+	NOTHING
+	SET
+	RETURNING
 	keywordEnd
 )
 
@@ -271,6 +280,15 @@ var tokenNames = map[TokenType]string{
 	PRECEDING: "PRECEDING",
 	FOLLOWING: "FOLLOWING",
 	CURRENT:   "CURRENT",
+	INSERT:    "INSERT",
+	INTO:      "INTO",
+	VALUES:    "VALUES",
+	DEFAULT:   "DEFAULT",
+	CONFLICT:  "CONFLICT",
+	DO:        "DO",
+	NOTHING:   "NOTHING",
+	SET:       "SET",
+	RETURNING: "RETURNING",
 }
 
 // String returns the token type's display name, used in error messages.
