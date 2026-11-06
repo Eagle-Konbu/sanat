@@ -14,6 +14,52 @@ internal/sqlfmt/
 └── pgparser/  Lexer + recursive-descent parser producing pgast nodes
 ```
 
+## Lexer
+
+Implemented in `internal/sqlfmt/pgparser/lexer.go` and `token.go`
+([#79](https://github.com/Eagle-Konbu/sanat/issues/79)). `pgparser.New(input)`
+returns a `*Lexer` whose `Next()` yields one `Token` (type, literal, and
+1-based line/column position) at a time, ending with `EOF`, or a `*LexError`
+for malformed input.
+
+- **Identifiers**: an unquoted identifier starts with a letter or `_` and may
+  continue with letters, digits, `_`, and `$`. It is folded to lower case, as
+  PostgreSQL does, unless it is a keyword (see [Keywords](#keywords)). A
+  double-quoted identifier (`QuotedIdent`) keeps its case, and `""` inside it
+  is a literal `"`.
+- **Strings**: `'...'` with `''` escaping, assuming
+  `standard_conforming_strings = on` (no backslash escapes); `E'...'` with
+  backslash escapes, including `\xHH`, octal, and `\uXXXX`/`\UXXXXXXXX`
+  (a UTF-16 surrogate pair is combined); and dollar-quoted `$$...$$` or
+  `$tag$...$tag$`. Adjacent string constants separated by whitespace that
+  contains a newline are joined, per PostgreSQL's continuation rule. The
+  `STRING` token's literal is the decoded content.
+- **Numbers**: integers (`INT`) and decimals with an optional fraction and
+  exponent (`FLOAT`), including a leading-dot `.5` and a trailing-dot `1.`;
+  `1..2` leaves `..` intact.
+- **Placeholders**: `$1`, `$2`, ... (`Placeholder`, literal without the `$`).
+- **Comments**: `--` to end of line (no space required after the dashes) and
+  nesting `/* ... */` block comments are skipped.
+- **Operators** follow PostgreSQL's scanner (`scan.l`): the longest run of
+  operator characters ``~ ! @ # ^ & | ` ? + - * / % < > =`` is one
+  operator, cut short where a `--` or `/*` comment starts. A multi-character
+  operator may not end in `+` or `-` unless it also contains one of
+  ``~ ! @ # ^ & | ` ? %``, so `a=-1` lexes as `a`, `=`, `-`, `1`, while `@-`
+  stays one operator. The SQL operators with a precedence or meaning of their
+  own keep dedicated tokens (`=`, `<>`/`!=`, `<`, `>`, `<=`, `>=`, `+`, `-`,
+  `*`, `/`, `%`, `^`, and `=>`); every other operator — `||`, `~`, `->`,
+  `@>`, `<->`, a user-defined one, and so on — is a generic `Op` token whose
+  literal is its text. `::` and `:=` are separate tokens.
+
+Not supported:
+
+- `U&'...'` Unicode-escape strings and `U&"..."` identifiers, rejected with a
+  `*LexError` rather than read as `u & '...'`.
+- `B'...'` and `X'...'` bit-string constants.
+- PostgreSQL 16's non-decimal integer literals and digit separators: like
+  PostgreSQL 15 and earlier, `0x1F` lexes as `0` followed by the identifier
+  `x1f`, so `SELECT 0x1F` parses as `SELECT 0 AS x1f`.
+
 ## Keywords
 
 Implemented in `internal/sqlfmt/pgparser/keyword.go`
@@ -53,6 +99,39 @@ identifier. Keywords that start a construct (`CASE`, `EXISTS`, `CAST`,
 `ARRAY`, `ROW`, and the `GROUP BY` and window-frame keywords) are dispatched
 before the name rules apply.
 
+## AST (`pgast`)
+
+`internal/sqlfmt/pgast` ([#78](https://github.com/Eagle-Konbu/sanat/issues/78))
+holds the node types and a `String()` rendering for each, with no parsing
+logic. `String()` is a canonical single-line SQL rendering — keywords upper
+case, single spaces, aliases normalized as described per grammar below —
+used as the parser's round-trip form in tests; it is not the formatter's
+output layout.
+
+| File | Contents |
+|---|---|
+| `node.go` | The sealed interfaces (`Statement`, `Expr`, `TableExpr`, `SimpleTableExpr`, `SelectExpr`, `InsertRows`, `MergeAction`) and identifier types (`ColIdent`, `TableIdent`, `TableName`, `Columns`) |
+| `statement.go` | `Select`, `SetOp`, `Insert`, `Update`, `Delete`, `Merge` and their parts (`With`, `CommonTableExpr`, `Values`, `MergeWhen`, the `Merge*` actions, `Overriding`) |
+| `expr.go` | Expressions: predicates, arithmetic, `OperatorExpr`, `FuncExpr`, `NamedArgExpr`, `CaseExpr`, casts, arrays, subqueries, literals, column references |
+| `clause.go` | Clauses: `Where`, `GroupBy` (with grouping sets), `OrderBy`, `Limit`/`Offset`/`Fetch`, `Lock`, windows, `Returning`, `UpdateExpr`, `OnConflict`, `JoinCondition` |
+| `table.go` | FROM items: `AliasedTableExpr`, `JoinTableExpr`, `ParenTableExpr`, `DerivedTable`, and select items `AliasedExpr`, `StarExpr` |
+| `markers.go` | The empty marker methods that seal the interfaces |
+
+Identifiers are stored as SQL text: an unquoted name in its folded lower
+case, a quoted one with its double quotes. Every statement's `With` field
+holds its leading `WITH` clause.
+
+**MERGE** (PostgreSQL 15+; parsed by
+[#87](https://github.com/Eagle-Konbu/sanat/issues/87)): `Merge.Target` is an
+`*AliasedTableExpr` (so it carries `ONLY` and `*`), and each `MergeWhen` pairs
+a `MergeMatchKind` — `MATCHED`, `NOT MATCHED`, `NOT MATCHED BY TARGET`, or
+`NOT MATCHED BY SOURCE` (the last two PostgreSQL 17+) — with a `MergeAction`:
+`*MergeUpdate`, `MergeDelete`, `*MergeInsert` (columns, `OVERRIDING
+{SYSTEM | USER} VALUE`, and `VALUES (...)` or, when `Values` is nil,
+`DEFAULT VALUES`), or `MergeDoNothing`. `Merge.Returning` (PostgreSQL 17+)
+uses the shared `Returning`, whose `Aliases` hold PostgreSQL 18's
+`RETURNING WITH (OLD AS ..., NEW AS ...)`.
+
 ## Statement Entry Point
 
 Implemented in `internal/sqlfmt/pgparser/statement.go`
@@ -82,6 +161,116 @@ a panic.
 `internal/sqlfmt/pgparser/statement_test.go` holds table-driven tests for
 dispatch to each statement kind, with and without a leading `WITH`, and for
 errors.
+
+## Expression Grammar
+
+Implemented in `internal/sqlfmt/pgparser/expr.go`
+([#80](https://github.com/Eagle-Konbu/sanat/issues/80)). The entry point
+`ParseExpr(input string) (pgast.Expr, error)` parses one expression and
+accepts no trailing `;`.
+
+### Precedence
+
+Loosest to tightest, matching PostgreSQL's operator precedence table:
+
+| Level | Operators | Associativity | Node |
+|---|---|---|---|
+| 1 | `OR` | left | `OrExpr` |
+| 2 | `AND` | left | `AndExpr` |
+| 3 | `NOT` | right (prefix) | `NotExpr` |
+| 4 | `IS [NOT] {NULL \| TRUE \| FALSE \| UNKNOWN \| DISTINCT FROM}`, `ISNULL`, `NOTNULL` | postfix | `IsExpr`, `IsTruthExpr`, `IsDistinctFromExpr` |
+| 5 | `=` `<>` `<` `>` `<=` `>=` | non-associative (`a = b = c` is an error) | `ComparisonExpr` |
+| 6 | `[NOT] IN`, `[NOT] BETWEEN`, `[NOT] LIKE`, `[NOT] ILIKE` (with `ESCAPE`) | non-associative | `ComparisonExpr`, `RangeCond`, `ILikeExpr` |
+| 7 | every other operator (`Op` tokens such as `\|\|`, `~`, `->`, `@>`, `<->`) and `OPERATOR([schema.]op)` | left (infix); prefix | `OperatorExpr` |
+| 8 | `+` `-` | left | `ArithmeticExpr` |
+| 9 | `*` `/` `%` | left | `ArithmeticExpr` |
+| 10 | `^` | left (`2 ^ 3 ^ 2` is `(2 ^ 3) ^ 2`) | `ArithmeticExpr` |
+| 11 | unary `+` `-` | right (prefix) | `UnaryExpr` |
+| 12 | `::type` | left (postfix) | `CastExpr` |
+| 13 | `[i]`, `[a:b]` | postfix | `ArraySubscriptExpr` |
+
+**Generic operators** (level 7) are not listed one by one: any operator the
+lexer produces as `Op` is accepted, so new or user-defined operators parse
+without parser changes. As a prefix operator, its operand extends over `+`
+and `-` and tighter operators, as in PostgreSQL: `~ a + b` is `~ (a + b)`,
+while `~ a || b` is `(~ a) || b`. `OPERATOR(schema.op)` applies any operator,
+including a fixed one such as `+`, at this level, and renders as written.
+Prefix `OPERATOR(...)` is not supported, since `operator(...)` is also a
+valid function call.
+
+A prefix operator renders with a space before its operand when the operand
+starts with an operator character, since `- -a` would otherwise render as
+the comment `--a`.
+
+### Primary Expressions
+
+- Literals: numbers, strings (rendered back as `'...'`), `NULL`, `TRUE`,
+  `FALSE`, and placeholders (`$1`).
+- Column references `name` and `qualifier.name`, and function calls
+  `[qualifier.]name(args)` with `*`, `DISTINCT`, named arguments
+  (`name => value`, or the older `name := value`), `FILTER (WHERE ...)`, and
+  `OVER window_name` or `OVER (window specification)`.
+- Parenthesized expressions, row values `(a, b)`, `ROW(...)`, scalar
+  subqueries, and `EXISTS (subquery)`.
+- `CASE` (simple and searched), `CAST(expr AS type)`, and `ARRAY[...]`.
+- Cast types are an identifier with optional `(modifiers)` and `[]` array
+  bounds, kept as opaque text.
+
+Not supported (each a `*ParseError` unless noted): `SIMILAR TO`,
+`AT TIME ZONE`, `COLLATE`, `IS [NOT] DOCUMENT`/`NORMALIZED`, `OVERLAPS`,
+typed literals (`DATE '2024-01-01'`, `INTERVAL '1 day'`), three-part column
+references, `WITHIN GROUP`, `ORDER BY` inside aggregate calls, `VARIADIC`
+arguments, SQL-standard function syntax such as `EXTRACT(... FROM ...)`, and:
+
+- Quantified comparisons: `= ALL (...)` fails, while `= ANY (...)` and
+  `= SOME (...)` parse as calls to functions named `any`/`some`, which
+  render equivalently.
+- Multi-word cast types: `a::double precision` is misread as
+  `a::double AS precision` in a select list. Single-word types, with
+  modifiers and array bounds, are supported.
+
+## SELECT Statement Grammar
+
+Implemented in `internal/sqlfmt/pgparser/select.go`
+([#81](https://github.com/Eagle-Konbu/sanat/issues/81));
+entry point `ParseSelect(input string) (*pgast.Select, error)`.
+
+```text
+[ WITH [ RECURSIVE ] with_query [, ...] ]
+SELECT [ ALL | DISTINCT [ ON ( expr [, ...] ) ] ]
+    { * | table.* | expr [ [ AS ] output_name ] } [, ...]
+    [ FROM from_item [, ...] ]
+    [ WHERE condition ]
+    [ GROUP BY grouping_element [, ...] ]
+    [ HAVING condition ]
+    [ WINDOW window_name AS ( window_definition ) [, ...] ]
+    [ ORDER BY expr [ ASC | DESC ] [ NULLS { FIRST | LAST } ] [, ...] ]
+    [ LIMIT { count | ALL } ] [ OFFSET start [ ROW | ROWS ] ]
+    [ FETCH { FIRST | NEXT } [ count ] { ROW | ROWS } { ONLY | WITH TIES } ]
+    [ FOR { UPDATE | NO KEY UPDATE | SHARE | KEY SHARE }
+          [ OF table_name [, ...] ] [ NOWAIT | SKIP LOCKED ] [...] ]
+```
+
+- **Select list**: `*`, `table.*`, `schema.table.*`, or an expression with an
+  optional alias; aliases always render with `AS` (see
+  [Keywords](#keywords) for which names need it).
+- **FROM items**: tables (`[schema.]name`), derived tables
+  `(subquery) [AS] alias`, `LATERAL (subquery)`, parenthesized join trees,
+  comma lists, and `[INNER] JOIN`, `LEFT`/`RIGHT`/`FULL [OUTER] JOIN` (each
+  requiring `ON` or `USING (cols)`), `CROSS JOIN`, and `NATURAL` joins.
+- **GROUP BY** elements: expressions, `()`, `GROUPING SETS (...)`,
+  `CUBE (...)`, and `ROLLUP (...)`.
+- **Window definitions**: an optional base window name, `PARTITION BY`,
+  `ORDER BY`, and a `ROWS`/`RANGE`/`GROUPS` frame with
+  `UNBOUNDED PRECEDING`/`FOLLOWING`, `CURRENT ROW`, or `expr PRECEDING`/
+  `FOLLOWING` bounds.
+- **Row limiting**: `LIMIT` and `OFFSET` each at most once, in either order;
+  `FETCH` may not be combined with `LIMIT`.
+
+Not supported: table functions in `FROM` (`FROM generate_series(...)`,
+`WITH ORDINALITY`, `ROWS FROM (...)`), `TABLESAMPLE`, `VALUES` as a query,
+`SELECT INTO`, `GROUP BY ALL`/`DISTINCT`, window frame `EXCLUDE`, and
+`ORDER BY ... USING op`.
 
 ## Shared DML Grammar
 

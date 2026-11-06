@@ -12,7 +12,7 @@ import (
 // Precedence, loosest to tightest (per
 // https://www.postgresql.org/docs/current/sql-syntax-lexical.html#SQL-PRECEDENCE):
 // OR > AND > NOT > IS/ISNULL/NOTNULL > plain comparison > BETWEEN/IN/LIKE/
-// ILIKE > JSON/JSONB operators > + - > * / % > ^ > unary +/- > :: cast >
+// ILIKE > any other operator > + - > * / % > ^ > unary +/- > :: cast >
 // primary (including array subscript, which is resolved inside cast's type-
 // name grammar rather than as a separate postfix tier — see parseTypeName).
 func (p *Parser) parseExpr() pgast.Expr {

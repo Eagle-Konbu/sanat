@@ -119,7 +119,9 @@
     "pflag",
     "pkgs",
     "codeatlas",
-    "worktrees"
+    "worktrees",
+    "kwlist",
+    "TABLESAMPLE"
   ],
   "ignorePaths": [
     ".git",
