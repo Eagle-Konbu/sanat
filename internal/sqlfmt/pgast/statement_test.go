@@ -224,6 +224,49 @@ func TestSetOp_String(t *testing.T) {
 			"(SELECT * FROM t UNION SELECT * FROM t) INTERSECT SELECT * FROM t",
 		},
 		{
+			"left-associative nested left operand unparenthesized",
+			&pgast.SetOp{
+				Left:  &pgast.SetOp{Left: selectStar(), Right: selectStar(), Op: pgast.Union},
+				Op:    pgast.Except,
+				Right: selectStar(),
+			},
+			"SELECT * FROM t UNION SELECT * FROM t EXCEPT SELECT * FROM t",
+		},
+		{
+			"tighter-binding nested right operand unparenthesized",
+			&pgast.SetOp{
+				Left:  selectStar(),
+				Op:    pgast.Union,
+				Right: &pgast.SetOp{Left: selectStar(), Right: selectStar(), Op: pgast.Intersect},
+			},
+			"SELECT * FROM t UNION SELECT * FROM t INTERSECT SELECT * FROM t",
+		},
+		{
+			"nested operand with its own order by parenthesized",
+			&pgast.SetOp{
+				Left: &pgast.SetOp{
+					Left: selectStar(), Right: selectStar(), Op: pgast.Intersect,
+					OrderBy: pgast.OrderBy{{Expr: col("id")}},
+				},
+				Op:    pgast.Union,
+				Right: selectStar(),
+			},
+			"(SELECT * FROM t INTERSECT SELECT * FROM t ORDER BY id) UNION SELECT * FROM t",
+		},
+		{
+			"select operands with locks or with clause parenthesized",
+			func() *pgast.SetOp {
+				left := selectStar()
+				left.Locks = []*pgast.Lock{{Strength: pgast.ForUpdate}}
+
+				right := selectStar()
+				right.With = &pgast.With{CTEs: []*pgast.CommonTableExpr{{Name: "cte", Subquery: selectStar()}}}
+
+				return &pgast.SetOp{Left: left, Right: right, Op: pgast.Union}
+			}(),
+			"(SELECT * FROM t FOR UPDATE) UNION (WITH cte AS (SELECT * FROM t) SELECT * FROM t)",
+		},
+		{
 			"select operands with local limit parenthesized",
 			func() *pgast.SetOp {
 				left := selectStar()

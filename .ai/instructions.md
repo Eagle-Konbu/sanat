@@ -97,6 +97,7 @@ This project uses [Task](https://taskfile.dev/) for build automation. **Prefer `
   - `docs/detect-spec.md` — SQL detection specification (MightBeSQL heuristic)
   - `docs/parser-spec.md` — In-house SQL lexer/parser specification (`internal/sqlfmt/sqlast`, `internal/sqlfmt/parser`)
   - `docs/analyzer-spec.md` — go/analysis analyzer specification (`internal/analyzer`)
+  - `docs/postgres-parser-spec.md` — PostgreSQL lexer/parser specification (`internal/sqlfmt/pgast`, `internal/sqlfmt/pgparser`)
 
 ## References
 

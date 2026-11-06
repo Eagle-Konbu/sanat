@@ -142,6 +142,9 @@ const (
 	PRECEDING
 	FOLLOWING
 	CURRENT
+	UNION
+	INTERSECT
+	EXCEPT
 	keywordEnd
 )
 
@@ -271,6 +274,9 @@ var tokenNames = map[TokenType]string{
 	PRECEDING: "PRECEDING",
 	FOLLOWING: "FOLLOWING",
 	CURRENT:   "CURRENT",
+	UNION:     "UNION",
+	INTERSECT: "INTERSECT",
+	EXCEPT:    "EXCEPT",
 }
 
 // String returns the token type's display name, used in error messages.

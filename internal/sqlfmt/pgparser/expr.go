@@ -191,6 +191,15 @@ func (p *Parser) parseInExpr(left pgast.Expr, not bool) pgast.Expr {
 	}
 
 	values := p.parseExprList()
+
+	if len(values) == 1 {
+		if query := p.tryContinueQueryFromExpr(values[0]); query != nil {
+			p.expect(RPAREN)
+
+			return &pgast.ComparisonExpr{Left: left, Operator: op, Right: &pgast.Subquery{Select: query}}
+		}
+	}
+
 	p.expect(RPAREN)
 
 	return &pgast.ComparisonExpr{Left: left, Operator: op, Right: pgast.ValTuple(values)}
@@ -562,6 +571,12 @@ func (p *Parser) parseParenExprOrSubquery() pgast.Expr {
 	}
 
 	expr := p.parseExpr()
+
+	if query := p.tryContinueQueryFromExpr(expr); query != nil {
+		p.expect(RPAREN)
+
+		return &pgast.Subquery{Select: query}
+	}
 
 	if p.consume(COMMA) {
 		row := append([]pgast.Expr{expr}, p.parseExprList()...)
