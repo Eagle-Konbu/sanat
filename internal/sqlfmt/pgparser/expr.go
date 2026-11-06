@@ -453,40 +453,6 @@ func (p *Parser) parseSubscript(left pgast.Expr) pgast.Expr {
 	return &pgast.ArraySubscriptExpr{Expr: left, From: from, To: to, Slice: true}
 }
 
-// parseTypeName parses a cast's target type: an identifier, optionally
-// followed by a parenthesized numeric modifier list (numeric(10, 2),
-// varchar(255)) and/or array-bounds suffixes (int[], int[3]). PostgreSQL's
-// full type-name grammar also supports multi-word built-in names ("double
-// precision", "timestamp with time zone") and schema qualification; those
-// are out of scope here; the formatter treats a cast's type as an opaque
-// string it round-trips, not a structure it validates.
-func (p *Parser) parseTypeName() pgast.ColIdent {
-	var b strings.Builder
-
-	b.WriteString(p.readTypeIdent())
-
-	if p.at(LPAREN) {
-		b.WriteString(p.readTypeModifier())
-	}
-
-	for p.at(LBRACKET) {
-		b.WriteString(p.readArrayBound())
-	}
-
-	return pgast.ColIdent(b.String())
-}
-
-func (p *Parser) readTypeIdent() string {
-	if !isTypeFuncName(p.tok) {
-		return failReturn[string](p, "expected type name, got %s", p.tok.Type)
-	}
-
-	text := identText(p.tok)
-	p.advance()
-
-	return text
-}
-
 // identText returns an identifier token as SQL text: a QuotedIdent is
 // re-quoted (doubling any embedded quotes) so its case and quoting survive
 // into the AST, per the pgast.ColIdent contract.
@@ -500,43 +466,6 @@ func identText(tok Token) string {
 	}
 
 	return `"` + strings.ReplaceAll(tok.Literal, `"`, `""`) + `"`
-}
-
-func (p *Parser) readTypeModifier() string {
-	p.advance() // consume '('
-
-	var parts []string
-
-	for {
-		if p.tok.Type != INT {
-			p.failf("expected integer in type modifier, got %s", p.tok.Type)
-		}
-
-		parts = append(parts, p.tok.Literal)
-		p.advance()
-
-		if !p.consume(COMMA) {
-			break
-		}
-	}
-
-	p.expect(RPAREN)
-
-	return "(" + strings.Join(parts, ", ") + ")"
-}
-
-func (p *Parser) readArrayBound() string {
-	p.advance() // consume '['
-
-	bound := ""
-	if p.tok.Type == INT {
-		bound = p.tok.Literal
-		p.advance()
-	}
-
-	p.expect(RBRACKET)
-
-	return "[" + bound + "]"
 }
 
 // keywordLiterals holds the keyword tokens that stand for a literal value.
@@ -561,6 +490,10 @@ func (p *Parser) parsePrimaryExpr() pgast.Expr {
 	case p.at(Op):
 		return p.parsePrefixOperatorExpr()
 	case p.atIdentExprStart():
+		if lit, ok := p.tryParseTypedLiteral(); ok {
+			return lit
+		}
+
 		return p.parseIdentExpr()
 	default:
 		return failReturn[pgast.Expr](p, "unexpected token %s in expression", p.tok.Type)

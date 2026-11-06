@@ -87,6 +87,7 @@ const (
 	ON
 	ALL
 	CAST
+	TO
 	ARRAY
 	FILTER
 	ISNULL
@@ -226,6 +227,7 @@ var tokenNames = map[TokenType]string{
 	ON:           "ON",
 	ALL:          "ALL",
 	CAST:         "CAST",
+	TO:           "TO",
 	ARRAY:        "ARRAY",
 	FILTER:       "FILTER",
 	ISNULL:       "ISNULL",

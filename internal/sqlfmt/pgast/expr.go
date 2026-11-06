@@ -461,7 +461,7 @@ func (p *ParenExpr) String() string {
 // existing SQL rather than normalizing it to one canonical spelling.
 type CastExpr struct {
 	Expr     Expr
-	Type     ColIdent
+	Type     *TypeName
 	Explicit bool // true for CAST(expr AS type), false for expr::type
 }
 

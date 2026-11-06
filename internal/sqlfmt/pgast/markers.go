@@ -53,6 +53,7 @@ func (*Literal) iExpr()            {}
 func (*FuncExpr) iExpr()           {}
 func (*ParenExpr) iExpr()          {}
 func (*CastExpr) iExpr()           {}
+func (*TypedLiteral) iExpr()       {}
 func (*ArrayExpr) iExpr()          {}
 func (*ArraySubscriptExpr) iExpr() {}
 func (*OperatorExpr) iExpr()       {}

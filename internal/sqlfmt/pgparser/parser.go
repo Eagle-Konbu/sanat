@@ -77,6 +77,50 @@ func (p *Parser) lookaheadBeyondBufferIs(types ...TokenType) bool {
 	return true
 }
 
+// parserState is a snapshot of the parser's position, for backtracking.
+type parserState struct {
+	lex                    Lexer
+	tok, peekTok, peek2Tok Token
+}
+
+func (p *Parser) save() parserState {
+	return parserState{lex: *p.lex, tok: p.tok, peekTok: p.peekTok, peek2Tok: p.peek2Tok}
+}
+
+func (p *Parser) restore(s *parserState) {
+	*p.lex = s.lex
+	p.tok, p.peekTok, p.peek2Tok = s.tok, s.peekTok, s.peek2Tok
+}
+
+// speculate runs parse, reporting whether it succeeded. On a syntax or lexer
+// error it restores the parser to where it started and reports ok=false;
+// the lexer error, if any, is reported again once the real parse gets
+// there. Callers keep parse free of unbounded recursion, so a failed attempt
+// costs little.
+//
+//nolint:nonamedreturns // the named results are mutated by the deferred recover
+func speculate[T any](p *Parser, parse func(*Parser) T) (result T, ok bool) {
+	saved := p.save()
+
+	defer func() {
+		r := recover()
+		if r == nil {
+			return
+		}
+
+		switch r.(type) {
+		case *ParseError, *LexError:
+			p.restore(&saved)
+
+			ok = false
+		default:
+			panic(r)
+		}
+	}()
+
+	return parse(p), true
+}
+
 func (p *Parser) errorf(format string, args ...any) *ParseError {
 	return &ParseError{Pos: p.tok.Pos, Msg: fmt.Sprintf(format, args...)}
 }

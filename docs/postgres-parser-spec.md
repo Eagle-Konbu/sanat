@@ -129,6 +129,7 @@ output layout.
 | `expr.go` | Expressions: predicates, arithmetic, `OperatorExpr`, `FuncExpr`, `NamedArgExpr`, `CaseExpr`, casts, arrays, subqueries, literals, column references |
 | `clause.go` | Clauses: `Where`, `GroupBy` (with grouping sets), `OrderBy`, `Limit`/`Offset`/`Fetch`, `Lock`, windows, `Returning`, `UpdateExpr`, `OnConflict`, `JoinCondition` |
 | `table.go` | FROM items: `AliasedTableExpr`, `JoinTableExpr`, `ParenTableExpr`, `DerivedTable`, and select items `AliasedExpr`, `StarExpr` |
+| `typename.go` | `TypeName` (casts and typed literals) and `TypedLiteral` |
 | `markers.go` | The empty marker methods that seal the interfaces |
 
 Identifiers are stored as SQL text: an unquoted name in its folded lower
@@ -227,21 +228,56 @@ the comment `--a`.
 - Parenthesized expressions, row values `(a, b)`, `ROW(...)`, scalar
   subqueries, and `EXISTS (subquery)`.
 - `CASE` (simple and searched), `CAST(expr AS type)`, and `ARRAY[...]`.
-- Cast types are an identifier with optional `(modifiers)` and `[]` array
-  bounds, kept as opaque text.
+- Typed literals, a type name followed by a string constant:
+  `date '2020-01-01'`, `varchar(3) 'abc'`, `pg_catalog.int4 '1'`,
+  `double precision '1.5'`, `interval '1' day`, `interval(2) '1.5'`
+  (`pgast.TypedLiteral`). A type name can't be told apart from a column or
+  function call until the string after it, so the parser parses it
+  speculatively and backtracks when no string follows.
 
 Not supported (each a `*ParseError` unless noted): `SIMILAR TO`,
 `AT TIME ZONE`, `COLLATE`, `IS [NOT] DOCUMENT`/`NORMALIZED`, `OVERLAPS`,
-typed literals (`DATE '2024-01-01'`, `INTERVAL '1 day'`), three-part column
-references, `WITHIN GROUP`, `ORDER BY` inside aggregate calls, `VARIADIC`
+three-part column references, `WITHIN GROUP`, `ORDER BY` inside aggregate calls, `VARIADIC`
 arguments, SQL-standard function syntax such as `EXTRACT(... FROM ...)`, and:
 
 - Quantified comparisons: `= ALL (...)` fails, while `= ANY (...)` and
   `= SOME (...)` parse as calls to functions named `any`/`some`, which
   render equivalently.
-- Multi-word cast types: `a::double precision` is misread as
-  `a::double AS precision` in a select list. Single-word types, with
-  modifiers and array bounds, are supported.
+
+### Type Names
+
+Implemented in `internal/sqlfmt/pgparser/typename.go`
+([#131](https://github.com/Eagle-Konbu/sanat/issues/131)). Casts
+(`expr::type`, `CAST(expr AS type)`) and typed literals share one type-name
+grammar, producing a structured `pgast.TypeName` (in `pgast/typename.go`):
+
+| Field | Holds | Example |
+|---|---|---|
+| `Names` | the dotted name parts; a built-in multi-word name is one part | `public.mytype`, `double precision` |
+| `Modifiers` | constants or plain identifiers | `numeric(10, 2)`, `geometry(point, 4326)` |
+| `TimeZone` | `WITH` / `WITHOUT TIME ZONE` | `timestamp(3) with time zone` |
+| `IntervalFields` | an interval's field restriction, as text | `interval day to second(3)` |
+| `ArrayBounds` | one entry per `[]` / `[n]` | `int[][3]` |
+
+`CastExpr.Type` is a `*pgast.TypeName` rather than an opaque string, so later
+grammar (such as column definition lists) and the formatter can use its
+parts. Type names render in lower case, as PostgreSQL's documentation spells
+them.
+
+- **Built-in multi-word names**: `double precision`; `character`, `char`,
+  `nchar`, `national character`, and `national char`, each optionally
+  followed by `varying`; `bit [varying]`; `time` and `timestamp` with an
+  optional precision and `with time zone` / `without time zone`; and
+  `interval` with either a precision or a field restriction (`year`,
+  `month`, `day`, `hour`, `minute`, `second[(p)]`, optionally `field TO
+  field`). PostgreSQL makes these words keywords; here they stay identifiers
+  matched by their text at these positions, so they remain usable as names
+  elsewhere. An interval field after a cast is always a field, never an
+  alias, as in PostgreSQL.
+- **Modifiers** accept only integer, numeric, and string constants and plain
+  identifiers, which is all PostgreSQL accepts at analysis.
+- Not supported: the `ARRAY` keyword spelling of array types
+  (`int ARRAY[3]`) and `SETOF`.
 
 ## SELECT Statement Grammar
 

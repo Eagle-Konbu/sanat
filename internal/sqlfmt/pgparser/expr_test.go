@@ -48,6 +48,10 @@ func assertExprError(t *testing.T, input string) {
 func col(name string) *pgast.ColName { return &pgast.ColName{Name: pgast.ColIdent(name)} }
 func num(s string) *pgast.Literal    { return &pgast.Literal{Val: s} }
 
+func typeName(name string) *pgast.TypeName {
+	return &pgast.TypeName{Names: []pgast.ColIdent{pgast.ColIdent(name)}}
+}
+
 func TestParseExpr_literals(t *testing.T) {
 	assertExpr(t, "123", num("123"))
 	assertExpr(t, "1.5", num("1.5"))
@@ -510,31 +514,152 @@ func TestParseExpr_quotedIdentifiers(t *testing.T) {
 
 func TestParseExpr_cast(t *testing.T) {
 	t.Run("shorthand", func(t *testing.T) {
-		assertExpr(t, "a::int", &pgast.CastExpr{Expr: col("a"), Type: "int"})
+		assertExpr(t, "a::int", &pgast.CastExpr{Expr: col("a"), Type: typeName("int")})
 	})
 
 	t.Run("explicit", func(t *testing.T) {
-		assertExpr(t, "CAST(a AS int)", &pgast.CastExpr{Expr: col("a"), Type: "int", Explicit: true})
+		assertExpr(t, "CAST(a AS int)", &pgast.CastExpr{Expr: col("a"), Type: typeName("int"), Explicit: true})
 	})
 
 	t.Run("chained", func(t *testing.T) {
 		assertExpr(t, "a::text::int", &pgast.CastExpr{
-			Expr: &pgast.CastExpr{Expr: col("a"), Type: "text"},
-			Type: "int",
+			Expr: &pgast.CastExpr{Expr: col("a"), Type: typeName("text")},
+			Type: typeName("int"),
 		})
 	})
 
 	t.Run("type with precision modifier", func(t *testing.T) {
-		assertExpr(t, "a::numeric(10, 2)", &pgast.CastExpr{Expr: col("a"), Type: "numeric(10, 2)"})
+		want := typeName("numeric")
+		want.Modifiers = []pgast.Expr{num("10"), num("2")}
+		assertExpr(t, "a::numeric(10, 2)", &pgast.CastExpr{Expr: col("a"), Type: want})
 	})
 
-	t.Run("type with single modifier", func(t *testing.T) {
-		assertExpr(t, "a::varchar(255)", &pgast.CastExpr{Expr: col("a"), Type: "varchar(255)"})
+	t.Run("array type", func(t *testing.T) {
+		want := typeName("int")
+		want.ArrayBounds = []string{"", "3"}
+		assertExpr(t, "a::int[][3]", &pgast.CastExpr{Expr: col("a"), Type: want})
 	})
 
-	t.Run("array type, unsized", func(t *testing.T) {
-		assertExpr(t, "a::int[]", &pgast.CastExpr{Expr: col("a"), Type: "int[]"})
+	t.Run("schema-qualified type", func(t *testing.T) {
+		want := &pgast.TypeName{Names: []pgast.ColIdent{"public", `"MyType"`}}
+		assertExpr(t, `a::public."MyType"`, &pgast.CastExpr{Expr: col("a"), Type: want})
 	})
+
+	t.Run("non-integer modifiers", func(t *testing.T) {
+		want := typeName("geometry")
+		want.Modifiers = []pgast.Expr{col("point"), num("4326")}
+		assertExpr(t, "a::geometry(Point, 4326)", &pgast.CastExpr{Expr: col("a"), Type: want})
+	})
+
+	t.Run("timestamp with time zone", func(t *testing.T) {
+		want := typeName("timestamp")
+		want.Modifiers = []pgast.Expr{num("3")}
+		want.TimeZone = pgast.WithTimeZone
+		assertExpr(t, "a::timestamp(3) with time zone", &pgast.CastExpr{Expr: col("a"), Type: want})
+	})
+}
+
+func TestParseExpr_castTypeNames(t *testing.T) {
+	tests := []struct {
+		name, in, want string
+	}{
+		{"double precision", "a::double precision", "a::double precision"},
+		{"double alone is a generic name", "a::double", "a::double"},
+		{"character varying", "a::CHARACTER VARYING(10)", "a::character varying(10)"},
+		{"char varying", "a::char varying", "a::char varying"},
+		{"character", "a::character(3)", "a::character(3)"},
+		{"national character varying", "a::national character varying(5)", "a::national character varying(5)"},
+		{"national char", "a::national char", "a::national char"},
+		{"nchar varying", "a::nchar varying(5)", "a::nchar varying(5)"},
+		{"bit varying", "a::bit varying(8)", "a::bit varying(8)"},
+		{"timestamp without time zone", "a::timestamp without time zone", "a::timestamp without time zone"},
+		{"time with time zone", "a::TIME WITH TIME ZONE", "a::time with time zone"},
+		{"timestamp precision", "a::timestamp(6)", "a::timestamp(6)"},
+		{"interval", "a::interval", "a::interval"},
+		{"interval precision", "a::interval(3)", "a::interval(3)"},
+		{"interval field", "a::interval day", "a::interval day"},
+		{"interval field range", "a::interval DAY TO SECOND(3)", "a::interval day to second(3)"},
+		{"interval second precision", "a::interval second(3)", "a::interval second(3)"},
+		{"interval year to month", "a::interval year to month", "a::interval year to month"},
+		{"string modifier", "a::t('x')", "a::t('x')"},
+		{"float modifier", "a::t(1.5)", "a::t(1.5)"},
+		{"array of a multi-word type", "a::double precision[]", "a::double precision[]"},
+		{"array of a timestamp with time zone", "a::timestamptz[]", "a::timestamptz[]"},
+		{"three-part type name", "a::db.s.t", "a::db.s.t"},
+		{"type_func_name keyword", "a::left", "a::left"},
+		{"cast call with multi-word type", "CAST(a AS double precision)", "CAST(a AS double precision)"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := parseExpr(t, tt.in).String(); got != tt.want {
+				t.Errorf("ParseExpr(%q).String() = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+
+	for _, in := range []string{
+		"a::int(a + 1)", "a::interval day to", "a::interval second(x)", "a::numeric(", "a::(int)", "a::select",
+	} {
+		t.Run("error "+in, func(t *testing.T) {
+			assertExprError(t, in)
+		})
+	}
+}
+
+func TestParseExpr_typedLiteral(t *testing.T) {
+	t.Run("structure", func(t *testing.T) {
+		assertExpr(t, "date '2020-01-01'", &pgast.TypedLiteral{Type: typeName("date"), Value: "'2020-01-01'"})
+	})
+
+	tests := []struct {
+		name, in, want string
+	}{
+		{"date", "DATE '2020-01-01'", "date '2020-01-01'"},
+		{"generic type", "int4 '1'", "int4 '1'"},
+		{"schema-qualified type", "pg_catalog.int4 '1'", "pg_catalog.int4 '1'"},
+		{"type with modifier", "varchar(3) 'abc'", "varchar(3) 'abc'"},
+		{"double precision", "double precision '1.5'", "double precision '1.5'"},
+		{"timestamp with time zone", "timestamp with time zone '2020-01-01 00:00'", "timestamp with time zone '2020-01-01 00:00'"},
+		{"character varying", "character varying 'x'", "character varying 'x'"},
+		{"interval", "interval '1 day'", "interval '1 day'"},
+		{"interval field", "INTERVAL '1' DAY", "interval '1' day"},
+		{"interval field range", "interval '1:30' hour to minute", "interval '1:30' hour to minute"},
+		{"interval precision", "interval(2) '1.255 seconds'", "interval(2) '1.255 seconds'"},
+		{"escape string value", `date E'2020-01-01'`, "date '2020-01-01'"},
+		{"in an expression", "d > date '2020-01-01' + 1", "d > date '2020-01-01' + 1"},
+		{"cast of a typed literal", "date '2020-01-01'::text", "date '2020-01-01'::text"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := parseExpr(t, tt.in).String(); got != tt.want {
+				t.Errorf("ParseExpr(%q).String() = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+
+	// Names that could start a type name but are not followed by a string
+	// stay column references and function calls.
+	notTyped := []struct {
+		name, in, want string
+	}{
+		{"column", "date", "date"},
+		{"function call", "f(1, 2)", "f(1, 2)"},
+		{"function call with expression argument", "f(a + 1)", "f(a + 1)"},
+		{"qualified column", "t.date", "t.date"},
+		{"column named double", "double + 1", "double + 1"},
+		{"column named timestamp", "timestamp = 1", "timestamp = 1"},
+		{"column named interval", "interval", "interval"},
+	}
+
+	for _, tt := range notTyped {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := parseExpr(t, tt.in).String(); got != tt.want {
+				t.Errorf("ParseExpr(%q).String() = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
 }
 
 func TestParseExpr_array(t *testing.T) {
@@ -697,18 +822,20 @@ func TestParseExpr_namedArguments(t *testing.T) {
 
 func TestParseExpr_precedenceInteraction(t *testing.T) {
 	t.Run("subscript is part of the cast's type, not applied after it", func(t *testing.T) {
-		assertExpr(t, "a::int[1]", &pgast.CastExpr{Expr: col("a"), Type: "int[1]"})
+		assertExpr(t, "a::int[1]", &pgast.CastExpr{Expr: col("a"), Type: &pgast.TypeName{
+			Names: []pgast.ColIdent{"int"}, ArrayBounds: []string{"1"},
+		}})
 	})
 
 	t.Run("explicit subscript of a parenthesized cast", func(t *testing.T) {
 		assertExpr(t, "(a::int)[1]", &pgast.ArraySubscriptExpr{
-			Expr: &pgast.ParenExpr{Expr: &pgast.CastExpr{Expr: col("a"), Type: "int"}},
+			Expr: &pgast.ParenExpr{Expr: &pgast.CastExpr{Expr: col("a"), Type: typeName("int")}},
 			From: num("1"),
 		})
 	})
 
 	t.Run("cast binds tighter than a JSON operator", func(t *testing.T) {
-		assertExpr(t, "a @> b::jsonb", opExpr(col("a"), "@>", &pgast.CastExpr{Expr: col("b"), Type: "jsonb"}))
+		assertExpr(t, "a @> b::jsonb", opExpr(col("a"), "@>", &pgast.CastExpr{Expr: col("b"), Type: typeName("jsonb")}))
 	})
 
 	t.Run("JSON operator binds tighter than comparison", func(t *testing.T) {

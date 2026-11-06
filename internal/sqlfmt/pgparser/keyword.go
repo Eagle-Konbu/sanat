@@ -57,6 +57,7 @@ var keywordClasses = map[TokenType]keywordClass{
 	ON:           {reservedKeyword, false},
 	ALL:          {reservedKeyword, true},
 	CAST:         {reservedKeyword, true},
+	TO:           {reservedKeyword, false},
 	ARRAY:        {reservedKeyword, false},
 	FILTER:       {unreservedKeyword, false},
 	ISNULL:       {typeFuncNameKeyword, false},
