@@ -20,16 +20,18 @@ func ParseUpdate(input string) (upd *pgast.Update, err error) {
 	return result, nil
 }
 
-// parseUpdateStatement parses an UPDATE statement. The current token must be
-// UPDATE. A leading WITH clause is deferred to #86, as for SELECT.
+// parseUpdateStatement parses an UPDATE statement with an optional leading
+// WITH clause. The current token must be WITH or UPDATE.
 //
 // PostgreSQL's FROM clause joins the target against other tables for use in
 // SET/WHERE; unlike MySQL's comma-joined multi-table UPDATE, the target
 // itself is always a single table, so the two grammars share no logic.
 func (p *Parser) parseUpdateStatement() *pgast.Update {
+	with := p.parseOptionalWith()
+
 	p.expect(UPDATE)
 
-	upd := &pgast.Update{}
+	upd := &pgast.Update{With: with}
 	p.parseUpdateTarget(upd)
 
 	p.expect(SET)
@@ -139,7 +141,7 @@ func (p *Parser) parseMultiColumnSource() pgast.Expr {
 	switch {
 	case p.consume(ROW):
 		return &pgast.RowExpr{Exprs: p.parseParenExprOrDefaultList()}
-	case p.at(LPAREN) && p.peekAt(SELECT):
+	case p.at(LPAREN) && isQueryStart(p.peekTok.Type):
 		p.advance() // consume '('
 
 		sel := p.parseSubqueryStatement()

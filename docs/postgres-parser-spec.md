@@ -27,6 +27,7 @@ Like `ParseSelect`, it fully consumes `input`, accepting one optional trailing
 `;` and failing with a `*ParseError` (or `*LexError`) otherwise.
 
 ```text
+[ WITH [ RECURSIVE ] with_query [, ...] ]
 INSERT INTO table_name [ AS alias ] [ ( column [, ...] ) ]
     { DEFAULT VALUES | VALUES ( { expr | DEFAULT } [, ...] ) [, ...] | select }
     [ ON CONFLICT { [ ( column [, ...] ) ] DO NOTHING
@@ -40,7 +41,9 @@ INSERT INTO table_name [ AS alias ] [ ( column [, ...] ) ]
 - **`DEFAULT`**: accepted only as a `VALUES` item or as the right-hand side of
   a `DO UPDATE SET` assignment, not as a general expression. It is modeled as
   a `pgast.Literal` rendered verbatim.
-- **`select`** row source: a plain `SELECT` statement (`parseSelectStatement`).
+- **`select`** row source: a query (`parseQuery`) — a `SELECT` or a set
+  operation, stored in `Insert.Rows` as a `pgast.Select` or `pgast.SetOp` —
+  which may lead with its own `WITH` clause.
 - **Conflict target**: optional for `DO NOTHING`, required for `DO UPDATE`.
   PostgreSQL rejects a `DO UPDATE` without a target during analysis, not in
   its grammar, but no input with one is valid, so it fails at parse time here.
@@ -50,9 +53,7 @@ INSERT INTO table_name [ AS alias ] [ ( column [, ...] ) ]
 - **`RETURNING`** reuses the `SELECT` list grammar (`*`, `table.*`, and
   `expr [[AS] name]`); `String()` always renders an alias with `AS`.
 
-Not yet implemented: a leading `WITH` clause
-([#86](https://github.com/Eagle-Konbu/sanat/issues/86)),
-`OVERRIDING { SYSTEM | USER } VALUE`, `ON CONFLICT ON CONSTRAINT name`,
+Not yet implemented: `OVERRIDING { SYSTEM | USER } VALUE`, `ON CONFLICT ON CONSTRAINT name`,
 expression/`COLLATE`/operator-class conflict targets, a
 `WHERE index_predicate` on the conflict target, and PostgreSQL 18's
 `RETURNING WITH (...)`.
@@ -64,6 +65,7 @@ implemented in `internal/sqlfmt/pgparser/update.go`. A single trailing `;` is
 accepted; any other trailing input is an error.
 
 ```text
+[ WITH [ RECURSIVE ] with_query [, ...] ]
 UPDATE [ ONLY ] table_name [ * ] [ [ AS ] alias ]
     SET { column = { expr | DEFAULT }
         | ( column [, ...] ) = { ( { expr | DEFAULT } [, ...] )
@@ -121,8 +123,6 @@ multi-table `UPDATE` target, so the two parsers share no logic.
 
 **Not supported:**
 
-- A leading `WITH` clause (deferred to
-  [#86](https://github.com/Eagle-Konbu/sanat/issues/86)).
 - `WHERE CURRENT OF cursor_name`, which needs `DECLARE CURSOR` session state;
   it is rejected with an explicit error.
 - `RETURNING WITH (OLD/NEW AS ...)` (PostgreSQL 18 only).
@@ -141,6 +141,7 @@ func ParseDelete(input string) (*pgast.Delete, error)
 ```
 
 ```
+[ WITH [ RECURSIVE ] with_query [, ...] ]
 DELETE FROM [ ONLY ] table_name [ * ] [ [ AS ] alias ]
     [ USING from_item [, ...] ]
     [ WHERE condition ]
@@ -175,7 +176,6 @@ trailing tokens.
 
 Deferred:
 
-- A leading `WITH` clause ([#86](https://github.com/Eagle-Konbu/sanat/issues/86)).
 - `WHERE CURRENT OF cursor_name` — it needs `DECLARE CURSOR` session state a
   formatter never has; it currently fails to parse.
 - `RETURNING WITH (OLD/NEW AS ...)` — PostgreSQL 18 only.
@@ -195,13 +195,13 @@ func ParseSetOp(input string) (*pgast.SetOp, error)
 plus any trailing clauses on the combined result, and an optional trailing
 `;`. It fails with a `*ParseError` when the input is a single (possibly
 parenthesized) SELECT with no set operator. Use `ParseSelect` only for an
-unparenthesized single SELECT: it requires the input to start with `SELECT`,
+unparenthesized single SELECT: it requires the input to start with `SELECT` (or `WITH`),
 so it rejects a leading `(`, and it also rejects a top-level set operation.
 
 ### Grammar
 
 ```
-query      := union_term trailing
+query      := [ with_clause ] union_term trailing
 union_term := intersect_term { ( UNION | EXCEPT ) [ ALL | DISTINCT ] intersect_term }
 intersect_term := operand { INTERSECT [ ALL | DISTINCT ] operand }
 operand    := simple_select | "(" query ")"
@@ -237,13 +237,14 @@ row_limit  := LIMIT ... [ OFFSET ... ]
   `(SELECT 1 FOR UPDATE) UNION SELECT 2`), is a `*ParseError`, matching
   PostgreSQL's rejection of it; `pgast.SetOp` has no field for one. A
   locking clause inside a subquery within an operand is unaffected.
-- `VALUES` and `TABLE name` operands, and `WITH` (deferred to
-  [#86](https://github.com/Eagle-Konbu/sanat/issues/86)), are not supported
-  yet.
+- A leading `WITH` clause (see [Common Table Expressions](#common-table-expressions))
+  scopes the whole query and is stored on the outermost statement. To scope
+  one to a single operand, parenthesize the operand.
+- `VALUES` and `TABLE name` operands are not supported yet.
 
 ### Subquery Positions
 
-Every parenthesized subquery position — scalar subqueries, `[NOT] IN (...)`,
+Every parenthesized subquery position (each of which may lead with `WITH`) — scalar subqueries, `[NOT] IN (...)`,
 `EXISTS (...)`, derived tables (including `LATERAL`), and comparisons
 against a subquery — accepts a full `query`, not just a single SELECT. A
 leading parenthesized operand such as `IN ((SELECT 1) UNION SELECT 2)` or
@@ -274,3 +275,62 @@ through `String()` (mirroring `select_test.go` and
 `internal/sqlfmt/parser/union_test.go`), structural tests for precedence,
 associativity, and trailing-clause placement, subquery-position tests via
 `ParseSelect`, and error cases with positions.
+
+## Common Table Expressions
+
+Implemented in `internal/sqlfmt/pgparser/cte.go`
+([#86](https://github.com/Eagle-Konbu/sanat/issues/86)). There is no
+separate entry point: `WITH` is an optional leading clause accepted by
+`ParseSelect`, `ParseSetOp`, `ParseInsert`, `ParseUpdate`, and `ParseDelete`,
+and by every parenthesized subquery position.
+
+### Grammar
+
+```
+with_clause := WITH [ RECURSIVE ] with_query [, ...]
+with_query  := cte_name [ ( column [, ...] ) ] AS [ [ NOT ] MATERIALIZED ]
+               ( query | insert | update | delete )
+```
+
+- The clause is stored in the `With` field of the statement it leads
+  (`pgast.Select`, `SetOp`, `Insert`, `Update`, or `Delete`). Each CTE is a
+  `pgast.CommonTableExpr`, whose `Subquery` holds whichever statement the
+  body parses to.
+- **Bodies** may be a query (a `SELECT` or set operation, optionally
+  parenthesized), or a data-modifying `INSERT`/`UPDATE`/`DELETE`, typically
+  with `RETURNING`, as in
+  `WITH deleted AS (DELETE FROM logs RETURNING *) INSERT INTO archive SELECT * FROM deleted`.
+  Any body may lead with its own nested `WITH`.
+- **`[NOT] MATERIALIZED`** is stored as `CommonTableExpr.Materialization`
+  (`MaterializeDefault`, `Materialized`, or `NotMaterialized`) and rendered
+  back as written.
+- **Scope**: in a query, the `WITH` applies to the whole set-operation chain
+  and its trailing clauses, so `WITH x AS (...) SELECT 1 UNION SELECT 2` stores
+  it on the `SetOp`. A `WITH` on a parenthesized operand stays on that
+  operand, and `SetOp.String()` keeps that operand's parentheses.
+- **Multiple `WITH` clauses**: a `WITH` before a parenthesized query that has
+  its own `WITH`, as in `(WITH a AS (...) (WITH b AS (...) SELECT 1))`, fails
+  with `multiple WITH clauses not allowed`, as in PostgreSQL.
+- **`INSERT ... SELECT`**: the query row source may lead with its own
+  `WITH`, separate from the one on the `INSERT`.
+- **`RECURSIVE` and `MATERIALIZED`** are keywords only at their fixed points
+  in a `WITH` clause. Elsewhere they are accepted as unquoted identifiers, as
+  PostgreSQL's unreserved keywords are, so `SELECT materialized FROM recursive`
+  parses.
+- Data-modifying statements are accepted only as CTE bodies (and at the top
+  level), not in other subquery positions, matching PostgreSQL.
+
+Deferred:
+
+- `MERGE` as a CTE body
+  ([#87](https://github.com/Eagle-Konbu/sanat/issues/87)).
+- The `SEARCH { BREADTH | DEPTH } FIRST BY ...` and `CYCLE ...` clauses on
+  recursive CTEs (PostgreSQL 14+).
+- `VALUES` as a CTE body (as for set-operation operands).
+
+### Testing
+
+`internal/sqlfmt/pgparser/cte_test.go` holds table-driven round-trip tests
+for each entry point (including DML-bodied CTEs feeding another DML
+statement), `WITH` in each subquery position, structural tests for where the
+clause is attached, and error cases.

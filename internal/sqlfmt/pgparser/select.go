@@ -4,18 +4,19 @@ import "github.com/Eagle-Konbu/sanat/internal/sqlfmt/pgast"
 
 // parseSubqueryStatement parses the query inside a parenthesized subquery,
 // EXISTS (...), [NOT] IN (...) predicate, or derived table: a SELECT or a
-// set operation of SELECTs. WITH is deferred to #86 (PostgreSQL CTEs can
-// wrap DML bodies, not just SELECT, so CTE support is sequenced after
-// INSERT/UPDATE/DELETE land), so the current token must be SELECT or '('.
+// set operation of SELECTs, optionally led by a WITH clause. The current
+// token must be WITH, SELECT, or '('.
 func (p *Parser) parseSubqueryStatement() pgast.Statement {
 	return p.parseQuery()
 }
 
 // parseSelectStatement parses a single SELECT statement, including its
-// trailing ORDER BY/LIMIT/OFFSET/FETCH and locking clauses. The current
-// token must be SELECT.
+// optional leading WITH clause and its trailing ORDER BY/LIMIT/OFFSET/FETCH
+// and locking clauses. The current token must be WITH or SELECT.
 func (p *Parser) parseSelectStatement() *pgast.Select {
+	with := p.parseOptionalWith()
 	sel := p.parseSimpleSelect()
+	sel.With = with
 	p.attachQueryTail(sel, p.parseQueryTail())
 
 	return sel
@@ -141,12 +142,18 @@ func (p *Parser) tryParseQualifiedStar() pgast.SelectExpr {
 	return &pgast.StarExpr{TableName: table}
 }
 
-// isIdentToken reports whether tok can name a column or table. SET is an
-// unreserved keyword in PostgreSQL, so it doubles as an identifier; the
-// UPDATE grammar keeps it unambiguous by never reading a bare SET as the
-// target alias.
+// isIdentToken reports whether tok can name a column or table. SET,
+// RECURSIVE, and MATERIALIZED are unreserved keywords in PostgreSQL, so they
+// double as identifiers. The UPDATE grammar keeps SET unambiguous by never
+// reading a bare SET as the target alias, and RECURSIVE and MATERIALIZED
+// are only keywords at fixed points in a WITH clause.
 func isIdentToken(tok Token) bool {
-	return tok.Type == IDENT || tok.Type == QuotedIdent || tok.Type == SET
+	switch tok.Type {
+	case IDENT, QuotedIdent, SET, RECURSIVE, MATERIALIZED:
+		return true
+	default:
+		return false
+	}
 }
 
 // parseOptionalAlias parses an optional trailing "[AS] name" alias (used for
@@ -395,7 +402,7 @@ func (p *Parser) parseTableName() pgast.TableName {
 func (p *Parser) parseParenTableExpr() pgast.TableExpr {
 	p.advance() // consume '('
 
-	if p.at(SELECT) {
+	if isQueryStart(p.tok.Type) {
 		return p.parseDerivedTable()
 	}
 
@@ -449,8 +456,8 @@ func unwrapParenTable(table pgast.TableExpr) pgast.TableExpr {
 	}
 }
 
-// parseDerivedTable parses a derived table whose query starts with SELECT,
-// just after its opening '('.
+// parseDerivedTable parses a derived table whose query starts with WITH or
+// SELECT, just after its opening '('.
 func (p *Parser) parseDerivedTable() pgast.TableExpr {
 	return p.finishDerivedTable(p.parseSubqueryStatement())
 }

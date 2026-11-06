@@ -32,11 +32,18 @@ func ParseSetOp(input string) (setOp *pgast.SetOp, err error) {
 	return result, nil
 }
 
-// parseQuery parses a query: a set-operation chain of SELECT operands (or a
-// single one) followed by optional trailing ORDER BY/LIMIT/OFFSET/FETCH and
-// locking clauses. The current token must be SELECT or '('.
+// parseQuery parses a query: an optional WITH clause, then a set-operation
+// chain of SELECT operands (or a single one) followed by optional trailing
+// ORDER BY/LIMIT/OFFSET/FETCH and locking clauses. The WITH clause scopes the
+// whole query, so it is attached to the outermost statement. The current
+// token must be WITH, SELECT, or '('.
 func (p *Parser) parseQuery() pgast.Statement {
-	return p.parseQueryFrom(p.parseSetOpOperand())
+	pos := p.tok.Pos
+	with := p.parseOptionalWith()
+	stmt := p.parseQueryFrom(p.parseSetOpOperand())
+	attachWith(stmt, with, pos)
+
+	return stmt
 }
 
 // parseQueryFrom parses the rest of a query whose first operand has already

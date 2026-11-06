@@ -185,7 +185,7 @@ func (p *Parser) parseInExpr(left pgast.Expr, not bool) pgast.Expr {
 		op = pgast.NotInOp
 	}
 
-	if p.at(SELECT) {
+	if isQueryStart(p.tok.Type) {
 		sel := p.parseSubqueryStatement()
 		p.expect(RPAREN)
 
@@ -516,9 +516,11 @@ func (p *Parser) parsePrimaryExpr() pgast.Expr {
 		return p.parseArrayLiteral()
 	case ROW:
 		return p.parseRowConstructor()
-	case IDENT, QuotedIdent, SET:
-		return p.parseIdentExpr()
 	default:
+		if isIdentToken(p.tok) {
+			return p.parseIdentExpr()
+		}
+
 		return failReturn[pgast.Expr](p, "unexpected token %s in expression", p.tok.Type)
 	}
 }
@@ -578,7 +580,7 @@ func (p *Parser) parseStringLiteral() pgast.Expr {
 func (p *Parser) parseParenExprOrSubquery() pgast.Expr {
 	p.advance() // consume '('
 
-	if p.at(SELECT) {
+	if isQueryStart(p.tok.Type) {
 		sel := p.parseSubqueryStatement()
 		p.expect(RPAREN)
 

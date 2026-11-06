@@ -89,6 +89,8 @@ func TestLexer_Keywords(t *testing.T) {
 		{"lateral", "LATERAL", pgparser.LATERAL},
 		{"grouping", "GROUPING", pgparser.GROUPING},
 		{"rollup", "ROLLUP", pgparser.ROLLUP},
+		{"recursive", "recursive", pgparser.RECURSIVE},
+		{"materialized", "MATERIALIZED", pgparser.MATERIALIZED},
 	}
 
 	for _, tt := range tests {
