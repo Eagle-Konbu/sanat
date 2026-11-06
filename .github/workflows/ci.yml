@@ -142,3 +142,13 @@ jobs:
       uses: golangci/golangci-lint-action@v9.3.0
       with:
         version: latest
+
+    # Only new or changed exported identifiers must be documented, so this
+    # runs a separate config on the diff against the PR's base branch (or,
+    # on push, the previous head) instead of adding the rule to .golangci.yml.
+    - name: Check doc comments on new exported identifiers
+      uses: golangci/golangci-lint-action@v9.3.0
+      with:
+        version: latest
+        args: --config .golangci.exported.yml
+        only-new-issues: true
