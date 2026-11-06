@@ -145,6 +145,16 @@ const (
 	UNION
 	INTERSECT
 	EXCEPT
+	INSERT
+	INTO
+	VALUES
+	DEFAULT
+	CONFLICT
+	DO
+	NOTHING
+	SET
+	DELETE
+	RETURNING
 	keywordEnd
 )
 
@@ -277,6 +287,16 @@ var tokenNames = map[TokenType]string{
 	UNION:     "UNION",
 	INTERSECT: "INTERSECT",
 	EXCEPT:    "EXCEPT",
+	INSERT:    "INSERT",
+	INTO:      "INTO",
+	VALUES:    "VALUES",
+	DEFAULT:   "DEFAULT",
+	CONFLICT:  "CONFLICT",
+	DO:        "DO",
+	NOTHING:   "NOTHING",
+	SET:       "SET",
+	DELETE:    "DELETE",
+	RETURNING: "RETURNING",
 }
 
 // String returns the token type's display name, used in error messages.
