@@ -2,34 +2,20 @@ package pgparser
 
 import "github.com/Eagle-Konbu/sanat/internal/sqlfmt/pgast"
 
-// ParseInsert parses an INSERT statement from input.
-//
-//nolint:nonamedreturns // the named results are mutated by the deferred recover
-func ParseInsert(input string) (ins *pgast.Insert, err error) {
-	defer recoverParseError(&err)
-
-	p := NewParser(input)
-	result := p.parseInsertStatement()
-
-	p.consume(SEMICOLON)
-
-	if !p.at(EOF) {
-		p.failf("unexpected token %s after statement", p.tok.Type)
-	}
-
-	return result, nil
+// ParseInsert parses an INSERT statement, optionally led by a WITH clause,
+// from input.
+func ParseInsert(input string) (*pgast.Insert, error) {
+	return parseStatementInput(input, (*Parser).parseInsertAfterWith)
 }
 
-// parseInsertStatement parses an INSERT statement with an optional leading
-// WITH clause. The current token must be WITH or INSERT. OVERRIDING
+// parseInsertAfterWith parses an INSERT statement whose optional WITH clause
+// has already been consumed. The current token must be INSERT. OVERRIDING
 // {SYSTEM | USER} VALUE is not supported.
-func (p *Parser) parseInsertStatement() *pgast.Insert {
-	with := p.parseOptionalWith()
-
+func (p *Parser) parseInsertAfterWith() *pgast.Insert {
 	p.expect(INSERT)
 	p.expect(INTO)
 
-	ins := &pgast.Insert{With: with, Table: p.parseTableName()}
+	ins := &pgast.Insert{Table: p.parseTableName()}
 
 	// PostgreSQL's insert target requires AS before an alias, unlike a FROM
 	// item, so a bare identifier here is a syntax error rather than an alias.

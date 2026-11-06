@@ -10,13 +10,12 @@ func (p *Parser) parseSubqueryStatement() pgast.Statement {
 	return p.parseQuery()
 }
 
-// parseSelectStatement parses a single SELECT statement, including its
-// optional leading WITH clause and its trailing ORDER BY/LIMIT/OFFSET/FETCH
-// and locking clauses. The current token must be WITH or SELECT.
-func (p *Parser) parseSelectStatement() *pgast.Select {
-	with := p.parseOptionalWith()
+// parseSelectAfterWith parses a single SELECT statement whose optional WITH
+// clause has already been consumed, including its trailing
+// ORDER BY/LIMIT/OFFSET/FETCH and locking clauses. The current token must be
+// SELECT.
+func (p *Parser) parseSelectAfterWith() *pgast.Select {
 	sel := p.parseSimpleSelect()
-	sel.With = with
 	p.attachQueryTail(sel, p.parseQueryTail())
 
 	return sel

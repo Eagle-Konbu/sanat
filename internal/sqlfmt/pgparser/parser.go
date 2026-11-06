@@ -20,7 +20,7 @@ func (e *ParseError) Error() string {
 // Parser parses a token stream produced by a Lexer into pgast nodes.
 //
 // A lexer failure or a syntax error is signaled by panicking with an error
-// value (a *LexError or *ParseError), recovered at the top-level ParseExpr
+// value (a *LexError or *ParseError), recovered at each exported Parse*
 // entry point via recoverParseError, the same shape internal/sqlfmt/parser
 // uses for its MySQL grammar.
 type Parser struct {
@@ -155,20 +155,8 @@ func ParseExpr(input string) (expr pgast.Expr, err error) {
 	return result, nil
 }
 
-// ParseSelect parses a SELECT statement from input.
-//
-//nolint:nonamedreturns // the named results are mutated by the deferred recover
-func ParseSelect(input string) (sel *pgast.Select, err error) {
-	defer recoverParseError(&err)
-
-	p := NewParser(input)
-	result := p.parseSelectStatement()
-
-	p.consume(SEMICOLON)
-
-	if !p.at(EOF) {
-		p.failf("unexpected token %s after statement", p.tok.Type)
-	}
-
-	return result, nil
+// ParseSelect parses a SELECT statement, optionally led by a WITH clause,
+// from input.
+func ParseSelect(input string) (*pgast.Select, error) {
+	return parseStatementInput(input, (*Parser).parseSelectAfterWith)
 }

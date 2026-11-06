@@ -2,36 +2,22 @@ package pgparser
 
 import "github.com/Eagle-Konbu/sanat/internal/sqlfmt/pgast"
 
-// ParseUpdate parses an UPDATE statement from input.
-//
-//nolint:nonamedreturns // the named results are mutated by the deferred recover
-func ParseUpdate(input string) (upd *pgast.Update, err error) {
-	defer recoverParseError(&err)
-
-	p := NewParser(input)
-	result := p.parseUpdateStatement()
-
-	p.consume(SEMICOLON)
-
-	if !p.at(EOF) {
-		p.failf("unexpected token %s after statement", p.tok.Type)
-	}
-
-	return result, nil
+// ParseUpdate parses an UPDATE statement, optionally led by a WITH clause,
+// from input.
+func ParseUpdate(input string) (*pgast.Update, error) {
+	return parseStatementInput(input, (*Parser).parseUpdateAfterWith)
 }
 
-// parseUpdateStatement parses an UPDATE statement with an optional leading
-// WITH clause. The current token must be WITH or UPDATE.
+// parseUpdateAfterWith parses an UPDATE statement whose optional WITH clause
+// has already been consumed. The current token must be UPDATE.
 //
 // PostgreSQL's FROM clause joins the target against other tables for use in
 // SET/WHERE; unlike MySQL's comma-joined multi-table UPDATE, the target
 // itself is always a single table, so the two grammars share no logic.
-func (p *Parser) parseUpdateStatement() *pgast.Update {
-	with := p.parseOptionalWith()
-
+func (p *Parser) parseUpdateAfterWith() *pgast.Update {
 	p.expect(UPDATE)
 
-	upd := &pgast.Update{With: with}
+	upd := &pgast.Update{}
 	p.parseUpdateTarget(upd)
 
 	p.expect(SET)

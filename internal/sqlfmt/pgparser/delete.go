@@ -2,35 +2,21 @@ package pgparser
 
 import "github.com/Eagle-Konbu/sanat/internal/sqlfmt/pgast"
 
-// ParseDelete parses a DELETE statement from input.
-//
-//nolint:nonamedreturns // the named results are mutated by the deferred recover
-func ParseDelete(input string) (del *pgast.Delete, err error) {
-	defer recoverParseError(&err)
-
-	p := NewParser(input)
-	result := p.parseDeleteStatement()
-
-	p.consume(SEMICOLON)
-
-	if !p.at(EOF) {
-		p.failf("unexpected token %s after statement", p.tok.Type)
-	}
-
-	return result, nil
+// ParseDelete parses a DELETE statement, optionally led by a WITH clause,
+// from input.
+func ParseDelete(input string) (*pgast.Delete, error) {
+	return parseStatementInput(input, (*Parser).parseDeleteAfterWith)
 }
 
-// parseDeleteStatement parses a DELETE statement with an optional leading
-// WITH clause. The current token must be WITH or DELETE. WHERE CURRENT OF is
-// out of scope (it needs DECLARE CURSOR session state a formatter never
-// has), so CURRENT after WHERE fails as an unexpected expression token.
-func (p *Parser) parseDeleteStatement() *pgast.Delete {
-	with := p.parseOptionalWith()
-
+// parseDeleteAfterWith parses a DELETE statement whose optional WITH clause
+// has already been consumed. The current token must be DELETE. WHERE CURRENT
+// OF is out of scope (it needs DECLARE CURSOR session state a formatter
+// never has), so CURRENT after WHERE fails as an unexpected expression token.
+func (p *Parser) parseDeleteAfterWith() *pgast.Delete {
 	p.expect(DELETE)
 	p.expect(FROM)
 
-	del := &pgast.Delete{With: with, Table: p.parseRelationExpr()}
+	del := &pgast.Delete{Table: p.parseRelationExpr()}
 
 	if p.consume(USING) {
 		del.Using = p.parseTableReferenceList()

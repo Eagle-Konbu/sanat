@@ -14,6 +14,36 @@ internal/sqlfmt/
 └── pgparser/  Lexer + recursive-descent parser producing pgast nodes
 ```
 
+## Statement Entry Point
+
+Implemented in `internal/sqlfmt/pgparser/statement.go`
+([#130](https://github.com/Eagle-Konbu/sanat/issues/130)):
+
+```go
+func ParseStatement(input string) (pgast.Statement, error)
+```
+
+`ParseStatement` parses one statement of any supported kind: a query (a
+`SELECT` or set operation, optionally parenthesized), `INSERT`, `UPDATE`, or
+`DELETE`. It reads an optional leading `WITH` clause first, then dispatches on
+the next keyword; any other token is parsed as a query, so it fails as one.
+
+The per-kind entry points `ParseSelect`, `ParseInsert`, `ParseUpdate`, and
+`ParseDelete` share the same plumbing and accept a leading `WITH` the same
+way; `ParseSetOp` additionally requires a set operator. All of them fully
+consume `input`, accepting one optional trailing `;` and failing with a
+`*ParseError` (or `*LexError`) otherwise. `ParseExpr` parses a bare
+expression and accepts no `;`.
+
+Every statement form, including a CTE body and a subquery, reads its `WITH`
+clause through one path, which attaches it to the parsed statement's `With`
+field. A statement kind that cannot carry a `WITH` is a `*ParseError`, never
+a panic.
+
+`internal/sqlfmt/pgparser/statement_test.go` holds table-driven tests for
+dispatch to each statement kind, with and without a leading `WITH`, and for
+errors.
+
 ## INSERT Statement Grammar
 
 Implemented in `internal/sqlfmt/pgparser/insert.go`
@@ -281,8 +311,9 @@ associativity, and trailing-clause placement, subquery-position tests via
 Implemented in `internal/sqlfmt/pgparser/cte.go`
 ([#86](https://github.com/Eagle-Konbu/sanat/issues/86)). There is no
 separate entry point: `WITH` is an optional leading clause accepted by
-`ParseSelect`, `ParseSetOp`, `ParseInsert`, `ParseUpdate`, and `ParseDelete`,
-and by every parenthesized subquery position.
+`ParseStatement` and each per-kind entry point (see
+[Statement Entry Point](#statement-entry-point)), and by every parenthesized
+subquery position.
 
 ### Grammar
 
