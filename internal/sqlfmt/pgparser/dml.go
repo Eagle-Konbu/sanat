@@ -110,6 +110,10 @@ func (p *Parser) parseMultiColumnSetClause() *pgast.UpdateExpr {
 	return &pgast.UpdateExpr{Names: names, Expr: p.parseMultiColumnSource()}
 }
 
+// parseMultiColumnSource parses the right-hand side of a multi-column SET
+// assignment. A '(' starts a sub-SELECT if a query keyword follows it and a
+// row otherwise; unlike a parenthesized expression elsewhere, each row item
+// may be DEFAULT.
 func (p *Parser) parseMultiColumnSource() pgast.Expr {
 	switch {
 	case p.consume(ROW):
