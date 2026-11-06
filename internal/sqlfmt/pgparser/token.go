@@ -151,6 +151,15 @@ const (
 	RECURSIVE
 	MATERIALIZED
 	OPERATOR
+	MERGE
+	MATCHED
+	SOURCE
+	TARGET
+	OVERRIDING
+	SYSTEM
+	VALUE
+	OLD
+	NEW
 	keywordEnd
 )
 
@@ -287,6 +296,15 @@ var tokenNames = map[TokenType]string{
 	RECURSIVE:    "RECURSIVE",
 	MATERIALIZED: "MATERIALIZED",
 	OPERATOR:     "OPERATOR",
+	MERGE:        "MERGE",
+	MATCHED:      "MATCHED",
+	SOURCE:       "SOURCE",
+	TARGET:       "TARGET",
+	OVERRIDING:   "OVERRIDING",
+	SYSTEM:       "SYSTEM",
+	VALUE:        "VALUE",
+	OLD:          "OLD",
+	NEW:          "NEW",
 }
 
 // String returns the token type's display name, used in error messages.

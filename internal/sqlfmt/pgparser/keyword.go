@@ -127,6 +127,15 @@ var keywordClasses = map[TokenType]keywordClass{
 	RECURSIVE:    {unreservedKeyword, true},
 	MATERIALIZED: {unreservedKeyword, true},
 	OPERATOR:     {unreservedKeyword, true},
+	MERGE:        {unreservedKeyword, true},
+	MATCHED:      {unreservedKeyword, true},
+	SOURCE:       {unreservedKeyword, true},
+	TARGET:       {unreservedKeyword, true},
+	OVERRIDING:   {unreservedKeyword, true},
+	SYSTEM:       {unreservedKeyword, true},
+	VALUE:        {unreservedKeyword, true},
+	OLD:          {unreservedKeyword, true},
+	NEW:          {unreservedKeyword, true},
 }
 
 // isColID reports whether tok can be a ColId: a column, table, alias, CTE,
