@@ -140,7 +140,7 @@ func (p *Parser) parseComparisonExpr() pgast.Expr {
 // [NOT] LIKE / [NOT] ILIKE predicate, which binds tighter than a plain
 // comparison, so "a IN (1) = b" is "(a IN (1)) = b".
 func (p *Parser) parseRangePredicateExpr() pgast.Expr {
-	left := p.parseJSONExpr()
+	left := p.parseOtherOpExpr()
 	not := p.consumeNegatedPredicateKeyword()
 
 	// not is always consistent with one of the cases below:
@@ -217,10 +217,10 @@ func (p *Parser) parseInExpr(left pgast.Expr, not bool) pgast.Expr {
 func (p *Parser) parseBetweenExpr(left pgast.Expr, not bool) pgast.Expr {
 	p.advance() // consume BETWEEN
 
-	from := p.parseJSONExpr()
+	from := p.parseOtherOpExpr()
 	p.expect(AND)
 
-	to := p.parseJSONExpr()
+	to := p.parseOtherOpExpr()
 
 	return &pgast.RangeCond{Not: not, Left: left, From: from, To: to}
 }
@@ -233,7 +233,7 @@ func (p *Parser) parseLikeExpr(left pgast.Expr, not bool) pgast.Expr {
 		op = pgast.NotLikeOp
 	}
 
-	right := p.parseJSONExpr()
+	right := p.parseOtherOpExpr()
 
 	return &pgast.ComparisonExpr{Left: left, Operator: op, Right: right, Escape: p.parseOptionalEscape()}
 }
@@ -241,7 +241,7 @@ func (p *Parser) parseLikeExpr(left pgast.Expr, not bool) pgast.Expr {
 func (p *Parser) parseILikeExpr(left pgast.Expr, not bool) pgast.Expr {
 	p.advance() // consume ILIKE
 
-	right := p.parseJSONExpr()
+	right := p.parseOtherOpExpr()
 
 	return &pgast.ILikeExpr{Not: not, Left: left, Right: right, Escape: p.parseOptionalEscape()}
 }
@@ -253,37 +253,85 @@ func (p *Parser) parseOptionalEscape() pgast.Expr {
 		return nil
 	}
 
-	return p.parseJSONExpr()
+	return p.parseOtherOpExpr()
 }
 
-// jsonOps maps each JSON/JSONB operator token to its pgast.JSONOp value.
-var jsonOps = map[TokenType]pgast.JSONOp{
-	Arrow:         pgast.JSONArrow,
-	ArrowText:     pgast.JSONArrowText,
-	HashArrow:     pgast.JSONHashArrow,
-	HashArrowText: pgast.JSONHashArrowText,
-	Contains:      pgast.JSONContains,
-	ContainedBy:   pgast.JSONContainedBy,
-	JSONExists:    pgast.JSONExists,
-	JSONExistsAny: pgast.JSONExistsAny,
-	JSONExistsAll: pgast.JSONExistsAll,
-}
-
-// parseJSONExpr parses PostgreSQL's JSON/JSONB operators (->, ->>, #>, #>>,
-// @>, <@, ?, ?|, ?&), which bind tighter than any predicate but looser than
-// the arithmetic operators below them.
-func (p *Parser) parseJSONExpr() pgast.Expr {
+// parseOtherOpExpr parses PostgreSQL's generic operator level: every
+// operator without a precedence of its own (||, ~, @>, ->, <->, a
+// user-defined operator, or OPERATOR(...)). They are left-associative and
+// bind tighter than any predicate but looser than + and -.
+func (p *Parser) parseOtherOpExpr() pgast.Expr {
 	left := p.parseAdditiveExpr()
 
 	for {
-		op, ok := jsonOps[p.tok.Type]
+		op, ok := p.tryParseOperator()
 		if !ok {
 			return left
 		}
 
+		left = &pgast.OperatorExpr{Left: left, Operator: op, Right: p.parseAdditiveExpr()}
+	}
+}
+
+// parsePrefixOperatorExpr parses a generic prefix operator and its operand,
+// such as "~ a" or "@ -1". The current token must be an Op. As in
+// PostgreSQL, the operand extends over + and - and tighter operators, so
+// "~ a + b" is "~ (a + b)" while "~ a || b" is "(~ a) || b".
+func (p *Parser) parsePrefixOperatorExpr() pgast.Expr {
+	op := pgast.Operator{Symbol: p.tok.Literal}
+	p.advance()
+
+	return &pgast.OperatorExpr{Operator: op, Right: p.parseAdditiveExpr()}
+}
+
+// tryParseOperator consumes a generic infix operator, an Op token or
+// "OPERATOR([schema.]op)", reporting ok=false without consuming anything if
+// the current token is neither.
+func (p *Parser) tryParseOperator() (pgast.Operator, bool) {
+	switch {
+	case p.at(Op):
+		op := pgast.Operator{Symbol: p.tok.Literal}
 		p.advance()
 
-		left = &pgast.JSONOpExpr{Left: left, Op: op, Right: p.parseAdditiveExpr()}
+		return op, true
+	case p.at(OPERATOR) && p.peekAt(LPAREN):
+		return p.parseExplicitOperator(), true
+	default:
+		return pgast.Operator{}, false
+	}
+}
+
+// parseExplicitOperator parses "OPERATOR([schema.]op)", where op may be any
+// operator, including the fixed ones such as + or =. The current token must
+// be OPERATOR.
+func (p *Parser) parseExplicitOperator() pgast.Operator {
+	p.advance() // consume OPERATOR
+	p.advance() // consume '('
+
+	op := pgast.Operator{Explicit: true}
+
+	if isColID(p.tok) {
+		op.Schema = pgast.TableIdent(p.readColID())
+		p.expect(DOT)
+	}
+
+	if !isOperatorToken(p.tok.Type) {
+		p.failf("expected operator, got %s", p.tok.Type)
+	}
+
+	op.Symbol = p.tok.Literal
+	p.advance()
+	p.expect(RPAREN)
+
+	return op
+}
+
+func isOperatorToken(tt TokenType) bool {
+	switch tt {
+	case Op, EQ, NE, LT, GT, LE, GE, PLUS, MINUS, STAR, SLASH, PERCENT, CARET:
+		return true
+	default:
+		return false
 	}
 }
 
@@ -503,25 +551,42 @@ func (p *Parser) parsePrimaryExpr() pgast.Expr {
 		return expr
 	}
 
-	switch p.tok.Type {
-	case LPAREN:
-		return p.parseParenExprOrSubquery()
-	case CASE:
-		return p.parseCaseExpr()
-	case EXISTS:
-		return p.parseExistsExpr()
-	case CAST:
-		return p.parseCastCall()
-	case ARRAY:
-		return p.parseArrayLiteral()
-	case ROW:
-		return p.parseRowConstructor()
-	default:
-		if p.atIdentExprStart() {
-			return p.parseIdentExpr()
-		}
+	if expr, ok := p.tryParseKeywordLedExpr(); ok {
+		return expr
+	}
 
+	switch {
+	case p.at(LPAREN):
+		return p.parseParenExprOrSubquery()
+	case p.at(Op):
+		return p.parsePrefixOperatorExpr()
+	case p.atIdentExprStart():
+		return p.parseIdentExpr()
+	default:
 		return failReturn[pgast.Expr](p, "unexpected token %s in expression", p.tok.Type)
+	}
+}
+
+// tryParseKeywordLedExpr parses an expression introduced by its own keyword
+// (CASE, EXISTS, CAST, ARRAY, or ROW), reporting ok=false without consuming
+// anything if the current token starts none. These are checked before the
+// identifier rules, so ROW and EXISTS, which can also be column names, start
+// their constructs here. Split out of parsePrimaryExpr to keep its
+// cyclomatic complexity down.
+func (p *Parser) tryParseKeywordLedExpr() (pgast.Expr, bool) {
+	switch p.tok.Type {
+	case CASE:
+		return p.parseCaseExpr(), true
+	case EXISTS:
+		return p.parseExistsExpr(), true
+	case CAST:
+		return p.parseCastCall(), true
+	case ARRAY:
+		return p.parseArrayLiteral(), true
+	case ROW:
+		return p.parseRowConstructor(), true
+	default:
+		return nil, false
 	}
 }
 
@@ -761,7 +826,7 @@ func (p *Parser) parseFuncCall(qualifier, name string) pgast.Expr {
 	case p.at(RPAREN):
 	default:
 		f.Distinct = p.consume(DISTINCT)
-		f.Args = p.parseExprList()
+		f.Args = p.parseFuncArgList()
 	}
 
 	p.expect(RPAREN)
@@ -795,6 +860,32 @@ func (p *Parser) parseOverClause(f *pgast.FuncExpr) {
 	f.Over = p.parseWindowSpecBody()
 
 	p.expect(RPAREN)
+}
+
+// parseFuncArgList parses a function call's comma-separated arguments, each
+// an expression or a named "name => value" (or "name := value") argument.
+func (p *Parser) parseFuncArgList() []pgast.Expr {
+	var args []pgast.Expr
+
+	for {
+		args = append(args, p.parseFuncArg())
+
+		if !p.consume(COMMA) {
+			return args
+		}
+	}
+}
+
+func (p *Parser) parseFuncArg() pgast.Expr {
+	if !isTypeFuncName(p.tok) || !p.peekAt(EqualsGreater) && !p.peekAt(ColonEquals) {
+		return p.parseExpr()
+	}
+
+	name := p.readName(isTypeFuncName)
+	colonEquals := p.at(ColonEquals)
+	p.advance() // consume "=>" or ":="
+
+	return &pgast.NamedArgExpr{Name: pgast.ColIdent(name), Value: p.parseExpr(), ColonEquals: colonEquals}
 }
 
 // parseExprList parses a comma-separated list of expressions.

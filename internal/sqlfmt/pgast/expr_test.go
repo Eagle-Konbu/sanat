@@ -180,6 +180,9 @@ func TestUnaryOperator_String(t *testing.T) {
 func TestUnaryExpr_String(t *testing.T) {
 	u := &pgast.UnaryExpr{Operator: pgast.UMinusOp, Expr: col("a")}
 	assertEqual(t, "-a", u.String())
+
+	nested := &pgast.UnaryExpr{Operator: pgast.UMinusOp, Expr: &pgast.UnaryExpr{Operator: pgast.UMinusOp, Expr: col("a")}}
+	assertEqual(t, "- -a", nested.String())
 }
 
 func TestAndExpr_String(t *testing.T) {
@@ -368,8 +371,46 @@ func TestArraySubscriptExpr_String(t *testing.T) {
 	}
 }
 
-func TestJSONOpExpr_String(t *testing.T) {
-	j := &pgast.JSONOpExpr{Left: col("data"), Op: pgast.JSONArrow, Right: lit("'key'")}
-	assertEqual(t, "data -> 'key'", j.String())
-	assertEqual(t, "->", pgast.JSONArrow.String())
+func TestOperatorExpr_String(t *testing.T) {
+	tests := []struct {
+		name string
+		o    *pgast.OperatorExpr
+		want string
+	}{
+		{
+			"infix",
+			&pgast.OperatorExpr{Left: col("data"), Operator: pgast.Operator{Symbol: "->"}, Right: lit("'key'")},
+			"data -> 'key'",
+		},
+		{
+			"prefix keeps a space before its operand",
+			&pgast.OperatorExpr{Operator: pgast.Operator{Symbol: "@"}, Right: lit("-1")},
+			"@ -1",
+		},
+		{
+			"explicit",
+			&pgast.OperatorExpr{Left: col("a"), Operator: pgast.Operator{Symbol: "+", Explicit: true}, Right: col("b")},
+			"a OPERATOR(+) b",
+		},
+		{
+			"schema-qualified",
+			&pgast.OperatorExpr{
+				Left:     col("a"),
+				Operator: pgast.Operator{Schema: "pg_catalog", Symbol: "~", Explicit: true},
+				Right:    lit("'x'"),
+			},
+			"a OPERATOR(pg_catalog.~) 'x'",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assertEqual(t, tt.want, tt.o.String())
+		})
+	}
+}
+
+func TestNamedArgExpr_String(t *testing.T) {
+	assertEqual(t, "n => 1", (&pgast.NamedArgExpr{Name: "n", Value: lit("1")}).String())
+	assertEqual(t, "n := 1", (&pgast.NamedArgExpr{Name: "n", Value: lit("1"), ColonEquals: true}).String())
 }

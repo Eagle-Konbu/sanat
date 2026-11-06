@@ -55,7 +55,8 @@ func (*ParenExpr) iExpr()          {}
 func (*CastExpr) iExpr()           {}
 func (*ArrayExpr) iExpr()          {}
 func (*ArraySubscriptExpr) iExpr() {}
-func (*JSONOpExpr) iExpr()         {}
+func (*OperatorExpr) iExpr()       {}
+func (*NamedArgExpr) iExpr()       {}
 func (*GroupingSets) iExpr()       {}
 func (*Cube) iExpr()               {}
 func (*Rollup) iExpr()             {}

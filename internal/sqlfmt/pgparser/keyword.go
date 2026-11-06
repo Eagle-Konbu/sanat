@@ -126,6 +126,7 @@ var keywordClasses = map[TokenType]keywordClass{
 	RETURNING:    {reservedKeyword, false},
 	RECURSIVE:    {unreservedKeyword, true},
 	MATERIALIZED: {unreservedKeyword, true},
+	OPERATOR:     {unreservedKeyword, true},
 }
 
 // isColID reports whether tok can be a ColId: a column, table, alias, CTE,

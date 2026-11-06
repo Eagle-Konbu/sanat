@@ -257,9 +257,17 @@ type UnaryExpr struct {
 	Expr     Expr
 }
 
-// String returns UnaryExpr's SQL text.
+// String returns UnaryExpr's SQL text. The operator is separated from an
+// operand that starts with an operator character, which it would otherwise
+// fuse with: "- -a" would read as a "--" comment, and "- ~ a" as a "-~"
+// operator.
 func (u *UnaryExpr) String() string {
-	return u.Operator.String() + u.Expr.String()
+	operand := u.Expr.String()
+	if operand != "" && strings.ContainsRune("~!@#^&|`?+-*/%<>=", rune(operand[0])) {
+		return u.Operator.String() + " " + operand
+	}
+
+	return u.Operator.String() + operand
 }
 
 // AndExpr represents an AND expression.
@@ -513,33 +521,64 @@ func (a *ArraySubscriptExpr) String() string {
 	return b.String()
 }
 
-// JSONOp represents a JSON/JSONB operator.
-type JSONOp string
-
-const (
-	JSONArrow         JSONOp = "->"
-	JSONArrowText     JSONOp = "->>"
-	JSONHashArrow     JSONOp = "#>"
-	JSONHashArrowText JSONOp = "#>>"
-	JSONContains      JSONOp = "@>"
-	JSONContainedBy   JSONOp = "<@"
-	JSONExists        JSONOp = "?"
-	JSONExistsAny     JSONOp = "?|"
-	JSONExistsAll     JSONOp = "?&"
-)
-
-// String returns JSONOp's SQL operator text.
-func (j JSONOp) String() string { return string(j) }
-
-// JSONOpExpr represents a binary JSON/JSONB operator expression
-// (->, ->>, #>, #>>, @>, <@, ?, ?|, ?&).
-type JSONOpExpr struct {
-	Left  Expr
-	Op    JSONOp
-	Right Expr
+// Operator names an operator applied by an OperatorExpr. Symbol is its text
+// (such as "||", "@>", or "<->"). Explicit marks the OPERATOR(schema.op)
+// spelling, which may also apply one of SQL's fixed operators, such as +, at
+// the generic operator precedence level.
+type Operator struct {
+	Schema   TableIdent
+	Symbol   string
+	Explicit bool
 }
 
-// String returns JSONOpExpr's SQL text.
-func (j *JSONOpExpr) String() string {
-	return fmt.Sprintf("%s %s %s", j.Left.String(), j.Op.String(), j.Right.String())
+// String returns Operator's SQL text.
+func (o Operator) String() string {
+	if !o.Explicit {
+		return o.Symbol
+	}
+
+	if o.Schema.IsEmpty() {
+		return "OPERATOR(" + o.Symbol + ")"
+	}
+
+	return "OPERATOR(" + o.Schema.String() + "." + o.Symbol + ")"
+}
+
+// OperatorExpr represents an operator with no dedicated node: any operator
+// outside SQL's fixed comparison and arithmetic set, such as string
+// concatenation (||), pattern matching (~), JSON (->, @>), geometric (<->),
+// or a user-defined operator. Left is nil for a prefix operator. All of them
+// share one precedence level, between the predicates and + and -.
+type OperatorExpr struct {
+	Left     Expr
+	Operator Operator
+	Right    Expr
+}
+
+// String returns OperatorExpr's SQL text. A prefix operator is separated from
+// its operand by a space, since "@ -1" and "@-1" lex differently.
+func (o *OperatorExpr) String() string {
+	if o.Left == nil {
+		return o.Operator.String() + " " + o.Right.String()
+	}
+
+	return o.Left.String() + " " + o.Operator.String() + " " + o.Right.String()
+}
+
+// NamedArgExpr represents a named function argument, "name => value", or the
+// older "name := value" spelling when ColonEquals is set.
+type NamedArgExpr struct {
+	Name        ColIdent
+	Value       Expr
+	ColonEquals bool
+}
+
+// String returns NamedArgExpr's SQL text.
+func (n *NamedArgExpr) String() string {
+	op := " => "
+	if n.ColonEquals {
+		op = " := "
+	}
+
+	return n.Name.String() + op + n.Value.String()
 }

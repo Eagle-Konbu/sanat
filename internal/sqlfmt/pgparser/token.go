@@ -36,21 +36,14 @@ const (
 	STAR    // *
 	SLASH   // /
 	PERCENT // %
-	CONCAT  // ||
 	CARET   // ^
+	// Op is any other operator, such as ||, ~, @>, ->, or a user-defined
+	// one (Literal is its text).
+	Op
 
-	DoubleColon    // ::
-	Arrow          // ->
-	ArrowText      // ->>
-	HashArrow      // #>
-	HashArrowText  // #>>
-	Contains       // @>
-	ContainedBy    // <@
-	JSONPathExists // @?
-	JSONPathMatch  // @@
-	JSONExists     // ?
-	JSONExistsAny  // ?|
-	JSONExistsAll  // ?&
+	DoubleColon   // ::
+	EqualsGreater // => (named argument)
+	ColonEquals   // := (named argument)
 
 	LPAREN    // (
 	RPAREN    // )
@@ -157,6 +150,7 @@ const (
 	RETURNING
 	RECURSIVE
 	MATERIALIZED
+	OPERATOR
 	keywordEnd
 )
 
@@ -181,21 +175,12 @@ var tokenNames = map[TokenType]string{
 	STAR:    "*",
 	SLASH:   "/",
 	PERCENT: "%",
-	CONCAT:  "||",
 	CARET:   "^",
 
-	DoubleColon:    "::",
-	Arrow:          "->",
-	ArrowText:      "->>",
-	HashArrow:      "#>",
-	HashArrowText:  "#>>",
-	Contains:       "@>",
-	ContainedBy:    "<@",
-	JSONPathExists: "@?",
-	JSONPathMatch:  "@@",
-	JSONExists:     "?",
-	JSONExistsAny:  "?|",
-	JSONExistsAll:  "?&",
+	DoubleColon:   "::",
+	Op:            "OP",
+	EqualsGreater: "=>",
+	ColonEquals:   ":=",
 
 	LPAREN:    "(",
 	RPAREN:    ")",
@@ -301,6 +286,7 @@ var tokenNames = map[TokenType]string{
 	RETURNING:    "RETURNING",
 	RECURSIVE:    "RECURSIVE",
 	MATERIALIZED: "MATERIALIZED",
+	OPERATOR:     "OPERATOR",
 }
 
 // String returns the token type's display name, used in error messages.
