@@ -1,8 +1,8 @@
 package pgast
 
 // This file gathers the marker methods that seal the Statement, Expr,
-// TableExpr, SelectExpr, SimpleTableExpr, and InsertRows interfaces to types
-// defined in this package. Each method body is intentionally empty, so
+// TableExpr, SelectExpr, SimpleTableExpr, InsertRows, and MergeAction
+// interfaces to types defined in this package. Each method body is intentionally empty, so
 // grouping them here keeps the exclusion in codecov.yml scoped to this file
 // instead of hiding real gaps in the String() implementations they sit next
 // to in expr.go, statement.go, table.go, and clause.go.
@@ -15,6 +15,13 @@ func (*Update) iStatement() {}
 func (*Delete) iStatement() {}
 func (*SetOp) iStatement()  {}
 func (*Merge) iStatement()  {}
+
+// --- MergeAction ---
+
+func (*MergeUpdate) iMergeAction()   {}
+func (MergeDelete) iMergeAction()    {}
+func (*MergeInsert) iMergeAction()   {}
+func (MergeDoNothing) iMergeAction() {}
 
 // --- InsertRows ---
 

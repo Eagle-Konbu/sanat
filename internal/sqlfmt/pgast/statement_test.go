@@ -385,20 +385,59 @@ func TestCommonTableExpr_String(t *testing.T) {
 }
 
 func TestMerge_String(t *testing.T) {
-	m := &pgast.Merge{
-		Target: &pgast.AliasedTableExpr{Expr: pgast.TableName{Name: "t"}},
-		Source: &pgast.AliasedTableExpr{Expr: pgast.TableName{Name: "s"}},
-		On:     &pgast.ComparisonExpr{Operator: pgast.EqualOp, Left: col("t.id"), Right: col("s.id")},
-		Whens: []*pgast.MergeWhen{
-			{Matched: true, Set: []*pgast.UpdateExpr{{Name: col("name"), Expr: col("s.name")}}},
-			{Columns: pgast.Columns{"id"}, Values: []pgast.Expr{col("s.id")}},
+	setName := []*pgast.UpdateExpr{{Name: col("name"), Expr: col("s.name")}}
+
+	tests := []struct {
+		name string
+		m    *pgast.Merge
+		want string
+	}{
+		{
+			"update and insert",
+			&pgast.Merge{
+				Target: &pgast.AliasedTableExpr{Expr: pgast.TableName{Name: "t"}},
+				Source: &pgast.AliasedTableExpr{Expr: pgast.TableName{Name: "s"}},
+				On:     &pgast.ComparisonExpr{Operator: pgast.EqualOp, Left: col("t.id"), Right: col("s.id")},
+				Whens: []*pgast.MergeWhen{
+					{Match: pgast.MergeMatched, Action: &pgast.MergeUpdate{Set: setName}},
+					{
+						Match:  pgast.MergeNotMatched,
+						Action: &pgast.MergeInsert{Columns: pgast.Columns{"id"}, Values: []pgast.Expr{col("s.id")}},
+					},
+				},
+			},
+			"MERGE INTO t USING s ON t.id = s.id " +
+				"WHEN MATCHED THEN UPDATE SET name = s.name " +
+				"WHEN NOT MATCHED THEN INSERT (id) VALUES (s.id)",
+		},
+		{
+			"with, only target, and returning with aliases",
+			&pgast.Merge{
+				With: &pgast.With{CTEs: []*pgast.CommonTableExpr{
+					{Name: "s", Subquery: &pgast.Select{SelectExprs: []pgast.SelectExpr{&pgast.AliasedExpr{Expr: lit("1")}}}},
+				}},
+				Target: &pgast.AliasedTableExpr{Expr: pgast.TableName{Name: "t"}, As: "x", Only: true},
+				Source: &pgast.AliasedTableExpr{Expr: pgast.TableName{Name: "s"}},
+				On:     lit("TRUE"),
+				Whens:  []*pgast.MergeWhen{{Match: pgast.MergeMatched, Action: pgast.MergeDelete{}}},
+				Returning: &pgast.Returning{
+					Aliases: []*pgast.ReturningAlias{
+						{Kind: pgast.ReturningOld, Name: "o"},
+						{Kind: pgast.ReturningNew, Name: "n"},
+					},
+					Exprs: []pgast.SelectExpr{&pgast.AliasedExpr{Expr: col("o.id")}},
+				},
+			},
+			"WITH s AS (SELECT 1) MERGE INTO ONLY t x USING s ON TRUE " +
+				"WHEN MATCHED THEN DELETE RETURNING WITH (OLD AS o, NEW AS n) o.id",
 		},
 	}
 
-	want := "MERGE INTO t USING s ON t.id = s.id " +
-		"WHEN MATCHED THEN UPDATE SET name = s.name " +
-		"WHEN NOT MATCHED THEN INSERT (id) VALUES (s.id)"
-	assertEqual(t, want, m.String())
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assertEqual(t, tt.want, tt.m.String())
+		})
+	}
 }
 
 func TestMergeWhen_String(t *testing.T) {
@@ -409,28 +448,58 @@ func TestMergeWhen_String(t *testing.T) {
 	}{
 		{
 			"matched with condition, do nothing",
-			&pgast.MergeWhen{Matched: true, Condition: col("cond"), DoNothing: true},
+			&pgast.MergeWhen{Match: pgast.MergeMatched, Condition: col("cond"), Action: pgast.MergeDoNothing{}},
 			"WHEN MATCHED AND cond THEN DO NOTHING",
 		},
 		{
 			"matched delete",
-			&pgast.MergeWhen{Matched: true, Delete: true},
+			&pgast.MergeWhen{Match: pgast.MergeMatched, Action: pgast.MergeDelete{}},
 			"WHEN MATCHED THEN DELETE",
 		},
 		{
-			"not matched by source",
-			&pgast.MergeWhen{BySource: true, DoNothing: true},
+			"not matched by source do nothing",
+			&pgast.MergeWhen{Match: pgast.MergeNotMatchedBySource, Action: pgast.MergeDoNothing{}},
 			"WHEN NOT MATCHED BY SOURCE THEN DO NOTHING",
 		},
 		{
 			"not matched by source update",
-			&pgast.MergeWhen{BySource: true, Set: []*pgast.UpdateExpr{{Name: col("x"), Expr: lit("1")}}},
+			&pgast.MergeWhen{
+				Match:  pgast.MergeNotMatchedBySource,
+				Action: &pgast.MergeUpdate{Set: []*pgast.UpdateExpr{{Name: col("x"), Expr: lit("1")}}},
+			},
 			"WHEN NOT MATCHED BY SOURCE THEN UPDATE SET x = 1",
 		},
 		{
-			"not matched insert no columns",
-			&pgast.MergeWhen{Values: []pgast.Expr{lit("1")}},
+			"not matched insert without columns",
+			&pgast.MergeWhen{Match: pgast.MergeNotMatched, Action: &pgast.MergeInsert{Values: []pgast.Expr{lit("1")}}},
 			"WHEN NOT MATCHED THEN INSERT VALUES (1)",
+		},
+		{
+			"explicit by target",
+			&pgast.MergeWhen{Match: pgast.MergeNotMatchedByTarget, Action: &pgast.MergeInsert{Values: []pgast.Expr{lit("1")}}},
+			"WHEN NOT MATCHED BY TARGET THEN INSERT VALUES (1)",
+		},
+		{
+			"insert default values",
+			&pgast.MergeWhen{Match: pgast.MergeNotMatched, Action: &pgast.MergeInsert{}},
+			"WHEN NOT MATCHED THEN INSERT DEFAULT VALUES",
+		},
+		{
+			"insert overriding system value",
+			&pgast.MergeWhen{Match: pgast.MergeNotMatched, Action: &pgast.MergeInsert{
+				Columns:    pgast.Columns{"id"},
+				Overriding: pgast.OverridingSystemValue,
+				Values:     []pgast.Expr{lit("1")},
+			}},
+			"WHEN NOT MATCHED THEN INSERT (id) OVERRIDING SYSTEM VALUE VALUES (1)",
+		},
+		{
+			"insert overriding user value",
+			&pgast.MergeWhen{Match: pgast.MergeNotMatched, Action: &pgast.MergeInsert{
+				Overriding: pgast.OverridingUserValue,
+				Values:     []pgast.Expr{lit("DEFAULT")},
+			}},
+			"WHEN NOT MATCHED THEN INSERT OVERRIDING USER VALUE VALUES (DEFAULT)",
 		},
 	}
 

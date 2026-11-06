@@ -445,10 +445,13 @@ func (f *FrameClause) String() string {
 	return unit + " " + f.Start.String()
 }
 
-// Returning represents a RETURNING clause, shared by INSERT/UPDATE/DELETE.
-// Its item grammar is identical to a SELECT list, so it reuses SelectExpr.
+// Returning represents a RETURNING clause, shared by INSERT/UPDATE/DELETE/
+// MERGE. Its item grammar is identical to a SELECT list, so it reuses
+// SelectExpr. Aliases holds PostgreSQL 18's "WITH (OLD AS o, NEW AS n)"
+// output aliases, in the order written.
 type Returning struct {
-	Exprs []SelectExpr
+	Aliases []*ReturningAlias
+	Exprs   []SelectExpr
 }
 
 // String returns Returning's SQL text.
@@ -457,12 +460,49 @@ func (r *Returning) String() string {
 		return ""
 	}
 
-	strs := make([]string, len(r.Exprs))
-	for i, e := range r.Exprs {
-		strs[i] = e.String()
+	var b strings.Builder
+
+	b.WriteString("RETURNING ")
+
+	if len(r.Aliases) > 0 {
+		aliases := make([]string, len(r.Aliases))
+		for i, a := range r.Aliases {
+			aliases[i] = a.String()
+		}
+
+		b.WriteString("WITH (")
+		b.WriteString(strings.Join(aliases, ", "))
+		b.WriteString(") ")
 	}
 
-	return "RETURNING " + strings.Join(strs, ", ")
+	writeSelectExprs(&b, r.Exprs)
+
+	return b.String()
+}
+
+// ReturningAliasKind selects which row version a RETURNING output alias
+// names.
+type ReturningAliasKind int8
+
+const (
+	ReturningOld ReturningAliasKind = iota
+	ReturningNew
+)
+
+// ReturningAlias is one "{OLD | NEW} AS name" entry of RETURNING WITH (...).
+type ReturningAlias struct {
+	Kind ReturningAliasKind
+	Name TableIdent
+}
+
+// String returns ReturningAlias's SQL text.
+func (a *ReturningAlias) String() string {
+	kind := "OLD"
+	if a.Kind == ReturningNew {
+		kind = "NEW"
+	}
+
+	return kind + " AS " + a.Name.String()
 }
 
 // UpdateExpr represents a "col = expr" SET assignment, shared by UPDATE and

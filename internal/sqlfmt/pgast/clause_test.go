@@ -379,6 +379,17 @@ func TestReturning_String(t *testing.T) {
 			&pgast.Returning{Exprs: []pgast.SelectExpr{&pgast.AliasedExpr{Expr: col("id")}}},
 			"RETURNING id",
 		},
+		{
+			"output aliases",
+			&pgast.Returning{
+				Aliases: []*pgast.ReturningAlias{
+					{Kind: pgast.ReturningNew, Name: "n"},
+					{Kind: pgast.ReturningOld, Name: "o"},
+				},
+				Exprs: []pgast.SelectExpr{&pgast.AliasedExpr{Expr: col("o.a")}, &pgast.AliasedExpr{Expr: col("n.a")}},
+			},
+			"RETURNING WITH (NEW AS n, OLD AS o) o.a, n.a",
+		},
 	}
 
 	for _, tt := range tests {
