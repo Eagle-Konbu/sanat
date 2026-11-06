@@ -95,6 +95,10 @@ func (l *Lexer) readIdentifierOrEscapeString(pos Position) (Token, error) {
 		return Token{Type: STRING, Literal: lit, Pos: pos}, nil
 	}
 
+	if l.startsUnicodeEscapeConstant() {
+		return Token{}, &LexError{Pos: pos, Msg: "Unicode escape strings (U&'...') are not supported"}
+	}
+
 	lit := l.readIdentifier()
 
 	tt := lookupIdent(lit)
@@ -103,6 +107,16 @@ func (l *Lexer) readIdentifierOrEscapeString(pos Position) (Token, error) {
 	}
 
 	return Token{Type: tt, Literal: lit, Pos: pos}, nil
+}
+
+// startsUnicodeEscapeConstant reports whether l.ch starts an unsupported
+// U&'...' string or U&"..." identifier, which would otherwise lex as the
+// identifier u, the & operator, and a string, silently changing the
+// statement's meaning.
+func (l *Lexer) startsUnicodeEscapeConstant() bool {
+	next := l.peekAt(2)
+
+	return (l.ch == 'u' || l.ch == 'U') && l.peek() == '&' && (next == '\'' || next == '"')
 }
 
 func (l *Lexer) currentPos() Position {

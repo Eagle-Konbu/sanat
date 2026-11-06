@@ -547,6 +547,20 @@ func TestLexer_operatorBoundaries(t *testing.T) {
 	}
 }
 
+func TestLexer_unicodeEscapeConstantUnsupported(t *testing.T) {
+	for _, in := range []string{"U&'x'", `u&"x"`} {
+		t.Run(in, func(t *testing.T) {
+			assertLexError(t, in)
+		})
+	}
+
+	t.Run("u followed by the & operator", func(t *testing.T) {
+		assertTokens(t, "u & 'x'", []wantToken{
+			{pgparser.IDENT, "u"}, {pgparser.Op, "&"}, {pgparser.STRING, "x"}, {pgparser.EOF, ""},
+		})
+	})
+}
+
 func TestLexer_unexpectedCharacter(t *testing.T) {
 	for _, in := range []string{"{", "}", "\\", "a \\ b"} {
 		t.Run(in, func(t *testing.T) {
