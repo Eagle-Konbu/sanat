@@ -26,14 +26,9 @@ func (p *Parser) parseRelationExpr() *pgast.AliasedTableExpr {
 }
 
 // parseRelationAlias parses a DML target's optional alias. As in PostgreSQL,
-// a bare SET here is never an alias, since it starts UPDATE's SET clause.
-// "AS set" is rejected too: aliases render without AS, so it could not
-// round-trip.
+// a bare SET here is never an alias, since it starts UPDATE's SET clause;
+// "AS set" is still an alias.
 func (p *Parser) parseRelationAlias() string {
-	if p.at(AS) && p.peekAt(SET) {
-		p.failf("SET cannot be used as a target table alias")
-	}
-
 	if p.at(SET) {
 		return ""
 	}

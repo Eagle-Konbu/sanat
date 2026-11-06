@@ -97,7 +97,8 @@ Where a keyword may also be a name follows PostgreSQL's grammar:
 A keyword used as a name is folded to lower case, like an unquoted
 identifier. Keywords that start a construct (`CASE`, `EXISTS`, `CAST`,
 `ARRAY`, `ROW`, and the `GROUP BY` and window-frame keywords) are dispatched
-before the name rules apply.
+before the name rules apply. `EXISTS` and `ROW` start their constructs only
+when `(` follows; otherwise they are column names (`SELECT row FROM t`).
 
 ## AST (`pgast`)
 

@@ -64,6 +64,9 @@ func TestParseUpdate_target(t *testing.T) {
 		{"parenthesized only is normalized", "UPDATE ONLY (users) u SET a = 1", "UPDATE ONLY users u SET a = 1"},
 		{"descendants star", "UPDATE users * SET a = 1", "UPDATE users * SET a = 1"},
 		{"descendants star with alias", "UPDATE public.users * AS u SET a = 1", "UPDATE public.users * u SET a = 1"},
+		{"set alias keeps as", "UPDATE t AS set SET a = set.a", "UPDATE t AS set SET a = set.a"},
+		{"set alias with only", "UPDATE ONLY t AS set SET a = 1", "UPDATE ONLY t AS set SET a = 1"},
+		{"quoted set alias", `UPDATE t "set" SET a = 1`, `UPDATE t "set" SET a = 1`},
 	}
 
 	for _, tt := range tests {
@@ -178,7 +181,6 @@ func TestParseUpdate_errors(t *testing.T) {
 		"UPDATE t SET a = 1 ORDER BY a",
 		"UPDATE t SET a = 1 LIMIT 1",
 		"UPDATE t SET a = 1; garbage",
-		"UPDATE t AS set SET a = 1",
 	}
 
 	for _, tt := range tests {

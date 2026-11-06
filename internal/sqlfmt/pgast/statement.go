@@ -144,7 +144,7 @@ func (u *Update) String() string {
 	writeOptionalPrefix(&b, u.With)
 
 	b.WriteString("UPDATE ")
-	b.WriteString(u.Table.String())
+	b.WriteString(dmlTargetString(u.Table))
 
 	sets := make([]string, len(u.Set))
 	for i, e := range u.Set {
@@ -164,6 +164,20 @@ func (u *Update) String() string {
 	return b.String()
 }
 
+// dmlTargetString renders an UPDATE or DELETE target. Its alias renders
+// without AS, except an alias named set: PostgreSQL never reads a bare SET
+// after the target as an alias.
+func dmlTargetString(t *AliasedTableExpr) string {
+	if t.As != "set" {
+		return t.String()
+	}
+
+	bare := *t
+	bare.As = ""
+
+	return bare.String() + " AS set"
+}
+
 // Delete represents a DELETE statement.
 type Delete struct {
 	With      *With
@@ -180,7 +194,7 @@ func (d *Delete) String() string {
 	writeOptionalPrefix(&b, d.With)
 
 	b.WriteString("DELETE FROM ")
-	b.WriteString(d.Table.String())
+	b.WriteString(dmlTargetString(d.Table))
 
 	if len(d.Using) > 0 {
 		strs := make([]string, len(d.Using))

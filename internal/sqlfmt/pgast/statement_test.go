@@ -145,6 +145,14 @@ func TestUpdate_String(t *testing.T) {
 			},
 			"UPDATE users * SET name = 'a'",
 		},
+		{
+			"set alias keeps as",
+			&pgast.Update{
+				Table: &pgast.AliasedTableExpr{Expr: pgast.TableName{Name: "users"}, As: "set", Only: true},
+				Set:   []*pgast.UpdateExpr{{Name: col("name"), Expr: lit("'a'")}},
+			},
+			"UPDATE ONLY users AS set SET name = 'a'",
+		},
 	}
 
 	for _, tt := range tests {
@@ -177,6 +185,11 @@ func TestDelete_String(t *testing.T) {
 				},
 			},
 			"WITH cte AS (SELECT * FROM t) DELETE FROM users USING other WHERE active RETURNING id",
+		},
+		{
+			"set alias keeps as",
+			&pgast.Delete{Table: &pgast.AliasedTableExpr{Expr: pgast.TableName{Name: "users"}, As: "set"}},
+			"DELETE FROM users AS set",
 		},
 	}
 
