@@ -41,3 +41,7 @@ sanat
 completions/
 
 .codeatlas-sa
+
+# Claude Code personal settings and worktrees
+.claude/settings.local.json
+.claude/worktrees/

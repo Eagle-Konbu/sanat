@@ -1,0 +1,40 @@
+{
+  "enabledMcpjsonServers": [
+    "codeatlas"
+  ],
+  "permissions": {
+    "allow": [
+      "mcp__codeatlas__compare_workspaces",
+      "mcp__codeatlas__describe_snapshot_schema",
+      "mcp__codeatlas__find_similar_entities",
+      "mcp__codeatlas__get_ai_finding",
+      "mcp__codeatlas__get_api_surface_diff",
+      "mcp__codeatlas__get_diff_summary",
+      "mcp__codeatlas__get_entrypoint_pack",
+      "mcp__codeatlas__get_feature_pack",
+      "mcp__codeatlas__get_function_dependencies",
+      "mcp__codeatlas__get_function_source",
+      "mcp__codeatlas__get_health_report",
+      "mcp__codeatlas__get_impact_analysis",
+      "mcp__codeatlas__get_impact_of_change",
+      "mcp__codeatlas__get_overlay",
+      "mcp__codeatlas__get_regression_scope",
+      "mcp__codeatlas__get_review_context",
+      "mcp__codeatlas__get_review_guidelines",
+      "mcp__codeatlas__get_review_summary",
+      "mcp__codeatlas__get_workspace_status",
+      "mcp__codeatlas__list_ai_findings",
+      "mcp__codeatlas__list_architecture_violations",
+      "mcp__codeatlas__list_entrypoints_paged",
+      "mcp__codeatlas__list_findings_by_guideline",
+      "mcp__codeatlas__list_overlays",
+      "mcp__codeatlas__list_repos",
+      "mcp__codeatlas__pre_edit_brief",
+      "mcp__codeatlas__query_snapshot",
+      "mcp__codeatlas__search_ai_findings",
+      "mcp__codeatlas__search_workspace",
+      "mcp__codeatlas__summarise_payload",
+      "mcp__codeatlas__trace_call_path"
+    ]
+  }
+}
