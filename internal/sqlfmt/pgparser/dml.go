@@ -38,7 +38,7 @@ func (p *Parser) parseRelationAlias() string {
 		return ""
 	}
 
-	return p.parseOptionalAlias()
+	return p.parseOptionalTableAlias()
 }
 
 // parseOptionallyParenthesizedTableName parses the table name after ONLY,
@@ -82,12 +82,12 @@ func (p *Parser) parseSetClause() *pgast.UpdateExpr {
 // one dotted level is accepted (stored as ColName's qualifier, which renders
 // identically). Array-subscript targets ("col[1] = ...") are not supported.
 func (p *Parser) parseSetTarget() *pgast.ColName {
-	name := p.readIdent()
+	name := p.readColID()
 
 	if p.consume(DOT) {
 		return &pgast.ColName{
 			Qualifier: pgast.TableName{Name: pgast.TableIdent(name)},
-			Name:      pgast.ColIdent(p.readIdent()),
+			Name:      pgast.ColIdent(p.readColLabel()),
 		}
 	}
 

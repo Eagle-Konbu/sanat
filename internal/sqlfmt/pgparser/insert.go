@@ -20,7 +20,7 @@ func (p *Parser) parseInsertAfterWith() *pgast.Insert {
 	// PostgreSQL's insert target requires AS before an alias, unlike a FROM
 	// item, so a bare identifier here is a syntax error rather than an alias.
 	if p.consume(AS) {
-		ins.Alias = pgast.TableIdent(p.readIdent())
+		ins.Alias = pgast.TableIdent(p.readColID())
 	}
 
 	ins.Columns = p.parseOptionalParenColumnList()

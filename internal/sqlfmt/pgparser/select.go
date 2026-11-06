@@ -104,7 +104,7 @@ func (p *Parser) parseSelectExpr() pgast.SelectExpr {
 	}
 
 	expr := p.parseExpr()
-	alias := p.parseOptionalAlias()
+	alias := p.parseOptionalColumnAlias()
 
 	return &pgast.AliasedExpr{Expr: expr, As: pgast.ColIdent(alias)}
 }
@@ -114,25 +114,25 @@ func (p *Parser) parseSelectExpr() pgast.SelectExpr {
 // otherwise it consumes nothing and returns nil, leaving the caller to parse
 // a general expression.
 func (p *Parser) tryParseQualifiedStar() pgast.SelectExpr {
-	if !isIdentToken(p.tok) || !p.peekAt(DOT) {
+	if !isColID(p.tok) || !p.peekAt(DOT) {
 		return nil
 	}
 
 	if p.peek2At(STAR) {
-		name := p.readIdent()
+		name := p.readColID()
 		p.advance() // consume '.'
 		p.advance() // consume '*'
 
 		return &pgast.StarExpr{TableName: pgast.TableName{Name: pgast.TableIdent(name)}}
 	}
 
-	if !isIdentToken(p.peek2Tok) || !p.lookaheadBeyondBufferIs(DOT, STAR) {
+	if !isColLabel(p.peek2Tok) || !p.lookaheadBeyondBufferIs(DOT, STAR) {
 		return nil
 	}
 
-	qualifier := p.readIdent()
+	qualifier := p.readColID()
 	p.advance() // consume '.'
-	name := p.readIdent()
+	name := p.readColLabel()
 	p.advance() // consume '.'
 	p.advance() // consume '*'
 
@@ -141,36 +141,45 @@ func (p *Parser) tryParseQualifiedStar() pgast.SelectExpr {
 	return &pgast.StarExpr{TableName: table}
 }
 
-// isIdentToken reports whether tok can name a column or table. SET,
-// RECURSIVE, and MATERIALIZED are unreserved keywords in PostgreSQL, so they
-// double as identifiers. The UPDATE grammar keeps SET unambiguous by never
-// reading a bare SET as the target alias, and RECURSIVE and MATERIALIZED
-// are only keywords at fixed points in a WITH clause.
-func isIdentToken(tok Token) bool {
-	switch tok.Type {
-	case IDENT, QuotedIdent, SET, RECURSIVE, MATERIALIZED:
-		return true
-	default:
-		return false
-	}
-}
-
-// parseOptionalAlias parses an optional trailing "[AS] name" alias (used for
-// both select-list and table aliases), returning "" if none is present.
-func (p *Parser) parseOptionalAlias() string {
+// parseOptionalColumnAlias parses an optional select-list (or RETURNING)
+// alias: any keyword after AS, or a BARE_LABEL keyword without it. Returns
+// "" if none is present.
+func (p *Parser) parseOptionalColumnAlias() string {
 	if p.consume(AS) {
-		return p.readIdent()
+		return p.readColLabel()
 	}
 
-	if isIdentToken(p.tok) {
-		return p.readIdent()
+	if isBareColLabel(p.tok) {
+		return p.readColLabel()
 	}
 
 	return ""
 }
 
-func (p *Parser) readIdent() string {
-	if !isIdentToken(p.tok) {
+// parseOptionalTableAlias parses an optional "[AS] name" table alias, whose
+// name must be a ColId with or without AS. Returns "" if none is present.
+// Every clause that can follow a table reference starts with a reserved or
+// type_func_name keyword, so a ColId here is always an alias.
+func (p *Parser) parseOptionalTableAlias() string {
+	if p.consume(AS) || isColID(p.tok) {
+		return p.readColID()
+	}
+
+	return ""
+}
+
+// readColID consumes a ColId: a column, table, alias, CTE, or window name.
+func (p *Parser) readColID() string {
+	return p.readName(isColID)
+}
+
+// readColLabel consumes a ColLabel: an identifier or any keyword.
+func (p *Parser) readColLabel() string {
+	return p.readName(isColLabel)
+}
+
+func (p *Parser) readName(accepts func(Token) bool) string {
+	if !accepts(p.tok) {
 		p.failf("expected identifier, got %s", p.tok.Type)
 	}
 
@@ -356,7 +365,7 @@ func (p *Parser) parseColumnList() pgast.Columns {
 	var cols pgast.Columns
 
 	for {
-		cols = append(cols, pgast.ColIdent(p.readIdent()))
+		cols = append(cols, pgast.ColIdent(p.readColID()))
 
 		if !p.consume(COMMA) {
 			return cols
@@ -381,7 +390,7 @@ func (p *Parser) parseTableFactor() pgast.TableExpr {
 	}
 
 	name := p.parseTableName()
-	alias := p.parseOptionalAlias()
+	alias := p.parseOptionalTableAlias()
 
 	return &pgast.AliasedTableExpr{Expr: name, As: pgast.TableIdent(alias)}
 }
@@ -395,16 +404,16 @@ func (p *Parser) parseLateralDerivedTable() pgast.TableExpr {
 
 	p.expect(RPAREN)
 
-	alias := p.parseOptionalAlias()
+	alias := p.parseOptionalTableAlias()
 
 	return &pgast.AliasedTableExpr{Expr: &pgast.DerivedTable{Select: sel}, As: pgast.TableIdent(alias), Lateral: true}
 }
 
 func (p *Parser) parseTableName() pgast.TableName {
-	name := p.readIdent()
+	name := p.readColID()
 
 	if p.consume(DOT) {
-		return pgast.TableName{Qualifier: pgast.TableIdent(name), Name: pgast.TableIdent(p.readIdent())}
+		return pgast.TableName{Qualifier: pgast.TableIdent(name), Name: pgast.TableIdent(p.readColLabel())}
 	}
 
 	return pgast.TableName{Name: pgast.TableIdent(name)}
@@ -427,7 +436,7 @@ func (p *Parser) parseParenTableExpr() pgast.TableExpr {
 
 	p.expect(RPAREN)
 
-	alias := p.parseOptionalAlias()
+	alias := p.parseOptionalTableAlias()
 
 	return &pgast.ParenTableExpr{Exprs: tables, As: pgast.TableIdent(alias)}
 }
@@ -480,7 +489,7 @@ func (p *Parser) parseDerivedTable() pgast.TableExpr {
 func (p *Parser) finishDerivedTable(query pgast.Statement) pgast.TableExpr {
 	p.expect(RPAREN)
 
-	alias := p.parseOptionalAlias()
+	alias := p.parseOptionalTableAlias()
 
 	return &pgast.AliasedTableExpr{Expr: &pgast.DerivedTable{Select: query}, As: pgast.TableIdent(alias)}
 }
@@ -593,7 +602,7 @@ func (p *Parser) parseOptionalWindowClause() []*pgast.NamedWindow {
 	var windows []*pgast.NamedWindow
 
 	for {
-		name := p.readIdent()
+		name := p.readColID()
 		p.expect(AS)
 		p.expect(LPAREN)
 
@@ -609,6 +618,19 @@ func (p *Parser) parseOptionalWindowClause() []*pgast.NamedWindow {
 	}
 }
 
+// isBaseWindowName reports whether tok starts a window specification as the
+// name of a base window. PARTITION, RANGE, ROWS, and GROUPS are unreserved,
+// so they could be window names, but PostgreSQL always reads them as the
+// keywords that start a window specification's clauses.
+func isBaseWindowName(tok Token) bool {
+	switch tok.Type {
+	case PARTITION, RANGE, ROWS, GROUPS:
+		return false
+	default:
+		return isColID(tok)
+	}
+}
+
 // parseWindowSpecBody parses the content inside a window definition's
 // parens (or, equivalently, a top-level WINDOW clause entry's body): an
 // optional base window name to refine, followed by PARTITION BY, ORDER BY,
@@ -618,8 +640,8 @@ func (p *Parser) parseOptionalWindowClause() []*pgast.NamedWindow {
 func (p *Parser) parseWindowSpecBody() *pgast.WindowSpec {
 	spec := &pgast.WindowSpec{}
 
-	if isIdentToken(p.tok) {
-		spec.Name = pgast.ColIdent(p.readIdent())
+	if isBaseWindowName(p.tok) {
+		spec.Name = pgast.ColIdent(p.readColID())
 	}
 
 	if p.consume(PARTITION) {

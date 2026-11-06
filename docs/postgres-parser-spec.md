@@ -14,6 +14,45 @@ internal/sqlfmt/
 └── pgparser/  Lexer + recursive-descent parser producing pgast nodes
 ```
 
+## Keywords
+
+Implemented in `internal/sqlfmt/pgparser/keyword.go`
+([#130](https://github.com/Eagle-Konbu/sanat/issues/130)). The lexer turns
+every keyword into its own token type, and `keywordClasses` assigns each one
+the category and `BARE_LABEL` flag PostgreSQL 18's `kwlist.h` gives it. A
+keyword without an entry panics at package initialization, so a new keyword
+cannot skip classification.
+
+Where a keyword may also be a name follows PostgreSQL's grammar:
+
+| Category | Example keywords | Column/table name (`ColId`) | Function/type name (`type_function_name`) |
+|---|---|---|---|
+| unreserved | `key`, `first`, `current`, `set` | yes | yes |
+| col_name | `values`, `between`, `row` | yes | no |
+| type_func_name | `left`, `join`, `like` | no | yes |
+| reserved | `select`, `from`, `where` | no | no |
+
+- **`ColId`** names columns, tables, table aliases (with or without `AS`),
+  CTEs, windows, column lists, and `SET` targets. Every clause that can follow
+  a table reference starts with a reserved or type_func_name keyword, so an
+  implicit table alias is never confused with one. The exceptions PostgreSQL
+  resolves by precedence are handled explicitly: a bare `SET` is never a DML
+  target alias, and `PARTITION`, `RANGE`, `ROWS`, and `GROUPS` at the start of
+  a window specification are clause keywords, not a base window name.
+- **`type_function_name`** names an unqualified function (so `left(s, 2)`
+  parses while `left` alone is not a column) and a cast's type.
+- **`ColLabel`** — any keyword — is accepted after `AS` in a select list or
+  `RETURNING`, and as a name after a dot (`t.from`, `s.select(...)`).
+- **`BareColLabel`** — an identifier or a keyword marked `BARE_LABEL` — is
+  accepted as a select-list alias without `AS`, so `SELECT 1 first` parses
+  while `SELECT 1 over` does not. Select-list aliases always render with
+  `AS`.
+
+A keyword used as a name is folded to lower case, like an unquoted
+identifier. Keywords that start a construct (`CASE`, `EXISTS`, `CAST`,
+`ARRAY`, `ROW`, and the `GROUP BY` and window-frame keywords) are dispatched
+before the name rules apply.
+
 ## Statement Entry Point
 
 Implemented in `internal/sqlfmt/pgparser/statement.go`
@@ -366,8 +405,8 @@ with_query  := cte_name [ ( column [, ...] ) ] AS [ [ NOT ] MATERIALIZED ]
 - **`INSERT ... SELECT`**: the query row source may lead with its own
   `WITH`, separate from the one on the `INSERT`.
 - **`RECURSIVE` and `MATERIALIZED`** are keywords only at their fixed points
-  in a `WITH` clause. Elsewhere they are accepted as unquoted identifiers, as
-  PostgreSQL's unreserved keywords are, so `SELECT materialized FROM recursive`
+  in a `WITH` clause. Elsewhere they are unreserved keywords usable as names
+  (see [Keywords](#keywords)), so `SELECT materialized FROM recursive`
   parses.
 - Data-modifying statements are accepted only as CTE bodies (and at the top
   level), not in other subquery positions, matching PostgreSQL.

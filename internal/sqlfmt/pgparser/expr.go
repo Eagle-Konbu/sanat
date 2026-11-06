@@ -429,7 +429,7 @@ func (p *Parser) parseTypeName() pgast.ColIdent {
 }
 
 func (p *Parser) readTypeIdent() string {
-	if !isIdentToken(p.tok) {
+	if !isTypeFuncName(p.tok) {
 		return failReturn[string](p, "expected type name, got %s", p.tok.Type)
 	}
 
@@ -517,7 +517,7 @@ func (p *Parser) parsePrimaryExpr() pgast.Expr {
 	case ROW:
 		return p.parseRowConstructor()
 	default:
-		if isIdentToken(p.tok) {
+		if p.atIdentExprStart() {
 			return p.parseIdentExpr()
 		}
 
@@ -716,21 +716,29 @@ func (p *Parser) parseArrayLiteral() pgast.Expr {
 	return &pgast.ArrayExpr{Elems: elems}
 }
 
+// atIdentExprStart reports whether the current token starts a column
+// reference or a function call.
+func (p *Parser) atIdentExprStart() bool {
+	return isColID(p.tok) || isTypeFuncName(p.tok) && p.peekAt(LPAREN)
+}
+
 // parseIdentExpr parses a column reference or function call, with an
 // optional qualifier: name, qualifier.name, name(args...), or
-// qualifier.name(args...).
+// qualifier.name(args...). An unqualified function name is a
+// type_function_name, so it may be a keyword such as LEFT that cannot name a
+// column; a name after the dot may be any keyword.
 func (p *Parser) parseIdentExpr() pgast.Expr {
-	name := p.readIdent()
-
-	if p.at(LPAREN) {
-		return p.parseFuncCall("", name)
+	if isTypeFuncName(p.tok) && p.peekAt(LPAREN) {
+		return p.parseFuncCall("", p.readName(isTypeFuncName))
 	}
+
+	name := p.readColID()
 
 	if !p.consume(DOT) {
 		return &pgast.ColName{Name: pgast.ColIdent(name)}
 	}
 
-	second := p.readIdent()
+	second := p.readColLabel()
 
 	if p.at(LPAREN) {
 		return p.parseFuncCall(name, second)
@@ -778,7 +786,7 @@ func (p *Parser) parseFuncCall(qualifier, name string) pgast.Expr {
 // name or a parenthesized window specification.
 func (p *Parser) parseOverClause(f *pgast.FuncExpr) {
 	if !p.consume(LPAREN) {
-		f.Over = &pgast.WindowSpec{Name: pgast.ColIdent(p.readIdent())}
+		f.Over = &pgast.WindowSpec{Name: pgast.ColIdent(p.readColID())}
 		f.OverRef = true
 
 		return

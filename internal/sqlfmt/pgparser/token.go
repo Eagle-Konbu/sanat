@@ -328,6 +328,10 @@ func buildKeywordTable() map[string]TokenType {
 			panic(fmt.Sprintf("pgparser: keyword token %d has no tokenNames entry", tt))
 		}
 
+		if _, ok := keywordClasses[tt]; !ok {
+			panic(fmt.Sprintf("pgparser: keyword %s has no keywordClasses entry", name))
+		}
+
 		m[name] = tt
 	}
 
@@ -336,7 +340,7 @@ func buildKeywordTable() map[string]TokenType {
 
 // lookupIdent returns the keyword TokenType for literal (matched
 // case-insensitively, per PostgreSQL's default unquoted-identifier folding),
-// or IDENT if literal is not a reserved keyword.
+// or IDENT if literal is not a keyword.
 func lookupIdent(literal string) TokenType {
 	if tt, ok := keywords[asciiUpper(literal)]; ok {
 		return tt
