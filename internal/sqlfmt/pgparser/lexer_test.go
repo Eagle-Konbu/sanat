@@ -2,6 +2,7 @@ package pgparser_test
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/Eagle-Konbu/sanat/internal/sqlfmt/pgparser"
@@ -538,12 +539,46 @@ func TestLexer_operatorBoundaries(t *testing.T) {
 		{"named argument arrow", "a=>1", []wantToken{
 			{pgparser.IDENT, "a"}, {pgparser.EqualsGreater, "=>"}, {pgparser.INT, "1"},
 		}},
+		{"split-off signs stop at a comment", "a<+-+--c\nb", []wantToken{
+			{pgparser.IDENT, "a"}, {pgparser.LT, "<"}, {pgparser.PLUS, "+"}, {pgparser.MINUS, "-"},
+			{pgparser.PLUS, "+"}, {pgparser.IDENT, "b"},
+		}},
+		{"operator after split-off signs is lexed afresh", "a*+ +@b", []wantToken{
+			{pgparser.IDENT, "a"}, {pgparser.STAR, "*"}, {pgparser.PLUS, "+"}, {pgparser.Op, "+@"}, {pgparser.IDENT, "b"},
+		}},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			assertTokens(t, tt.in, append(tt.want, wantToken{pgparser.EOF, ""}))
 		})
+	}
+}
+
+// A long run of signs splits into one-character operators; lexing it must
+// not scan the rest of the run again for each one.
+func TestLexer_longSignRun(t *testing.T) {
+	const n = 1 << 16
+
+	l := pgparser.New("a" + strings.Repeat("+", n) + "1")
+
+	count := 0
+
+	for {
+		tok, err := l.Next()
+		if err != nil {
+			t.Fatalf("Next() error = %v", err)
+		}
+
+		if tok.Type == pgparser.EOF {
+			break
+		}
+
+		count++
+	}
+
+	if want := n + 2; count != want {
+		t.Errorf("token count = %d, want %d", count, want)
 	}
 }
 

@@ -35,6 +35,11 @@ type Lexer struct {
 	ch      rune
 	line    int
 	col     int // rune column of ch, 1-based
+
+	// signRunEnd is the byte offset where the trailing '+'/'-' characters
+	// split off the last operator end. Each of them is a one-character
+	// operator, so the run is not scanned again for each of them.
+	signRunEnd int
 }
 
 // New creates a Lexer over input.
@@ -670,8 +675,15 @@ func (l *Lexer) readOperator(pos Position) (Token, error) {
 	switch {
 	case l.ch == ':':
 		return l.readColon(pos), nil
+	case l.pos < l.signRunEnd:
+		text := string(l.ch)
+		l.readChar()
+
+		return Token{Type: operatorTokenType(text), Literal: text, Pos: pos}, nil
 	case isOperatorChar(l.ch):
-		text := operatorText(l.input[l.pos:])
+		text, runLen := operatorText(l.input[l.pos:])
+		l.signRunEnd = l.pos + runLen
+
 		for range len(text) {
 			l.readChar()
 		}
@@ -693,24 +705,24 @@ func isOperatorChar(ch rune) bool {
 // "/*" comment starts. For SQL compatibility a multi-character operator may
 // not end in '+' or '-' unless it also contains a character SQL's own
 // operators never use, so "=-1" lexes as "=" then "-1" but "?-" stays whole.
-func operatorText(input string) string {
+// It also returns the length of the run before that trailing '+'/'-' is
+// dropped; what was dropped lexes as one-character operators.
+func operatorText(input string) (string, int) {
 	n := 0
 	for n < len(input) && isOperatorChar(rune(input[n])) {
 		n++
 	}
 
-	text := input[:n]
-	if i := commentStart(text); i >= 0 {
-		text = text[:i]
+	run := input[:n]
+	if i := commentStart(run); i >= 0 {
+		run = run[:i]
 	}
 
-	if !strings.ContainsAny(text, "~!@#^&|`?%") {
-		for len(text) > 1 && endsInPlusOrMinus(text) {
-			text = text[:len(text)-1]
-		}
+	if strings.ContainsAny(run, "~!@#^&|`?%") {
+		return run, len(run)
 	}
 
-	return text
+	return run[:max(1, len(strings.TrimRight(run, "+-")))], len(run)
 }
 
 // commentStart returns the index of the first "--" or "/*" in text, or -1.
@@ -725,12 +737,6 @@ func commentStart(text string) int {
 	default:
 		return min(dashes, slashStar)
 	}
-}
-
-func endsInPlusOrMinus(text string) bool {
-	last := text[len(text)-1]
-
-	return last == '+' || last == '-'
 }
 
 // fixedOperators are the operators that keep their own token type, because
