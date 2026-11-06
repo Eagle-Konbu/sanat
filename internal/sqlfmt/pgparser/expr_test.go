@@ -676,6 +676,22 @@ func TestParseExpr_operatorRoundTrip(t *testing.T) {
 	}
 }
 
+func TestParseExpr_namedArguments(t *testing.T) {
+	t.Run("both spellings", func(t *testing.T) {
+		assertExpr(t, "f(a => 1, b := 2)", &pgast.FuncExpr{Name: "f", Args: []pgast.Expr{
+			&pgast.NamedArgExpr{Name: "a", Value: num("1")},
+			&pgast.NamedArgExpr{Name: "b", Value: num("2"), ColonEquals: true},
+		}})
+	})
+
+	t.Run("keyword name and operator value", func(t *testing.T) {
+		assertExpr(t, "f(1, first => x || y)", &pgast.FuncExpr{Name: "f", Args: []pgast.Expr{
+			num("1"),
+			&pgast.NamedArgExpr{Name: "first", Value: opExpr(col("x"), "||", col("y"))},
+		}})
+	})
+}
+
 func TestParseExpr_precedenceInteraction(t *testing.T) {
 	t.Run("subscript is part of the cast's type, not applied after it", func(t *testing.T) {
 		assertExpr(t, "a::int[1]", &pgast.CastExpr{Expr: col("a"), Type: "int[1]"})
