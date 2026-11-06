@@ -20,15 +20,17 @@ func ParseDelete(input string) (del *pgast.Delete, err error) {
 	return result, nil
 }
 
-// parseDeleteStatement parses a DELETE statement. The current token must be
-// DELETE. A leading WITH is deferred to #86, and WHERE CURRENT OF is out of
-// scope (it needs DECLARE CURSOR session state a formatter never has), so
-// CURRENT after WHERE fails as an unexpected expression token.
+// parseDeleteStatement parses a DELETE statement with an optional leading
+// WITH clause. The current token must be WITH or DELETE. WHERE CURRENT OF is
+// out of scope (it needs DECLARE CURSOR session state a formatter never
+// has), so CURRENT after WHERE fails as an unexpected expression token.
 func (p *Parser) parseDeleteStatement() *pgast.Delete {
+	with := p.parseOptionalWith()
+
 	p.expect(DELETE)
 	p.expect(FROM)
 
-	del := &pgast.Delete{Table: p.parseRelationExpr()}
+	del := &pgast.Delete{With: with, Table: p.parseRelationExpr()}
 
 	if p.consume(USING) {
 		del.Using = p.parseTableReferenceList()

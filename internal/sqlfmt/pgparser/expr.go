@@ -185,7 +185,7 @@ func (p *Parser) parseInExpr(left pgast.Expr, not bool) pgast.Expr {
 		op = pgast.NotInOp
 	}
 
-	if p.at(SELECT) {
+	if isQueryStart(p.tok.Type) {
 		sel := p.parseSubqueryStatement()
 		p.expect(RPAREN)
 
@@ -578,7 +578,7 @@ func (p *Parser) parseStringLiteral() pgast.Expr {
 func (p *Parser) parseParenExprOrSubquery() pgast.Expr {
 	p.advance() // consume '('
 
-	if p.at(SELECT) {
+	if isQueryStart(p.tok.Type) {
 		sel := p.parseSubqueryStatement()
 		p.expect(RPAREN)
 

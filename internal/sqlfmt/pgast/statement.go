@@ -367,23 +367,56 @@ func (w *With) String() string {
 	return keyword + " " + strings.Join(ctes, ", ")
 }
 
+// CTEMaterialization represents a CTE's optional [NOT] MATERIALIZED hint.
+type CTEMaterialization int8
+
+const (
+	MaterializeDefault CTEMaterialization = iota
+	Materialized
+	NotMaterialized
+)
+
+// String returns CTEMaterialization's SQL text, or "" when no hint is given.
+func (m CTEMaterialization) String() string {
+	switch m {
+	case Materialized:
+		return "MATERIALIZED"
+	case NotMaterialized:
+		return "NOT MATERIALIZED"
+	default:
+		return ""
+	}
+}
+
 // CommonTableExpr represents a single CTE definition. Subquery holds
 // whichever statement the CTE body parses to — PostgreSQL CTEs can wrap
 // INSERT/UPDATE/DELETE bodies, not just SELECT.
 type CommonTableExpr struct {
-	Name     TableIdent
-	Columns  Columns
-	Subquery Statement
+	Name            TableIdent
+	Columns         Columns
+	Materialization CTEMaterialization
+	Subquery        Statement
 }
 
 // String returns CommonTableExpr's SQL text.
 func (c *CommonTableExpr) String() string {
-	name := c.Name.String()
+	var b strings.Builder
+
+	b.WriteString(c.Name.String())
+
 	if len(c.Columns) > 0 {
-		name += " (" + c.Columns.String() + ")"
+		b.WriteString(" (")
+		b.WriteString(c.Columns.String())
+		b.WriteString(")")
 	}
 
-	return name + " AS (" + c.Subquery.String() + ")"
+	b.WriteString(" AS ")
+	writeOptionalPrefix(&b, c.Materialization)
+	b.WriteString("(")
+	b.WriteString(c.Subquery.String())
+	b.WriteString(")")
+
+	return b.String()
 }
 
 // Merge represents a MERGE statement.

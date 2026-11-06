@@ -20,14 +20,16 @@ func ParseInsert(input string) (ins *pgast.Insert, err error) {
 	return result, nil
 }
 
-// parseInsertStatement parses an INSERT statement. The current token must be
-// INSERT. A leading WITH clause is deferred to #86, and OVERRIDING
+// parseInsertStatement parses an INSERT statement with an optional leading
+// WITH clause. The current token must be WITH or INSERT. OVERRIDING
 // {SYSTEM | USER} VALUE is not supported.
 func (p *Parser) parseInsertStatement() *pgast.Insert {
+	with := p.parseOptionalWith()
+
 	p.expect(INSERT)
 	p.expect(INTO)
 
-	ins := &pgast.Insert{Table: p.parseTableName()}
+	ins := &pgast.Insert{With: with, Table: p.parseTableName()}
 
 	// PostgreSQL's insert target requires AS before an alias, unlike a FROM
 	// item, so a bare identifier here is a syntax error rather than an alias.
@@ -48,7 +50,7 @@ func (p *Parser) parseInsertStatement() *pgast.Insert {
 }
 
 // parseInsertRows parses the row source of an INSERT statement: DEFAULT
-// VALUES, a VALUES list, or a SELECT.
+// VALUES, a VALUES list, or a SELECT (which may lead with its own WITH).
 func (p *Parser) parseInsertRows() pgast.InsertRows {
 	switch p.tok.Type {
 	case DEFAULT:
@@ -58,7 +60,7 @@ func (p *Parser) parseInsertRows() pgast.InsertRows {
 		return pgast.DefaultValues{}
 	case VALUES:
 		return p.parseValuesRows()
-	case SELECT:
+	case SELECT, WITH:
 		return p.parseSelectStatement()
 	default:
 		return failReturn[pgast.InsertRows](p, "expected VALUES, DEFAULT VALUES, or SELECT, got %s", p.tok.Type)

@@ -365,6 +365,18 @@ func TestCommonTableExpr_String(t *testing.T) {
 			&pgast.CommonTableExpr{Name: "cte", Columns: pgast.Columns{"a", "b"}, Subquery: selectStar()},
 			"cte (a, b) AS (SELECT * FROM t)",
 		},
+		{
+			"materialized",
+			&pgast.CommonTableExpr{Name: "cte", Materialization: pgast.Materialized, Subquery: selectStar()},
+			"cte AS MATERIALIZED (SELECT * FROM t)",
+		},
+		{
+			"not materialized with columns",
+			&pgast.CommonTableExpr{
+				Name: "cte", Columns: pgast.Columns{"a"}, Materialization: pgast.NotMaterialized, Subquery: selectStar(),
+			},
+			"cte (a) AS NOT MATERIALIZED (SELECT * FROM t)",
+		},
 	}
 
 	for _, tt := range tests {
