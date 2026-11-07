@@ -58,6 +58,11 @@ func (*ArrayExpr) iExpr()          {}
 func (*ArraySubscriptExpr) iExpr() {}
 func (*OperatorExpr) iExpr()       {}
 func (*NamedArgExpr) iExpr()       {}
+func (*IsNormalizedExpr) iExpr()   {}
+func (*ArraySubquery) iExpr()      {}
+func (*QuantifiedExpr) iExpr()     {}
+func (*CollateExpr) iExpr()        {}
+func (*AtTimeZoneExpr) iExpr()     {}
 func (*GroupingSets) iExpr()       {}
 func (*Cube) iExpr()               {}
 func (*Rollup) iExpr()             {}

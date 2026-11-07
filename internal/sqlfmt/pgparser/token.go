@@ -88,6 +88,12 @@ const (
 	ALL
 	CAST
 	TO
+	ANY
+	SOME
+	COLLATE
+	SIMILAR
+	SYMMETRIC
+	ASYMMETRIC
 	ARRAY
 	FILTER
 	ISNULL
@@ -228,6 +234,12 @@ var tokenNames = map[TokenType]string{
 	ALL:          "ALL",
 	CAST:         "CAST",
 	TO:           "TO",
+	ANY:          "ANY",
+	SOME:         "SOME",
+	COLLATE:      "COLLATE",
+	SIMILAR:      "SIMILAR",
+	SYMMETRIC:    "SYMMETRIC",
+	ASYMMETRIC:   "ASYMMETRIC",
 	ARRAY:        "ARRAY",
 	FILTER:       "FILTER",
 	ISNULL:       "ISNULL",

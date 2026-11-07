@@ -195,14 +195,16 @@ Loosest to tightest, matching PostgreSQL's operator precedence table:
 | 3 | `NOT` | right (prefix) | `NotExpr` |
 | 4 | `IS [NOT] {NULL \| TRUE \| FALSE \| UNKNOWN \| DISTINCT FROM}`, `ISNULL`, `NOTNULL` | postfix | `IsExpr`, `IsTruthExpr`, `IsDistinctFromExpr` |
 | 5 | `=` `<>` `<` `>` `<=` `>=` | non-associative (`a = b = c` is an error) | `ComparisonExpr` |
-| 6 | `[NOT] IN`, `[NOT] BETWEEN`, `[NOT] LIKE`, `[NOT] ILIKE` (with `ESCAPE`) | non-associative | `ComparisonExpr`, `RangeCond`, `ILikeExpr` |
+| 6 | `[NOT] IN`, `[NOT] BETWEEN [SYMMETRIC]`, `[NOT] LIKE`, `[NOT] ILIKE`, `[NOT] SIMILAR TO` (with `ESCAPE`) | non-associative | `ComparisonExpr`, `RangeCond`, `ILikeExpr` |
 | 7 | every other operator (`Op` tokens such as `\|\|`, `~`, `->`, `@>`, `<->`) and `OPERATOR([schema.]op)` | left (infix); prefix | `OperatorExpr` |
 | 8 | `+` `-` | left | `ArithmeticExpr` |
 | 9 | `*` `/` `%` | left | `ArithmeticExpr` |
 | 10 | `^` | left (`2 ^ 3 ^ 2` is `(2 ^ 3) ^ 2`) | `ArithmeticExpr` |
-| 11 | unary `+` `-` | right (prefix) | `UnaryExpr` |
-| 12 | `::type` | left (postfix) | `CastExpr` |
-| 13 | `[i]`, `[a:b]` | postfix | `ArraySubscriptExpr` |
+| 11 | `AT TIME ZONE` | left | `AtTimeZoneExpr` |
+| 12 | `COLLATE` | left (postfix) | `CollateExpr` |
+| 13 | unary `+` `-` | right (prefix) | `UnaryExpr` |
+| 14 | `::type` | left (postfix) | `CastExpr` |
+| 15 | `[i]`, `[a:b]` | postfix | `ArraySubscriptExpr` |
 
 **Generic operators** (level 7) are not listed one by one: any operator the
 lexer produces as `Op` is accepted, so new or user-defined operators parse
@@ -235,14 +237,24 @@ the comment `--a`.
   function call until the string after it, so the parser parses it
   speculatively and backtracks when no string follows.
 
-Not supported (each a `*ParseError` unless noted): `SIMILAR TO`,
-`AT TIME ZONE`, `COLLATE`, `IS [NOT] DOCUMENT`/`NORMALIZED`, `OVERLAPS`,
-three-part column references, `WITHIN GROUP`, `ORDER BY` inside aggregate calls, `VARIADIC`
-arguments, SQL-standard function syntax such as `EXTRACT(... FROM ...)`, and:
+- Quantified comparisons `left op {ANY | SOME | ALL} (array | subquery)`
+  (`pgast.QuantifiedExpr`), where `op` is a comparison or generic operator,
+  `OPERATOR(...)`, or `[NOT] LIKE`/`ILIKE`. `ANY` and `SOME` are reserved
+  keywords, so `any(arr)` alone is not a function call.
+- `expr COLLATE collation` (`CollateExpr`) and `expr AT TIME ZONE zone`
+  (`AtTimeZoneExpr`; `AT`, `TIME`, and `ZONE` are matched as identifiers).
+- `[NOT] SIMILAR TO pattern [ESCAPE e]` (a `ComparisonExpr` with
+  `SimilarOp`/`NotSimilarOp`), `[NOT] BETWEEN SYMMETRIC` (an explicit
+  `ASYMMETRIC` is the default and is dropped), and
+  `IS [NOT] [NFC | NFD | NFKC | NFKD] NORMALIZED` (`IsNormalizedExpr`).
+- `ARRAY(subquery)` (`ArraySubquery`) and multidimensional
+  `ARRAY[[1, 2], [3, 4]]`, whose inner brackets are `ArrayExpr`s with
+  `Nested` set.
 
-- Quantified comparisons: `= ALL (...)` fails, while `= ANY (...)` and
-  `= SOME (...)` parse as calls to functions named `any`/`some`, which
-  render equivalently.
+Not supported (each a `*ParseError` unless noted): `IS [NOT] DOCUMENT`,
+`AT LOCAL`, `OVERLAPS`, three-part column references, `WITHIN GROUP`,
+`ORDER BY` inside aggregate calls, `VARIADIC` arguments, and SQL-standard
+function syntax such as `EXTRACT(... FROM ...)`.
 
 ### Type Names
 
