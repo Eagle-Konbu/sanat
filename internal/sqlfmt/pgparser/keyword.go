@@ -70,6 +70,7 @@ var keywordClasses = map[TokenType]keywordClass{
 	TRAILING:     {reservedKeyword, true},
 	PLACING:      {reservedKeyword, true},
 	OVERLAPS:     {typeFuncNameKeyword, false},
+	TABLESAMPLE:  {typeFuncNameKeyword, true},
 	ARRAY:        {reservedKeyword, false},
 	FILTER:       {unreservedKeyword, false},
 	ISNULL:       {typeFuncNameKeyword, false},

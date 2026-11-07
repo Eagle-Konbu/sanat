@@ -10,12 +10,17 @@ import "strings"
 // Only and IncludeDescendants render PostgreSQL's table-inheritance markers
 // ("ONLY name" and "name *"). They are only meaningful when Expr is a
 // TableName, and the parser never sets both.
+//
+// Columns is the alias's column list, as in "AS t(a, b)". Sample is a
+// table's TABLESAMPLE clause, which follows the alias.
 type AliasedTableExpr struct {
 	Expr               SimpleTableExpr
 	As                 TableIdent
+	Columns            Columns
 	Lateral            bool
 	Only               bool
 	IncludeDescendants bool
+	Sample             *TableSample
 }
 
 // String returns AliasedTableExpr's SQL text.
@@ -36,12 +41,69 @@ func (a *AliasedTableExpr) String() string {
 		b.WriteString(" *")
 	}
 
-	if !a.As.IsEmpty() {
+	b.WriteString(aliasClauseString(a.As, a.Columns))
+
+	if a.Sample != nil {
 		b.WriteString(" ")
-		b.WriteString(a.As.String())
+		b.WriteString(a.Sample.String())
 	}
 
 	return b.String()
+}
+
+// aliasClauseString renders an optional " alias[(col, ...)]" suffix.
+func aliasClauseString(alias TableIdent, columns Columns) string {
+	if alias.IsEmpty() {
+		return ""
+	}
+
+	if len(columns) == 0 {
+		return " " + alias.String()
+	}
+
+	return " " + alias.String() + "(" + columns.String() + ")"
+}
+
+// TableSample represents a "TABLESAMPLE method (args) [REPEATABLE (seed)]"
+// clause.
+type TableSample struct {
+	Method     TableName
+	Args       []Expr
+	Repeatable Expr
+}
+
+// String returns TableSample's SQL text.
+func (t *TableSample) String() string {
+	s := "TABLESAMPLE " + t.Method.String() + " (" + exprListString(t.Args) + ")"
+	if t.Repeatable != nil {
+		s += " REPEATABLE (" + t.Repeatable.String() + ")"
+	}
+
+	return s
+}
+
+// FuncTable represents a set-returning function call used as a FROM item,
+// such as generate_series(1, 3), or several calls zipped side by side by
+// ROWS FROM (...), optionally WITH ORDINALITY. It sits inside an
+// AliasedTableExpr, which carries its alias and LATERAL.
+type FuncTable struct {
+	Funcs          []Expr
+	RowsFrom       bool
+	WithOrdinality bool
+}
+
+// String returns FuncTable's SQL text.
+func (f *FuncTable) String() string {
+	s := exprListString(f.Funcs)
+	if f.RowsFrom {
+		s = "ROWS FROM (" + s + ")"
+	}
+
+	if f.WithOrdinality {
+		s += " WITH ORDINALITY"
+	}
+
+	return s
 }
 
 // JoinType represents the kind of a JOIN.
@@ -107,6 +169,11 @@ func (j *JoinTableExpr) String() string {
 		b.WriteString(" USING (")
 		b.WriteString(j.Condition.Using.String())
 		b.WriteString(")")
+
+		if !j.Condition.UsingAlias.IsEmpty() {
+			b.WriteString(" AS ")
+			b.WriteString(j.Condition.UsingAlias.String())
+		}
 	}
 
 	return b.String()
@@ -115,8 +182,9 @@ func (j *JoinTableExpr) String() string {
 // ParenTableExpr represents a parenthesized list of table expressions with
 // an optional alias.
 type ParenTableExpr struct {
-	Exprs []TableExpr
-	As    TableIdent
+	Exprs   []TableExpr
+	As      TableIdent
+	Columns Columns
 }
 
 // String returns ParenTableExpr's SQL text.
@@ -126,12 +194,7 @@ func (p *ParenTableExpr) String() string {
 		strs[i] = e.String()
 	}
 
-	s := "(" + strings.Join(strs, ", ") + ")"
-	if !p.As.IsEmpty() {
-		s += " " + p.As.String()
-	}
-
-	return s
+	return "(" + strings.Join(strs, ", ") + ")" + aliasClauseString(p.As, p.Columns)
 }
 
 // DerivedTable represents a subquery used as a table.

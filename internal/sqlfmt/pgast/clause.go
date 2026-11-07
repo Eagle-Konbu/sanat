@@ -580,8 +580,10 @@ func (o *OnConflict) String() string {
 }
 
 // JoinCondition represents the ON or USING condition of a JOIN. Exactly one
-// of On/Using is set.
+// of On/Using is set. UsingAlias is the "USING (...) AS alias" name for the
+// join columns (PostgreSQL 14+).
 type JoinCondition struct {
-	On    Expr
-	Using Columns
+	On         Expr
+	Using      Columns
+	UsingAlias TableIdent
 }

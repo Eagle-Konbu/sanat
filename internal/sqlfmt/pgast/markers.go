@@ -84,6 +84,7 @@ func (*ParenTableExpr) iTableExpr()   {}
 
 func (*DerivedTable) iSimpleTableExpr() {}
 func (TableName) iSimpleTableExpr()     {}
+func (*FuncTable) iSimpleTableExpr()    {}
 
 // --- SelectExpr ---
 

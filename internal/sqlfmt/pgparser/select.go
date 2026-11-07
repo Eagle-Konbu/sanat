@@ -232,6 +232,15 @@ func (p *Parser) parseJoin(left pgast.TableExpr) pgast.TableExpr {
 	joinType := p.parseJoinType()
 	right := p.parseTableFactor()
 
+	// A join that still needs its ON/USING lets the right side absorb any
+	// joins that follow first, as PostgreSQL's grammar does: in
+	// "a JOIN b JOIN c ON x ON y", "b JOIN c ON x" is the right side.
+	if joinRequiresCondition(joinType) {
+		for p.isJoinStart() {
+			right = p.parseJoin(right)
+		}
+	}
+
 	// PostgreSQL rejects an explicit ON/USING on CROSS and NATURAL joins, so
 	// this doesn't even look for one: any ON/USING left in the token stream
 	// is then unconsumed input, which fails elsewhere with a parse error
@@ -338,10 +347,14 @@ func (p *Parser) parseOptionalJoinCondition() *pgast.JoinCondition {
 
 	if p.consume(USING) {
 		p.expect(LPAREN)
-		cols := p.parseColumnList()
+		cond := &pgast.JoinCondition{Using: p.parseColumnList()}
 		p.expect(RPAREN)
 
-		return &pgast.JoinCondition{Using: cols}
+		if p.consume(AS) {
+			cond.UsingAlias = pgast.TableIdent(p.readColID())
+		}
+
+		return cond
 	}
 
 	return nil
@@ -373,40 +386,152 @@ func (p *Parser) parseColumnList() pgast.Columns {
 	}
 }
 
-// parseTableFactor parses a single FROM-item: a table name, a parenthesized
-// table reference list, a derived table (parenthesized subquery), or a
-// LATERAL derived table. A bare set-returning function call as a FROM-item
-// (LATERAL or not) is deferred, alongside the issue's other deferred
-// table-function machinery (WITH ORDINALITY, ROWS FROM(...)) — pgast has no
-// function-valued TableExpr/SimpleTableExpr shape yet, and adding one is a
-// bigger, separate design than this issue's join/subquery/DISTINCT ON scope.
+// parseTableFactor parses a single FROM-item: a table (with ONLY, "*", and
+// TABLESAMPLE), a function call or ROWS FROM (...), a parenthesized table
+// reference list, or a derived table, the last two kinds optionally after
+// LATERAL.
 func (p *Parser) parseTableFactor() pgast.TableExpr {
 	if p.consume(LATERAL) {
-		return p.parseLateralDerivedTable()
+		return p.parseLateralTableFactor()
 	}
 
 	if p.at(LPAREN) {
 		return p.parseParenTableExpr()
 	}
 
-	name := p.parseTableName()
-	alias := p.parseOptionalTableAlias()
+	if p.atFuncTableStart() {
+		return p.parseFuncTable()
+	}
 
-	return &pgast.AliasedTableExpr{Expr: name, As: pgast.TableIdent(alias)}
+	table := &pgast.AliasedTableExpr{}
+
+	if p.consume(ONLY) {
+		table.Only = true
+		table.Expr = p.parseOptionallyParenthesizedTableName()
+	} else {
+		table.Expr = p.parseTableName()
+		table.IncludeDescendants = p.consume(STAR)
+	}
+
+	table.As, table.Columns = p.parseOptionalAliasClause()
+	table.Sample = p.parseOptionalTableSample()
+
+	return table
 }
 
-// parseLateralDerivedTable parses the parenthesized query and optional alias
+// parseLateralTableFactor parses the derived table or function call
 // following LATERAL.
-func (p *Parser) parseLateralDerivedTable() pgast.TableExpr {
+func (p *Parser) parseLateralTableFactor() pgast.TableExpr {
+	if p.atFuncTableStart() {
+		table := p.parseFuncTable()
+		table.Lateral = true
+
+		return table
+	}
+
 	p.expect(LPAREN)
 
 	sel := p.parseSubqueryStatement()
 
 	p.expect(RPAREN)
 
-	alias := p.parseOptionalTableAlias()
+	table := &pgast.AliasedTableExpr{Expr: &pgast.DerivedTable{Select: sel}, Lateral: true}
+	table.As, table.Columns = p.parseOptionalAliasClause()
 
-	return &pgast.AliasedTableExpr{Expr: &pgast.DerivedTable{Select: sel}, As: pgast.TableIdent(alias), Lateral: true}
+	return table
+}
+
+// atFuncTableStart reports whether the current tokens start a function call
+// FROM-item: ROWS FROM, "name(", or "schema.name(".
+func (p *Parser) atFuncTableStart() bool {
+	switch {
+	case p.at(ROWS) && p.peekAt(FROM):
+		return true
+	case isTypeFuncName(p.tok) && p.peekAt(LPAREN):
+		return true
+	default:
+		return isColID(p.tok) && p.peekAt(DOT) && isColLabel(p.peek2Tok) && p.lookaheadBeyondBufferIs(LPAREN)
+	}
+}
+
+// parseFuncTable parses "func(...) | ROWS FROM (func(...), ...)
+// [WITH ORDINALITY] [[AS] alias [(column, ...)]]". Column definition lists
+// for functions returning record are not supported.
+func (p *Parser) parseFuncTable() *pgast.AliasedTableExpr {
+	fn := &pgast.FuncTable{}
+
+	if p.at(ROWS) {
+		p.advance() // consume ROWS
+		p.advance() // consume FROM
+		p.expect(LPAREN)
+
+		fn.RowsFrom = true
+
+		for {
+			fn.Funcs = append(fn.Funcs, p.parseTableFuncCall())
+
+			if !p.consume(COMMA) {
+				break
+			}
+		}
+
+		p.expect(RPAREN)
+	} else {
+		fn.Funcs = []pgast.Expr{p.parseTableFuncCall()}
+	}
+
+	if p.at(WITH) && p.peekIsWord("ordinality") {
+		p.advance()
+		p.advance()
+
+		fn.WithOrdinality = true
+	}
+
+	table := &pgast.AliasedTableExpr{Expr: fn}
+	table.As, table.Columns = p.parseOptionalAliasClause()
+
+	return table
+}
+
+func (p *Parser) parseTableFuncCall() pgast.Expr {
+	if !p.atFuncTableStart() {
+		return failReturn[pgast.Expr](p, "expected function call, got %s", p.tok.Type)
+	}
+
+	return p.parseIdentExpr()
+}
+
+// parseOptionalAliasClause parses an optional "[AS] alias [(column, ...)]".
+func (p *Parser) parseOptionalAliasClause() (pgast.TableIdent, pgast.Columns) {
+	alias := p.parseOptionalTableAlias()
+	if alias == "" {
+		return "", nil
+	}
+
+	return pgast.TableIdent(alias), p.parseOptionalParenColumnList()
+}
+
+// parseOptionalTableSample parses an optional
+// "TABLESAMPLE method (argument, ...) [REPEATABLE (seed)]" clause.
+func (p *Parser) parseOptionalTableSample() *pgast.TableSample {
+	if !p.consume(TABLESAMPLE) {
+		return nil
+	}
+
+	sample := &pgast.TableSample{Method: p.parseTableName()}
+
+	p.expect(LPAREN)
+	sample.Args = p.parseExprList()
+	p.expect(RPAREN)
+
+	if p.atWord("repeatable") {
+		p.advance()
+		p.expect(LPAREN)
+		sample.Repeatable = p.parseExpr()
+		p.expect(RPAREN)
+	}
+
+	return sample
 }
 
 func (p *Parser) parseTableName() pgast.TableName {
@@ -436,9 +561,10 @@ func (p *Parser) parseParenTableExpr() pgast.TableExpr {
 
 	p.expect(RPAREN)
 
-	alias := p.parseOptionalTableAlias()
+	paren := &pgast.ParenTableExpr{Exprs: tables}
+	paren.As, paren.Columns = p.parseOptionalAliasClause()
 
-	return &pgast.ParenTableExpr{Exprs: tables, As: pgast.TableIdent(alias)}
+	return paren
 }
 
 // tryContinueQueryFromTables continues a query from tables if they are a
@@ -489,9 +615,10 @@ func (p *Parser) parseDerivedTable() pgast.TableExpr {
 func (p *Parser) finishDerivedTable(query pgast.Statement) pgast.TableExpr {
 	p.expect(RPAREN)
 
-	alias := p.parseOptionalTableAlias()
+	table := &pgast.AliasedTableExpr{Expr: &pgast.DerivedTable{Select: query}}
+	table.As, table.Columns = p.parseOptionalAliasClause()
 
-	return &pgast.AliasedTableExpr{Expr: &pgast.DerivedTable{Select: query}, As: pgast.TableIdent(alias)}
+	return table
 }
 
 func (p *Parser) parseOptionalWhereClause(kw TokenType) *pgast.Where {
