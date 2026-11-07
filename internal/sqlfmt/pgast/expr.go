@@ -433,14 +433,17 @@ func (l *Literal) String() string {
 // sqlast models one type per MySQL aggregate function — a single generic
 // shape covers every case the formatter needs to round-trip.
 type FuncExpr struct {
-	Qualifier TableIdent
-	Name      ColIdent
-	Star      bool // COUNT(*)
-	Distinct  bool
-	Args      []Expr
-	Filter    *Where      // FILTER (WHERE ...)
-	Over      *WindowSpec // OVER (...) / OVER window_name
-	OverRef   bool        // OVER window_name, unparenthesized; the name is Over.Name
+	Qualifier   TableIdent
+	Name        ColIdent
+	Star        bool // COUNT(*)
+	Distinct    bool
+	Args        []Expr
+	Variadic    bool        // the last argument is passed with VARIADIC
+	OrderBy     OrderBy     // an aggregate's ORDER BY inside the parentheses
+	WithinGroup OrderBy     // WITHIN GROUP (ORDER BY ...)
+	Filter      *Where      // FILTER (WHERE ...)
+	Over        *WindowSpec // OVER (...) / OVER window_name
+	OverRef     bool        // OVER window_name, unparenthesized; the name is Over.Name
 }
 
 // String returns FuncExpr's SQL text.
@@ -463,10 +466,21 @@ func (f *FuncExpr) String() string {
 			b.WriteString("DISTINCT ")
 		}
 
-		b.WriteString(exprListString(f.Args))
+		b.WriteString(f.argsString())
+
+		if len(f.OrderBy) > 0 {
+			b.WriteString(" ")
+			b.WriteString(f.OrderBy.String())
+		}
 	}
 
 	b.WriteString(")")
+
+	if len(f.WithinGroup) > 0 {
+		b.WriteString(" WITHIN GROUP (")
+		b.WriteString(f.WithinGroup.String())
+		b.WriteString(")")
+	}
 
 	if f.Filter != nil && f.Filter.Expr != nil {
 		b.WriteString(" FILTER (WHERE ")
@@ -485,6 +499,40 @@ func (f *FuncExpr) String() string {
 	}
 
 	return b.String()
+}
+
+func (f *FuncExpr) argsString() string {
+	if !f.Variadic || len(f.Args) == 0 {
+		return exprListString(f.Args)
+	}
+
+	last := len(f.Args) - 1
+	variadic := "VARIADIC " + f.Args[last].String()
+
+	if last == 0 {
+		return variadic
+	}
+
+	return exprListString(f.Args[:last]) + ", " + variadic
+}
+
+// FieldSelectExpr represents selecting a field of a composite value,
+// "(expr).field", or all of its fields, "(expr).*" or "t.*" when Star is
+// set. It also holds the parts of a dotted column reference beyond the three
+// a ColName holds.
+type FieldSelectExpr struct {
+	Expr  Expr
+	Field ColIdent
+	Star  bool
+}
+
+// String returns FieldSelectExpr's SQL text.
+func (f *FieldSelectExpr) String() string {
+	if f.Star {
+		return f.Expr.String() + ".*"
+	}
+
+	return f.Expr.String() + "." + f.Field.String()
 }
 
 // ParenExpr represents a parenthesized expression.

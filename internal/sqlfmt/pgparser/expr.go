@@ -590,11 +590,29 @@ func (p *Parser) parseCastExpr() pgast.Expr {
 func (p *Parser) parseSubscriptExpr() pgast.Expr {
 	left := p.parsePrimaryExpr()
 
-	for p.at(LBRACKET) {
-		left = p.parseSubscript(left)
+	for {
+		switch {
+		case p.at(LBRACKET):
+			left = p.parseSubscript(left)
+		case p.at(DOT) && acceptsFieldSelection(left):
+			left = p.parseFieldSelection(left)
+		default:
+			return left
+		}
 	}
+}
 
-	return left
+// acceptsFieldSelection reports whether a ".field" may follow expr. As in
+// PostgreSQL, a field is selected from a column reference, a parenthesized
+// expression, or a subscript or field of one; a function call's result must
+// be parenthesized first, as in "(f(x)).field".
+func acceptsFieldSelection(expr pgast.Expr) bool {
+	switch expr.(type) {
+	case *pgast.ColName, *pgast.ParenExpr, *pgast.ArraySubscriptExpr, *pgast.FieldSelectExpr:
+		return true
+	default:
+		return false
+	}
 }
 
 // parseSubscript parses a single "[expr]" or "[expr:expr]" (slice, with
@@ -945,13 +963,40 @@ func (p *Parser) parseIdentExpr() pgast.Expr {
 		return &pgast.ColName{Name: pgast.ColIdent(name)}
 	}
 
+	if p.consume(STAR) {
+		return &pgast.FieldSelectExpr{Expr: &pgast.ColName{Name: pgast.ColIdent(name)}, Star: true}
+	}
+
 	second := p.readColLabel()
 
 	if p.at(LPAREN) {
 		return p.parseFuncCall(name, second)
 	}
 
-	return &pgast.ColName{Qualifier: pgast.TableName{Name: pgast.TableIdent(name)}, Name: pgast.ColIdent(second)}
+	ref := &pgast.ColName{Qualifier: pgast.TableName{Name: pgast.TableIdent(name)}, Name: pgast.ColIdent(second)}
+
+	if !p.at(DOT) || p.peekAt(STAR) {
+		return ref
+	}
+
+	p.advance() // consume '.'
+
+	return &pgast.ColName{
+		Qualifier: pgast.TableName{Qualifier: pgast.TableIdent(name), Name: pgast.TableIdent(second)},
+		Name:      pgast.ColIdent(p.readColLabel()),
+	}
+}
+
+// parseFieldSelection parses a ".field" or ".*" applied to left. The
+// current token must be '.'.
+func (p *Parser) parseFieldSelection(left pgast.Expr) pgast.Expr {
+	p.advance() // consume '.'
+
+	if p.consume(STAR) {
+		return &pgast.FieldSelectExpr{Expr: left, Star: true}
+	}
+
+	return &pgast.FieldSelectExpr{Expr: left, Field: pgast.ColIdent(p.readColLabel())}
 }
 
 // parseFuncCall parses a function call's argument list, DISTINCT flag or
@@ -967,11 +1012,24 @@ func (p *Parser) parseFuncCall(qualifier, name string) pgast.Expr {
 		f.Star = true
 	case p.at(RPAREN):
 	default:
-		f.Distinct = p.consume(DISTINCT)
-		f.Args = p.parseFuncArgList()
+		p.parseFuncArgs(f)
 	}
 
 	p.expect(RPAREN)
+
+	if p.atWord("within") && p.peekAt(GROUP) {
+		p.advance() // consume WITHIN
+		p.advance() // consume GROUP
+		p.expect(LPAREN)
+
+		if !p.at(ORDER) {
+			p.failf("expected ORDER BY in WITHIN GROUP, got %s", p.tok.Type)
+		}
+
+		f.WithinGroup = p.parseOrderByClause()
+
+		p.expect(RPAREN)
+	}
 
 	if p.consume(FILTER) {
 		p.expect(LPAREN)
@@ -1004,17 +1062,32 @@ func (p *Parser) parseOverClause(f *pgast.FuncExpr) {
 	p.expect(RPAREN)
 }
 
-// parseFuncArgList parses a function call's comma-separated arguments, each
-// an expression or a named "name => value" (or "name := value") argument.
-func (p *Parser) parseFuncArgList() []pgast.Expr {
-	var args []pgast.Expr
+// parseFuncArgs parses a function call's non-empty argument list into f:
+// an optional ALL (a no-op, like SELECT ALL) or DISTINCT, comma-separated
+// arguments of which only the last may be VARIADIC, and an aggregate's
+// optional ORDER BY.
+func (p *Parser) parseFuncArgs(f *pgast.FuncExpr) {
+	if !p.consume(ALL) {
+		f.Distinct = p.consume(DISTINCT)
+	}
 
 	for {
-		args = append(args, p.parseFuncArg())
+		if p.consume(VARIADIC) {
+			f.Variadic = true
+			f.Args = append(f.Args, p.parseFuncArg())
+
+			break
+		}
+
+		f.Args = append(f.Args, p.parseFuncArg())
 
 		if !p.consume(COMMA) {
-			return args
+			break
 		}
+	}
+
+	if p.at(ORDER) {
+		f.OrderBy = p.parseOrderByClause()
 	}
 }
 
