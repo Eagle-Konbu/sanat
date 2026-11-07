@@ -565,13 +565,41 @@ func (u *UpdateExpr) String() string {
 	return "(" + strings.Join(names, ", ") + ") = " + u.Expr.String()
 }
 
-// OnConflict represents an INSERT ... ON CONFLICT clause.
+// IndexElem is one element of an ON CONFLICT target, naming an index column
+// or expression the way CREATE INDEX does: a column (*ColName), a function
+// call, or a parenthesized expression, with an optional collation and
+// operator class.
+type IndexElem struct {
+	Expr      Expr
+	Collation TableName
+	Opclass   TableName
+}
+
+// String returns IndexElem's SQL text.
+func (e *IndexElem) String() string {
+	s := e.Expr.String()
+
+	if !e.Collation.IsEmpty() {
+		s += " COLLATE " + e.Collation.String()
+	}
+
+	if !e.Opclass.IsEmpty() {
+		s += " " + e.Opclass.String()
+	}
+
+	return s
+}
+
+// OnConflict represents an INSERT ... ON CONFLICT clause. The conflict
+// target is either Target, with an optional TargetWhere index predicate, or
+// Constraint.
 type OnConflict struct {
-	Columns    Columns  // ON CONFLICT (col, ...)
-	Constraint ColIdent // ON CONFLICT ON CONSTRAINT name
-	DoNothing  bool
-	Set        []*UpdateExpr // DO UPDATE SET ...
-	Where      *Where        // WHERE condition on the DO UPDATE
+	Target      []*IndexElem // ON CONFLICT (elem, ...)
+	TargetWhere *Where       // ON CONFLICT (...) WHERE index_predicate
+	Constraint  ColIdent     // ON CONFLICT ON CONSTRAINT name
+	DoNothing   bool
+	Set         []*UpdateExpr // DO UPDATE SET ...
+	Where       *Where        // WHERE condition on the DO UPDATE
 }
 
 // String returns OnConflict's SQL text.
@@ -585,10 +613,16 @@ func (o *OnConflict) String() string {
 	b.WriteString("ON CONFLICT")
 
 	switch {
-	case len(o.Columns) > 0:
+	case len(o.Target) > 0:
+		elems := make([]string, len(o.Target))
+		for i, e := range o.Target {
+			elems[i] = e.String()
+		}
+
 		b.WriteString(" (")
-		b.WriteString(o.Columns.String())
+		b.WriteString(strings.Join(elems, ", "))
 		b.WriteString(")")
+		writeWhereClause(&b, "WHERE", o.TargetWhere)
 	case !o.Constraint.IsEmpty():
 		b.WriteString(" ON CONSTRAINT ")
 		b.WriteString(o.Constraint.String())

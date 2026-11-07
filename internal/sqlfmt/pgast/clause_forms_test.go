@@ -26,6 +26,18 @@ func TestFrameExclusion_String(t *testing.T) {
 	assertEqual(t, "ROWS CURRENT ROW EXCLUDE TIES", frame.String())
 }
 
+func TestOnConflict_String_targets(t *testing.T) {
+	elem := &pgast.IndexElem{Expr: col("a"), Collation: pgast.TableName{Name: `"C"`}, Opclass: pgast.TableName{Name: "text_ops"}}
+	assertEqual(t, `a COLLATE "C" text_ops`, elem.String())
+
+	oc := &pgast.OnConflict{
+		Target:      []*pgast.IndexElem{elem, {Expr: col("b")}},
+		TargetWhere: &pgast.Where{Expr: col("live")},
+		DoNothing:   true,
+	}
+	assertEqual(t, `ON CONFLICT (a COLLATE "C" text_ops, b) WHERE live DO NOTHING`, oc.String())
+}
+
 func TestOrder_String_using(t *testing.T) {
 	o := &pgast.Order{Expr: col("a"), Direction: pgast.DescOrder, Using: &pgast.Operator{Symbol: ">"}, Nulls: pgast.NullsLast}
 	assertEqual(t, "a USING > NULLS LAST", o.String())
