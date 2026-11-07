@@ -457,23 +457,7 @@ func (f *FuncExpr) String() string {
 
 	b.WriteString(f.Name.String())
 	b.WriteString("(")
-
-	switch {
-	case f.Star:
-		b.WriteString("*")
-	default:
-		if f.Distinct {
-			b.WriteString("DISTINCT ")
-		}
-
-		b.WriteString(f.argsString())
-
-		if len(f.OrderBy) > 0 {
-			b.WriteString(" ")
-			b.WriteString(f.OrderBy.String())
-		}
-	}
-
+	b.WriteString(f.argsString())
 	b.WriteString(")")
 
 	if len(f.WithinGroup) > 0 {
@@ -501,19 +485,33 @@ func (f *FuncExpr) String() string {
 	return b.String()
 }
 
+// argsString renders the content of a call's parentheses: "*", or the
+// arguments with their DISTINCT, VARIADIC, and ORDER BY modifiers.
 func (f *FuncExpr) argsString() string {
-	if !f.Variadic || len(f.Args) == 0 {
-		return exprListString(f.Args)
+	if f.Star {
+		return "*"
 	}
 
-	last := len(f.Args) - 1
-	variadic := "VARIADIC " + f.Args[last].String()
+	s := exprListString(f.Args)
 
-	if last == 0 {
-		return variadic
+	if f.Variadic && len(f.Args) > 0 {
+		last := len(f.Args) - 1
+
+		s = "VARIADIC " + f.Args[last].String()
+		if last > 0 {
+			s = exprListString(f.Args[:last]) + ", " + s
+		}
 	}
 
-	return exprListString(f.Args[:last]) + ", " + variadic
+	if f.Distinct {
+		s = "DISTINCT " + s
+	}
+
+	if len(f.OrderBy) > 0 {
+		s += " " + f.OrderBy.String()
+	}
+
+	return s
 }
 
 // FieldSelectExpr represents selecting a field of a composite value,

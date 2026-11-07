@@ -42,6 +42,7 @@ func (p *Parser) parseSimpleSelect() *pgast.Select {
 	if sel.Distinct || sel.DistinctOn != nil || !p.atSelectListEnd() {
 		sel.SelectExprs = p.parseSelectExprList()
 	}
+
 	sel.From = p.parseOptionalFromClause()
 	sel.Where = p.parseOptionalWhereClause(WHERE)
 	sel.GroupBy = p.parseOptionalGroupBy()

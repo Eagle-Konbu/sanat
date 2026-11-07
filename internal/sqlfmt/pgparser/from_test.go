@@ -59,7 +59,7 @@ func TestParseSelect_fromItems(t *testing.T) {
 }
 
 func TestParseSelect_nestedJoinStructure(t *testing.T) {
-	sel, err := pgparser.ParseSelect("SELECT * FROM a JOIN b JOIN c ON y ON x")
+	sel, err := pgparser.ParseSelect("SELECT a.id FROM a JOIN b JOIN c ON y ON x")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -120,8 +120,9 @@ func (p *Parser) parseTrim() pgast.Expr {
 	trim := &pgast.TrimExpr{}
 
 	if side, ok := trimSides[p.tok.Type]; ok {
-		trim.Side = side
 		p.advance()
+
+		trim.Side = side
 	}
 
 	if p.consume(FROM) {
