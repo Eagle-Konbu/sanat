@@ -72,21 +72,37 @@ func (p *Parser) parseSetClause() *pgast.UpdateExpr {
 	return &pgast.UpdateExpr{Name: name, Expr: p.parseExprOrDefault()}
 }
 
-// parseSetTarget parses a SET target column. PostgreSQL rejects a
-// table-qualified target, but "col.field" names a composite-type field, so
-// one dotted level is accepted (stored as ColName's qualifier, which renders
-// identically). Array-subscript targets ("col[1] = ...") are not supported.
-func (p *Parser) parseSetTarget() *pgast.ColName {
-	name := p.readColID()
+// parseSetTarget parses an assignment target column of SET or an INSERT
+// column list: a column followed by any number of ".field" and "[subscript]"
+// indirections, as in col.field, col[1], or col[1:2].f. PostgreSQL never
+// qualifies the column itself with its table, so a dotted name is always a
+// field selection.
+func (p *Parser) parseSetTarget() pgast.Expr {
+	var target pgast.Expr = &pgast.ColName{Name: pgast.ColIdent(p.readColID())}
 
-	if p.consume(DOT) {
-		return &pgast.ColName{
-			Qualifier: pgast.TableName{Name: pgast.TableIdent(name)},
-			Name:      pgast.ColIdent(p.readColLabel()),
+	for {
+		switch {
+		case p.at(DOT):
+			target = p.parseFieldSelection(target)
+		case p.at(LBRACKET):
+			target = p.parseSubscript(target)
+		default:
+			return target
 		}
 	}
+}
 
-	return &pgast.ColName{Name: pgast.ColIdent(name)}
+// parseSetTargetList parses a comma-separated list of assignment targets.
+func (p *Parser) parseSetTargetList() []pgast.Expr {
+	var targets []pgast.Expr
+
+	for {
+		targets = append(targets, p.parseSetTarget())
+
+		if !p.consume(COMMA) {
+			return targets
+		}
+	}
 }
 
 // parseMultiColumnSetClause parses "(col, ...) = source", where source is a
@@ -94,15 +110,7 @@ func (p *Parser) parseSetTarget() *pgast.ColName {
 func (p *Parser) parseMultiColumnSetClause() *pgast.UpdateExpr {
 	p.advance() // consume '('
 
-	var names []*pgast.ColName
-
-	for {
-		names = append(names, p.parseSetTarget())
-
-		if !p.consume(COMMA) {
-			break
-		}
-	}
+	names := p.parseSetTargetList()
 
 	p.expect(RPAREN)
 	p.expect(EQ)
@@ -114,7 +122,7 @@ func (p *Parser) parseMultiColumnSource() pgast.Expr {
 	switch {
 	case p.consume(ROW):
 		return &pgast.RowExpr{Exprs: p.parseParenExprOrDefaultList()}
-	case p.at(LPAREN) && isQueryStart(p.peekTok.Type):
+	case p.at(LPAREN) && isQueryStart(p.peekTok.Type, p.peek2Tok.Type):
 		p.advance() // consume '('
 
 		sel := p.parseSubqueryStatement()

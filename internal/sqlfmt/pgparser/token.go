@@ -24,6 +24,12 @@ const (
 	FLOAT       // 123.45
 	STRING      // 'abc', E'abc', or $tag$abc$tag$ (Literal is the decoded content)
 	Placeholder // $1, $2, ... (Literal is the digits, without the leading $)
+	// BitString is a B'0101' or X'1F' bit-string constant (Literal is its
+	// SQL text, with an upper-case prefix).
+	BitString
+	// NationalString is an N'abc' national character string (Literal is the
+	// decoded content, like STRING's).
+	NationalString
 
 	EQ      // =
 	NE      // <> or !=
@@ -81,6 +87,21 @@ const (
 	ON
 	ALL
 	CAST
+	TO
+	ANY
+	SOME
+	COLLATE
+	SIMILAR
+	SYMMETRIC
+	ASYMMETRIC
+	VARIADIC
+	BOTH
+	LEADING
+	TRAILING
+	PLACING
+	OVERLAPS
+	TABLESAMPLE
+	TABLE
 	ARRAY
 	FILTER
 	ISNULL
@@ -164,6 +185,9 @@ var tokenNames = map[TokenType]string{
 	STRING:      "STRING",
 	Placeholder: "PLACEHOLDER",
 
+	BitString:      "BIT_STRING",
+	NationalString: "NATIONAL_STRING",
+
 	EQ:      "=",
 	NE:      "<>",
 	LT:      "<",
@@ -217,6 +241,21 @@ var tokenNames = map[TokenType]string{
 	ON:           "ON",
 	ALL:          "ALL",
 	CAST:         "CAST",
+	TO:           "TO",
+	ANY:          "ANY",
+	SOME:         "SOME",
+	COLLATE:      "COLLATE",
+	SIMILAR:      "SIMILAR",
+	SYMMETRIC:    "SYMMETRIC",
+	ASYMMETRIC:   "ASYMMETRIC",
+	VARIADIC:     "VARIADIC",
+	BOTH:         "BOTH",
+	LEADING:      "LEADING",
+	TRAILING:     "TRAILING",
+	PLACING:      "PLACING",
+	OVERLAPS:     "OVERLAPS",
+	TABLESAMPLE:  "TABLESAMPLE",
+	TABLE:        "TABLE",
 	ARRAY:        "ARRAY",
 	FILTER:       "FILTER",
 	ISNULL:       "ISNULL",

@@ -19,6 +19,8 @@ const (
 	NotLikeOp
 	InOp
 	NotInOp
+	SimilarOp
+	NotSimilarOp
 )
 
 var comparisonOpStrings = [...]string{
@@ -32,6 +34,8 @@ var comparisonOpStrings = [...]string{
 	NotLikeOp:      "NOT LIKE",
 	InOp:           "IN",
 	NotInOp:        "NOT IN",
+	SimilarOp:      "SIMILAR TO",
+	NotSimilarOp:   "NOT SIMILAR TO",
 }
 
 // String returns ComparisonOperator's SQL operator text.
@@ -43,12 +47,13 @@ func (op ComparisonOperator) String() string {
 	return "="
 }
 
-// ComparisonExpr represents a comparison expression (e.g., a = b, a IN (...)).
+// ComparisonExpr represents a comparison expression (e.g., a = b, a IN (...),
+// a SIMILAR TO b).
 type ComparisonExpr struct {
 	Operator ComparisonOperator
 	Left     Expr
 	Right    Expr
-	Escape   Expr // LIKE ... ESCAPE expr; nil for every other operator
+	Escape   Expr // [NOT] LIKE / SIMILAR TO ... ESCAPE expr; nil for every other operator
 }
 
 // String returns ComparisonExpr's SQL text.
@@ -83,22 +88,28 @@ func (i *ILikeExpr) String() string {
 	return fmt.Sprintf("%s %s %s", i.Left.String(), op, i.Right.String()) + escapeString(i.Escape)
 }
 
-// RangeCond represents a [NOT] BETWEEN ... AND ... expression.
+// RangeCond represents a [NOT] BETWEEN [SYMMETRIC] ... AND ... expression.
+// An explicit ASYMMETRIC is the default and is not modeled.
 type RangeCond struct {
-	Not  bool
-	Left Expr
-	From Expr
-	To   Expr
+	Not       bool
+	Symmetric bool
+	Left      Expr
+	From      Expr
+	To        Expr
 }
 
 // String returns RangeCond's SQL text.
 func (r *RangeCond) String() string {
-	not := ""
-	if r.Not {
-		not = "NOT "
+	op := "BETWEEN"
+	if r.Symmetric {
+		op = "BETWEEN SYMMETRIC"
 	}
 
-	return fmt.Sprintf("%s %sBETWEEN %s AND %s", r.Left.String(), not, r.From.String(), r.To.String())
+	if r.Not {
+		op = "NOT " + op
+	}
+
+	return fmt.Sprintf("%s %s %s AND %s", r.Left.String(), op, r.From.String(), r.To.String())
 }
 
 // IsExpr represents an IS [NOT] NULL expression. PostgreSQL's postfix
@@ -116,6 +127,36 @@ func (i *IsExpr) String() string {
 	}
 
 	return i.Expr.String() + " IS NULL"
+}
+
+// IsNormalizedExpr represents an IS [NOT] [form] NORMALIZED test of a
+// string's Unicode normalization. Form is NFC, NFD, NFKC, or NFKD, or ""
+// when omitted.
+type IsNormalizedExpr struct {
+	Not  bool
+	Expr Expr
+	Form string
+}
+
+// String returns IsNormalizedExpr's SQL text.
+func (i *IsNormalizedExpr) String() string {
+	var b strings.Builder
+
+	b.WriteString(i.Expr.String())
+	b.WriteString(" IS ")
+
+	if i.Not {
+		b.WriteString("NOT ")
+	}
+
+	if i.Form != "" {
+		b.WriteString(i.Form)
+		b.WriteString(" ")
+	}
+
+	b.WriteString("NORMALIZED")
+
+	return b.String()
 }
 
 // TruthValue represents the operand of an IS [NOT] TRUE / FALSE / UNKNOWN test.
@@ -392,14 +433,17 @@ func (l *Literal) String() string {
 // sqlast models one type per MySQL aggregate function — a single generic
 // shape covers every case the formatter needs to round-trip.
 type FuncExpr struct {
-	Qualifier TableIdent
-	Name      ColIdent
-	Star      bool // COUNT(*)
-	Distinct  bool
-	Args      []Expr
-	Filter    *Where      // FILTER (WHERE ...)
-	Over      *WindowSpec // OVER (...) / OVER window_name
-	OverRef   bool        // OVER window_name, unparenthesized; the name is Over.Name
+	Qualifier   TableIdent
+	Name        ColIdent
+	Star        bool // COUNT(*)
+	Distinct    bool
+	Args        []Expr
+	Variadic    bool        // the last argument is passed with VARIADIC
+	OrderBy     OrderBy     // an aggregate's ORDER BY inside the parentheses
+	WithinGroup OrderBy     // WITHIN GROUP (ORDER BY ...)
+	Filter      *Where      // FILTER (WHERE ...)
+	Over        *WindowSpec // OVER (...) / OVER window_name
+	OverRef     bool        // OVER window_name, unparenthesized; the name is Over.Name
 }
 
 // String returns FuncExpr's SQL text.
@@ -413,19 +457,14 @@ func (f *FuncExpr) String() string {
 
 	b.WriteString(f.Name.String())
 	b.WriteString("(")
-
-	switch {
-	case f.Star:
-		b.WriteString("*")
-	default:
-		if f.Distinct {
-			b.WriteString("DISTINCT ")
-		}
-
-		b.WriteString(exprListString(f.Args))
-	}
-
+	b.WriteString(f.argsString())
 	b.WriteString(")")
+
+	if len(f.WithinGroup) > 0 {
+		b.WriteString(" WITHIN GROUP (")
+		b.WriteString(f.WithinGroup.String())
+		b.WriteString(")")
+	}
 
 	if f.Filter != nil && f.Filter.Expr != nil {
 		b.WriteString(" FILTER (WHERE ")
@@ -446,6 +485,54 @@ func (f *FuncExpr) String() string {
 	return b.String()
 }
 
+// argsString renders the content of a call's parentheses: "*", or the
+// arguments with their DISTINCT, VARIADIC, and ORDER BY modifiers.
+func (f *FuncExpr) argsString() string {
+	if f.Star {
+		return "*"
+	}
+
+	s := exprListString(f.Args)
+
+	if f.Variadic && len(f.Args) > 0 {
+		last := len(f.Args) - 1
+
+		s = "VARIADIC " + f.Args[last].String()
+		if last > 0 {
+			s = exprListString(f.Args[:last]) + ", " + s
+		}
+	}
+
+	if f.Distinct {
+		s = "DISTINCT " + s
+	}
+
+	if len(f.OrderBy) > 0 {
+		s += " " + f.OrderBy.String()
+	}
+
+	return s
+}
+
+// FieldSelectExpr represents selecting a field of a composite value,
+// "(expr).field", or all of its fields, "(expr).*" or "t.*" when Star is
+// set. It also holds the parts of a dotted column reference beyond the three
+// a ColName holds.
+type FieldSelectExpr struct {
+	Expr  Expr
+	Field ColIdent
+	Star  bool
+}
+
+// String returns FieldSelectExpr's SQL text.
+func (f *FieldSelectExpr) String() string {
+	if f.Star {
+		return f.Expr.String() + ".*"
+	}
+
+	return f.Expr.String() + "." + f.Field.String()
+}
+
 // ParenExpr represents a parenthesized expression.
 type ParenExpr struct {
 	Expr Expr
@@ -461,7 +548,7 @@ func (p *ParenExpr) String() string {
 // existing SQL rather than normalizing it to one canonical spelling.
 type CastExpr struct {
 	Expr     Expr
-	Type     ColIdent
+	Type     *TypeName
 	Explicit bool // true for CAST(expr AS type), false for expr::type
 }
 
@@ -478,13 +565,33 @@ func (c *CastExpr) String() string {
 // array-string-literal form is not modeled separately — syntactically it is
 // just a string literal (see Literal) until PostgreSQL interprets it against
 // an array type, so there is nothing structural for the formatter to print.
+//
+// Nested marks a sub-array written as bare brackets inside a
+// multidimensional array, such as each "[1, 2]" in ARRAY[[1, 2], [3, 4]];
+// it renders without the ARRAY keyword.
 type ArrayExpr struct {
-	Elems []Expr
+	Elems  []Expr
+	Nested bool
 }
 
 // String returns ArrayExpr's SQL text.
 func (a *ArrayExpr) String() string {
+	if a.Nested {
+		return "[" + exprListString(a.Elems) + "]"
+	}
+
 	return "ARRAY[" + exprListString(a.Elems) + "]"
+}
+
+// ArraySubquery represents an ARRAY(subquery) constructor, which collects
+// the subquery's single-column result into an array.
+type ArraySubquery struct {
+	Select Statement
+}
+
+// String returns ArraySubquery's SQL text.
+func (a *ArraySubquery) String() string {
+	return "ARRAY(" + a.Select.String() + ")"
 }
 
 // ArraySubscriptExpr represents array subscripting (a[1]) or slicing (a[1:3]).
@@ -581,4 +688,69 @@ func (n *NamedArgExpr) String() string {
 	}
 
 	return n.Name.String() + op + n.Value.String()
+}
+
+// Quantifier is the ANY, SOME, or ALL of a QuantifiedExpr. SOME is a synonym
+// for ANY, kept apart only so the expression round-trips as written.
+type Quantifier int8
+
+const (
+	QuantifierAny Quantifier = iota
+	QuantifierSome
+	QuantifierAll
+)
+
+// String returns Quantifier's SQL text.
+func (q Quantifier) String() string {
+	switch q {
+	case QuantifierSome:
+		return "SOME"
+	case QuantifierAll:
+		return "ALL"
+	default:
+		return "ANY"
+	}
+}
+
+// QuantifiedExpr represents an operator applied to each element of an array
+// or each row of a subquery: "left op ANY | SOME | ALL (right)". Operator
+// is a comparison or generic operator, or [NOT] LIKE / [NOT] ILIKE. Right is
+// a *Subquery or an array-valued expression.
+type QuantifiedExpr struct {
+	Left       Expr
+	Operator   Operator
+	Quantifier Quantifier
+	Right      Expr
+}
+
+// String returns QuantifiedExpr's SQL text.
+func (q *QuantifiedExpr) String() string {
+	right := q.Right.String()
+	if _, ok := q.Right.(*Subquery); !ok {
+		right = "(" + right + ")"
+	}
+
+	return q.Left.String() + " " + q.Operator.String() + " " + q.Quantifier.String() + " " + right
+}
+
+// CollateExpr represents "expr COLLATE collation".
+type CollateExpr struct {
+	Expr      Expr
+	Collation TableName
+}
+
+// String returns CollateExpr's SQL text.
+func (c *CollateExpr) String() string {
+	return c.Expr.String() + " COLLATE " + c.Collation.String()
+}
+
+// AtTimeZoneExpr represents "expr AT TIME ZONE zone".
+type AtTimeZoneExpr struct {
+	Expr Expr
+	Zone Expr
+}
+
+// String returns AtTimeZoneExpr's SQL text.
+func (a *AtTimeZoneExpr) String() string {
+	return a.Expr.String() + " AT TIME ZONE " + a.Zone.String()
 }

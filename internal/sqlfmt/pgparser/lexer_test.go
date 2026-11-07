@@ -148,6 +148,24 @@ func TestLexer_Identifiers(t *testing.T) {
 		})
 	})
 
+	// PostgreSQL's scanner accepts any byte from 0x80 up in an identifier,
+	// not just letters.
+	t.Run("non-ASCII identifier characters", func(t *testing.T) {
+		assertTokens(t, "café €uro x·y", []wantToken{
+			{pgparser.IDENT, "café"},
+			{pgparser.IDENT, "€uro"},
+			{pgparser.IDENT, "x·y"},
+			{pgparser.EOF, ""},
+		})
+	})
+
+	t.Run("identifier starting with a combining mark", func(t *testing.T) {
+		assertTokens(t, "́a", []wantToken{
+			{pgparser.IDENT, "́a"},
+			{pgparser.EOF, ""},
+		})
+	})
+
 	t.Run("non-ASCII letters do not fold into keywords", func(t *testing.T) {
 		assertTokens(t, "ſelect ınner", []wantToken{
 			{pgparser.IDENT, "ſelect"},
@@ -272,6 +290,14 @@ func TestLexer_Strings(t *testing.T) {
 		{"high surrogate at end", `E'\uD83D'`},
 		{"high surrogate followed by text", `E'\uD83Dx'`},
 		{"high surrogate followed by non-surrogate", `E'\uD83D\u0041'`},
+		{"zero code point", `E'\u0000'`},
+	}
+
+	// PostgreSQL text values cannot hold a zero byte.
+	for _, in := range []string{`E'\0'`, `E'a\000b'`, `E'\400'`, `E'\x00'`, `E'\x0'`} {
+		t.Run("escape string zero byte "+in, func(t *testing.T) {
+			assertLexError(t, in)
+		})
 	}
 
 	for _, tt := range invalidUnicodeEscapes {
@@ -387,6 +413,55 @@ func TestLexer_Placeholders(t *testing.T) {
 		{pgparser.Placeholder, "12"},
 		{pgparser.EOF, ""},
 	})
+
+	t.Run("trailing junk", func(t *testing.T) {
+		assertLexError(t, "$1abc")
+	})
+}
+
+func TestLexer_prefixedStrings(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want wantToken
+	}{
+		{"bit string", "B'0101'", wantToken{pgparser.BitString, "B'0101'"}},
+		{"lower-case bit string", "b'01'", wantToken{pgparser.BitString, "B'01'"}},
+		{"empty bit string", "B''", wantToken{pgparser.BitString, "B''"}},
+		{"hex bit string", "X'1F'", wantToken{pgparser.BitString, "X'1F'"}},
+		{"lower-case hex bit string", "x'af'", wantToken{pgparser.BitString, "X'af'"}},
+		{"national string", "N'abc'", wantToken{pgparser.NationalString, "abc"}},
+		{"national string with doubled quote", "n'it''s'", wantToken{pgparser.NationalString, "it's"}},
+		{"bit string continuation", "B'01'\n'10'", wantToken{pgparser.BitString, "B'0110'"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assertTokens(t, tt.in, []wantToken{tt.want, {pgparser.EOF, ""}})
+		})
+	}
+
+	for _, in := range []string{"B'012'", "X'1G'", "B'0", "N'abc", "B'0''1'"} {
+		t.Run("invalid "+in, func(t *testing.T) {
+			assertLexError(t, in)
+		})
+	}
+
+	t.Run("prefix letter followed by a space is an identifier", func(t *testing.T) {
+		assertTokens(t, "b '1'", []wantToken{
+			{pgparser.IDENT, "b"},
+			{pgparser.STRING, "1"},
+			{pgparser.EOF, ""},
+		})
+	})
+
+	t.Run("longer identifier ending in a prefix letter", func(t *testing.T) {
+		assertTokens(t, "ab'1'", []wantToken{
+			{pgparser.IDENT, "ab"},
+			{pgparser.STRING, "1"},
+			{pgparser.EOF, ""},
+		})
+	})
 }
 
 func TestLexer_Numbers(t *testing.T) {
@@ -414,26 +489,20 @@ func TestLexer_Numbers(t *testing.T) {
 		})
 	}
 
-	t.Run("no hex prefix support", func(t *testing.T) {
-		assertTokens(t, "0x1", []wantToken{
-			{pgparser.INT, "0"},
-			{pgparser.IDENT, "x1"},
-			{pgparser.EOF, ""},
+	// PostgreSQL 15+ rejects an identifier character directly after a
+	// number rather than reading it as an alias.
+	for _, in := range []string{"0x1", "1e", "1.col", "123abc", "1.5e3x", ".5a", "1é"} {
+		t.Run("trailing junk "+in, func(t *testing.T) {
+			assertLexError(t, in)
 		})
-	})
+	}
 
-	t.Run("trailing e without digits is not an exponent", func(t *testing.T) {
-		assertTokens(t, "1e", []wantToken{
+	t.Run("number followed by an operator or space", func(t *testing.T) {
+		assertTokens(t, "1+2 3", []wantToken{
 			{pgparser.INT, "1"},
-			{pgparser.IDENT, "e"},
-			{pgparser.EOF, ""},
-		})
-	})
-
-	t.Run("trailing-dot number followed by identifier", func(t *testing.T) {
-		assertTokens(t, "1.col", []wantToken{
-			{pgparser.FLOAT, "1."},
-			{pgparser.IDENT, "col"},
+			{pgparser.PLUS, "+"},
+			{pgparser.INT, "2"},
+			{pgparser.INT, "3"},
 			{pgparser.EOF, ""},
 		})
 	})
@@ -633,10 +702,11 @@ func TestLexer_Comments(t *testing.T) {
 		assertLexError(t, "/* comment")
 	})
 
-	t.Run("form feed is whitespace", func(t *testing.T) {
-		assertTokens(t, "a\fb", []wantToken{
+	t.Run("form feed and vertical tab are whitespace", func(t *testing.T) {
+		assertTokens(t, "a\fb\vc", []wantToken{
 			{pgparser.IDENT, "a"},
 			{pgparser.IDENT, "b"},
+			{pgparser.IDENT, "c"},
 			{pgparser.EOF, ""},
 		})
 	})

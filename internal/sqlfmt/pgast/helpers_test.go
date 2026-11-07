@@ -6,6 +6,10 @@ func lit(s string) *pgast.Literal { return &pgast.Literal{Val: s} }
 
 func col(name string) *pgast.ColName { return &pgast.ColName{Name: pgast.ColIdent(name)} }
 
+func typeName(name string) *pgast.TypeName {
+	return &pgast.TypeName{Names: []pgast.ColIdent{pgast.ColIdent(name)}}
+}
+
 func selectStar() *pgast.Select {
 	return &pgast.Select{
 		SelectExprs: []pgast.SelectExpr{&pgast.StarExpr{}},

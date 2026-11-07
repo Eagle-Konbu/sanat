@@ -55,9 +55,18 @@ func (p *Parser) parseCTEMaterialization() pgast.CTEMaterialization {
 	}
 }
 
-// isQueryStart reports whether tt can begin a query in a parenthesized
+// isQueryStart reports whether tt, followed by next, can begin a query in a parenthesized
 // subquery position. WITH is a reserved keyword, so it never begins an
 // expression or table reference instead.
-func isQueryStart(tt TokenType) bool {
-	return tt == SELECT || tt == WITH
+// VALUES is a col_name keyword, so it starts a query only when its first
+// row's "(" follows; otherwise it is a column name.
+func isQueryStart(tt, next TokenType) bool {
+	switch tt {
+	case SELECT, WITH, TABLE:
+		return true
+	case VALUES:
+		return next == LPAREN
+	default:
+		return false
+	}
 }

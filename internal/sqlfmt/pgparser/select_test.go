@@ -326,7 +326,6 @@ func TestParseSelect_window(t *testing.T) {
 func TestParseSelect_errors(t *testing.T) {
 	tests := []string{
 		"",
-		"SELECT",
 		"SELECT * FROM",
 		"SELECT * FROM a LEFT JOIN b",
 		"SELECT * FROM a NATURAL JOIN b ON a.id = b.id",

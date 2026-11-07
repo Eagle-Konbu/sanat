@@ -23,7 +23,10 @@ func (p *Parser) parseInsertAfterWith() *pgast.Insert {
 		ins.Alias = pgast.TableIdent(p.readColID())
 	}
 
-	ins.Columns = p.parseOptionalParenColumnList()
+	if !p.atParenthesizedQuery() {
+		ins.Columns = p.parseOptionalInsertColumnList()
+	}
+
 	ins.Rows = p.parseInsertRows()
 	ins.OnConflict = p.parseOptionalOnConflict()
 	ins.Returning = p.parseOptionalReturning()
@@ -42,8 +45,14 @@ func (p *Parser) parseInsertRows() pgast.InsertRows {
 
 		return pgast.DefaultValues{}
 	case VALUES:
-		return p.parseValuesRows()
-	case SELECT, WITH:
+		rows := p.parseValuesRows()
+		if !p.isQueryContinuation() {
+			return rows
+		}
+
+		// VALUES followed by a set operator or trailing clause is a query.
+		return p.parseQueryFrom(&pgast.Select{Values: rows}).(pgast.InsertRows) //nolint:forcetypeassert // see below
+	case SELECT, WITH, TABLE, LPAREN:
 		// parseQuery only returns a *pgast.Select or *pgast.SetOp, both of
 		// which are InsertRows.
 		return p.parseQuery().(pgast.InsertRows) //nolint:forcetypeassert // see above
@@ -52,11 +61,72 @@ func (p *Parser) parseInsertRows() pgast.InsertRows {
 	}
 }
 
-// parseOptionalOnConflict parses an optional ON CONFLICT [(col, ...)]
-// {DO NOTHING | DO UPDATE SET ... [WHERE ...]} clause. The ON CONSTRAINT
-// target, expression/COLLATE/operator-class targets, and a WHERE index
-// predicate on the target are not supported. The conflict target is optional
-// for DO NOTHING but required for DO UPDATE, as in PostgreSQL.
+// parseOptionalInsertColumnList parses an INSERT's optional
+// "(column, ...)" list, whose columns may carry indirection (col[1],
+// col.field), returning nil if there is none.
+func (p *Parser) parseOptionalInsertColumnList() []pgast.Expr {
+	if !p.consume(LPAREN) {
+		return nil
+	}
+
+	cols := p.parseSetTargetList()
+	p.expect(RPAREN)
+
+	return cols
+}
+
+// atParenthesizedQuery reports whether the current '(' after an INSERT
+// target opens a parenthesized query, as in "INSERT INTO t (SELECT ...)",
+// rather than a column list, which never starts with a query keyword or '('.
+func (p *Parser) atParenthesizedQuery() bool {
+	return p.at(LPAREN) && (isQueryStart(p.peekTok.Type, p.peek2Tok.Type) || p.peekAt(LPAREN))
+}
+
+// parseIndexElemList parses an ON CONFLICT target's comma-separated index
+// elements.
+func (p *Parser) parseIndexElemList() []*pgast.IndexElem {
+	var elems []*pgast.IndexElem
+
+	for {
+		elems = append(elems, p.parseIndexElem())
+
+		if !p.consume(COMMA) {
+			return elems
+		}
+	}
+}
+
+// parseIndexElem parses "{column | func(...) | (expr)} [COLLATE collation]
+// [opclass]". A column is read as a bare name, not an expression, so the
+// COLLATE that follows it belongs to the element.
+func (p *Parser) parseIndexElem() *pgast.IndexElem {
+	elem := &pgast.IndexElem{}
+
+	switch {
+	case p.at(LPAREN):
+		elem.Expr = p.parsePrimaryExpr()
+	case p.atFuncTableStart():
+		elem.Expr = p.parseIdentExpr()
+	default:
+		elem.Expr = &pgast.ColName{Name: pgast.ColIdent(p.readColID())}
+	}
+
+	if p.consume(COLLATE) {
+		elem.Collation = p.parseTableName()
+	}
+
+	if isColID(p.tok) {
+		elem.Opclass = p.parseTableName()
+	}
+
+	return elem
+}
+
+// parseOptionalOnConflict parses an optional ON CONFLICT clause:
+// "ON CONFLICT [(elem, ...) [WHERE predicate] | ON CONSTRAINT name]
+// {DO NOTHING | DO UPDATE SET ... [WHERE ...]}". The conflict target is
+// optional for DO NOTHING but required for DO UPDATE, as in PostgreSQL.
+// CONSTRAINT is matched as an identifier, since it is not a keyword token.
 func (p *Parser) parseOptionalOnConflict() *pgast.OnConflict {
 	if !p.at(ON) || !p.peekAt(CONFLICT) {
 		return nil
@@ -65,7 +135,20 @@ func (p *Parser) parseOptionalOnConflict() *pgast.OnConflict {
 	p.advance() // consume ON
 	p.advance() // consume CONFLICT
 
-	oc := &pgast.OnConflict{Columns: p.parseOptionalParenColumnList()}
+	oc := &pgast.OnConflict{}
+
+	switch {
+	case p.at(ON) && p.peekIsWord("constraint"):
+		p.advance() // consume ON
+		p.advance() // consume CONSTRAINT
+
+		oc.Constraint = pgast.ColIdent(p.readColID())
+	case p.consume(LPAREN):
+		oc.Target = p.parseIndexElemList()
+		p.expect(RPAREN)
+
+		oc.TargetWhere = p.parseOptionalWhereClause(WHERE)
+	}
 
 	p.expect(DO)
 
@@ -75,7 +158,7 @@ func (p *Parser) parseOptionalOnConflict() *pgast.OnConflict {
 		return oc
 	}
 
-	if oc.Columns == nil {
+	if oc.Target == nil && oc.Constraint.IsEmpty() {
 		p.failf("ON CONFLICT DO UPDATE requires a conflict target")
 	}
 
