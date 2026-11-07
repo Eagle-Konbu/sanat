@@ -348,10 +348,34 @@ SELECT [ ALL | DISTINCT [ ON ( expr [, ...] ) ] ]
 - **Row limiting**: `LIMIT` and `OFFSET` each at most once, in either order;
   `FETCH` may not be combined with `LIMIT`.
 
-Not supported: table functions in `FROM` (`FROM generate_series(...)`,
-`WITH ORDINALITY`, `ROWS FROM (...)`), `TABLESAMPLE`, `VALUES` as a query,
-`SELECT INTO`, `GROUP BY ALL`/`DISTINCT`, window frame `EXCLUDE`, and
-`ORDER BY ... USING op`.
+- **Function FROM items** ([#131](https://github.com/Eagle-Konbu/sanat/issues/131)):
+  `func(...)`, `LATERAL func(...)`, and `ROWS FROM (func(...), ...)`, each
+  optionally `WITH ORDINALITY`, as a `pgast.FuncTable` inside an
+  `AliasedTableExpr`.
+- **Alias column lists**: `AS t(a, b)` on tables, derived tables, function
+  calls, and parenthesized joins (`Columns`).
+- **`TABLESAMPLE method (args) [REPEATABLE (seed)]`** after a table's alias
+  (`AliasedTableExpr.Sample`). `TABLESAMPLE` is a type_func_name keyword, so
+  it is never read as an alias.
+- **`ONLY name`, `ONLY (name)`, and `name *`**, as for DML targets.
+- **Nested joins**: a join that still needs its `ON`/`USING` lets its right
+  side absorb the joins that follow, so `a JOIN b JOIN c ON x ON y` is
+  `a JOIN (b JOIN c ON x) ON y`, as in PostgreSQL. `JOIN ... USING (cols)
+  AS alias` (PostgreSQL 14+) sets `JoinCondition.UsingAlias`.
+- **`VALUES` and `TABLE name` queries**: like PostgreSQL's parse tree, both
+  are a `pgast.Select`, with `Values` (the rows) or `Table` (the relation)
+  set, so they work at the top level, as set-operation operands, in every
+  subquery position, as CTE bodies, and with trailing `ORDER BY`/`LIMIT`.
+  `VALUES` starts a query only when `(` follows, since it is also a
+  col_name keyword.
+- **Empty select list**: `SELECT FROM t` and a bare `SELECT` (not after
+  `DISTINCT`).
+- **Window frame `EXCLUDE CURRENT ROW | GROUP | TIES | NO OTHERS`**
+  (`FrameClause.Exclude`) and **`ORDER BY expr USING op`** (`Order.Using`),
+  in every sort clause.
+
+Not supported: column definition lists for functions returning `record`
+(`f() AS t(a int)`), `SELECT INTO`, and `GROUP BY ALL`/`DISTINCT`.
 
 ## Shared DML Grammar
 
@@ -421,10 +445,22 @@ INSERT INTO table_name [ AS alias ] [ ( column [, ...] ) ]
 - **`RETURNING`** reuses the `SELECT` list grammar (`*`, `table.*`, and
   `expr [[AS] name]`); `String()` always renders an alias with `AS`.
 
-Not yet implemented: `OVERRIDING { SYSTEM | USER } VALUE`, `ON CONFLICT ON CONSTRAINT name`,
-expression/`COLLATE`/operator-class conflict targets, a
-`WHERE index_predicate` on the conflict target, and PostgreSQL 18's
-`RETURNING WITH (...)`.
+- **Conflict targets** ([#131](https://github.com/Eagle-Konbu/sanat/issues/131)):
+  `ON CONSTRAINT name` (`OnConflict.Constraint`), or a list of
+  `pgast.IndexElem`s (`OnConflict.Target`) — a column, function call, or
+  parenthesized expression, each with an optional `COLLATE` and operator
+  class — followed by an optional `WHERE index_predicate`
+  (`OnConflict.TargetWhere`).
+- **Column list**: each column may carry indirection (`arr[1]`,
+  `c.field`), as with `UPDATE`'s `SET` targets, so `Insert.Columns` is a
+  list of target expressions.
+- **Parenthesized query source**: `INSERT INTO t (SELECT ...)` is told apart
+  from a column list by the token after `(`. A `VALUES` source followed by a
+  set operator or trailing clause continues as a query, and `TABLE name` is
+  accepted.
+
+Not yet implemented: `OVERRIDING { SYSTEM | USER } VALUE` and PostgreSQL
+18's `RETURNING WITH (...)`.
 
 ## UPDATE Statement Grammar
 
@@ -491,8 +527,6 @@ multi-table `UPDATE` target, so the two parsers share no logic.
 - `WHERE CURRENT OF cursor_name`, which needs `DECLARE CURSOR` session state;
   it is rejected with an explicit error.
 - `RETURNING WITH (OLD/NEW AS ...)` (PostgreSQL 18 only).
-- Array-subscript SET targets (`col[1] = ...`) and nested field targets
-  (`col.a.b = ...`).
 - MySQL-only clauses such as `ORDER BY`/`LIMIT` are rejected as trailing
   input.
 
@@ -600,7 +634,8 @@ row_limit  := LIMIT ... [ OFFSET ... ]
 - A leading `WITH` clause (see [Common Table Expressions](#common-table-expressions))
   scopes the whole query and is stored on the outermost statement. To scope
   one to a single operand, parenthesize the operand.
-- `VALUES` and `TABLE name` operands are not supported yet.
+- `VALUES` and `TABLE name` operands are `Select`s (see
+  [SELECT](#select-statement-grammar)), so they combine like any other.
 
 ### Subquery Positions
 
@@ -687,7 +722,6 @@ Deferred:
   ([#87](https://github.com/Eagle-Konbu/sanat/issues/87)).
 - The `SEARCH { BREADTH | DEPTH } FIRST BY ...` and `CYCLE ...` clauses on
   recursive CTEs (PostgreSQL 14+).
-- `VALUES` as a CTE body (as for set-operation operands).
 
 ### Testing
 
