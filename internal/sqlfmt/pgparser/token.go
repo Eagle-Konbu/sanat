@@ -101,6 +101,7 @@ const (
 	PLACING
 	OVERLAPS
 	TABLESAMPLE
+	TABLE
 	ARRAY
 	FILTER
 	ISNULL
@@ -254,6 +255,7 @@ var tokenNames = map[TokenType]string{
 	PLACING:      "PLACING",
 	OVERLAPS:     "OVERLAPS",
 	TABLESAMPLE:  "TABLESAMPLE",
+	TABLE:        "TABLE",
 	ARRAY:        "ARRAY",
 	FILTER:       "FILTER",
 	ISNULL:       "ISNULL",

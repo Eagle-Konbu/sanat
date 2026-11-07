@@ -23,7 +23,10 @@ func (p *Parser) parseInsertAfterWith() *pgast.Insert {
 		ins.Alias = pgast.TableIdent(p.readColID())
 	}
 
-	ins.Columns = p.parseOptionalParenColumnList()
+	if !p.atParenthesizedQuery() {
+		ins.Columns = p.parseOptionalParenColumnList()
+	}
+
 	ins.Rows = p.parseInsertRows()
 	ins.OnConflict = p.parseOptionalOnConflict()
 	ins.Returning = p.parseOptionalReturning()
@@ -42,14 +45,27 @@ func (p *Parser) parseInsertRows() pgast.InsertRows {
 
 		return pgast.DefaultValues{}
 	case VALUES:
-		return p.parseValuesRows()
-	case SELECT, WITH:
+		rows := p.parseValuesRows()
+		if !p.isQueryContinuation() {
+			return rows
+		}
+
+		// VALUES followed by a set operator or trailing clause is a query.
+		return p.parseQueryFrom(&pgast.Select{Values: rows}).(pgast.InsertRows) //nolint:forcetypeassert // see below
+	case SELECT, WITH, TABLE, LPAREN:
 		// parseQuery only returns a *pgast.Select or *pgast.SetOp, both of
 		// which are InsertRows.
 		return p.parseQuery().(pgast.InsertRows) //nolint:forcetypeassert // see above
 	default:
 		return failReturn[pgast.InsertRows](p, "expected VALUES, DEFAULT VALUES, or SELECT, got %s", p.tok.Type)
 	}
+}
+
+// atParenthesizedQuery reports whether the current '(' after an INSERT
+// target opens a parenthesized query, as in "INSERT INTO t (SELECT ...)",
+// rather than a column list, which never starts with a query keyword or '('.
+func (p *Parser) atParenthesizedQuery() bool {
+	return p.at(LPAREN) && (isQueryStart(p.peekTok.Type, p.peek2Tok.Type) || p.peekAt(LPAREN))
 }
 
 // parseOptionalOnConflict parses an optional ON CONFLICT [(col, ...)]

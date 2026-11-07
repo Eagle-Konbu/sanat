@@ -365,7 +365,6 @@ func TestParseSetOp_errors(t *testing.T) {
 		{"multiple limit on parenthesized select operand", "((SELECT 1 FETCH FIRST ROW ONLY) LIMIT 2) UNION SELECT 3"},
 		{"multiple offset on parenthesized select operand", "((SELECT 1 OFFSET 1) OFFSET 2) UNION SELECT 3"},
 		{"trailing garbage", "SELECT 1 UNION SELECT 2)"},
-		{"values operand is not supported", "SELECT 1 UNION VALUES (2)"},
 	}
 
 	for _, tt := range tests {

@@ -25,12 +25,23 @@ func (p *Parser) parseSelectAfterWith() *pgast.Select {
 // WINDOW clause. The trailing clauses are left to the caller, since after a
 // set-operation operand they apply to the whole set operation instead.
 func (p *Parser) parseSimpleSelect() *pgast.Select {
+	switch {
+	case p.at(VALUES):
+		return &pgast.Select{Values: p.parseValuesRows()}
+	case p.consume(TABLE):
+		return &pgast.Select{Table: p.parseTableShorthandRelation()}
+	}
+
 	p.expect(SELECT)
 
 	sel := &pgast.Select{}
 	p.parseSelectModifiers(sel)
 
-	sel.SelectExprs = p.parseSelectExprList()
+	// PostgreSQL allows an empty select list, as in "SELECT FROM t", but
+	// not after DISTINCT.
+	if sel.Distinct || sel.DistinctOn != nil || !p.atSelectListEnd() {
+		sel.SelectExprs = p.parseSelectExprList()
+	}
 	sel.From = p.parseOptionalFromClause()
 	sel.Where = p.parseOptionalWhereClause(WHERE)
 	sel.GroupBy = p.parseOptionalGroupBy()
@@ -38,6 +49,28 @@ func (p *Parser) parseSimpleSelect() *pgast.Select {
 	sel.Window = p.parseOptionalWindowClause()
 
 	return sel
+}
+
+// atSelectListEnd reports whether the current token ends a select list, so
+// that a select list starting here is empty.
+func (p *Parser) atSelectListEnd() bool {
+	switch p.tok.Type {
+	case EOF, SEMICOLON, RPAREN, FROM, WHERE, GROUP, HAVING, WINDOW, ORDER, LIMIT, OFFSET, FETCH, FOR,
+		UNION, INTERSECT, EXCEPT:
+		return true
+	default:
+		return false
+	}
+}
+
+// parseTableShorthandRelation parses the relation of "TABLE [ONLY] name [*]",
+// which takes no alias.
+func (p *Parser) parseTableShorthandRelation() *pgast.AliasedTableExpr {
+	if p.consume(ONLY) {
+		return &pgast.AliasedTableExpr{Expr: p.parseOptionallyParenthesizedTableName(), Only: true}
+	}
+
+	return &pgast.AliasedTableExpr{Expr: p.parseTableName(), IncludeDescendants: p.consume(STAR)}
 }
 
 // parseRowLimitClauses parses LIMIT and OFFSET (each at most once, in either
@@ -549,7 +582,7 @@ func (p *Parser) parseTableName() pgast.TableName {
 func (p *Parser) parseParenTableExpr() pgast.TableExpr {
 	p.advance() // consume '('
 
-	if isQueryStart(p.tok.Type) {
+	if isQueryStart(p.tok.Type, p.peekTok.Type) {
 		return p.parseDerivedTable()
 	}
 

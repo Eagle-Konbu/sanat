@@ -114,7 +114,7 @@ func (p *Parser) parseMultiColumnSource() pgast.Expr {
 	switch {
 	case p.consume(ROW):
 		return &pgast.RowExpr{Exprs: p.parseParenExprOrDefaultList()}
-	case p.at(LPAREN) && isQueryStart(p.peekTok.Type):
+	case p.at(LPAREN) && isQueryStart(p.peekTok.Type, p.peek2Tok.Type):
 		p.advance() // consume '('
 
 		sel := p.parseSubqueryStatement()

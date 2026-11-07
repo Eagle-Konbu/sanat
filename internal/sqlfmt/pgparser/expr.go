@@ -202,7 +202,7 @@ func (p *Parser) parseQuantifiedExpr(left pgast.Expr, op pgast.Operator) pgast.E
 // just after its opening '('. A leading parenthesized query that continues
 // into a set operation, as in "((SELECT 1) UNION SELECT 2)", is a query too.
 func (p *Parser) parseSubqueryOrExpr() pgast.Expr {
-	if isQueryStart(p.tok.Type) {
+	if isQueryStart(p.tok.Type, p.peekTok.Type) {
 		return &pgast.Subquery{Select: p.parseSubqueryStatement()}
 	}
 
@@ -280,7 +280,7 @@ func (p *Parser) parseInExpr(left pgast.Expr, not bool) pgast.Expr {
 		op = pgast.NotInOp
 	}
 
-	if isQueryStart(p.tok.Type) {
+	if isQueryStart(p.tok.Type, p.peekTok.Type) {
 		sel := p.parseSubqueryStatement()
 		p.expect(RPAREN)
 
@@ -782,7 +782,7 @@ func quoteString(content string) string {
 func (p *Parser) parseParenExprOrSubquery() pgast.Expr {
 	p.advance() // consume '('
 
-	if isQueryStart(p.tok.Type) {
+	if isQueryStart(p.tok.Type, p.peekTok.Type) {
 		sel := p.parseSubqueryStatement()
 		p.expect(RPAREN)
 

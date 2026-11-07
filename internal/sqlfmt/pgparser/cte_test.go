@@ -385,7 +385,6 @@ func TestParseSelect_withErrors(t *testing.T) {
 		{"not without materialized", "WITH x AS NOT (SELECT 1) SELECT * FROM x"},
 		{"trailing comma", "WITH x AS (SELECT 1), SELECT * FROM x"},
 		{"missing main statement", "WITH x AS (SELECT 1)"},
-		{"values body", "WITH x AS (VALUES (1)) SELECT * FROM x"},
 		{"search clause", "WITH RECURSIVE x AS (SELECT 1) SEARCH DEPTH FIRST BY a SET o SELECT * FROM x"},
 		{"cycle clause", "WITH RECURSIVE x AS (SELECT 1) CYCLE a SET c USING p SELECT * FROM x"},
 		{"with on bare set operand", "SELECT 1 FROM (SELECT 1 UNION WITH x AS (SELECT 2) SELECT * FROM x) t"},
