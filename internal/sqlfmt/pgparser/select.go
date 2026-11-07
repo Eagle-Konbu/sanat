@@ -839,10 +839,39 @@ func (p *Parser) parseFrameClause() *pgast.FrameClause {
 
 		end := p.parseFramePoint()
 
-		return &pgast.FrameClause{Unit: unit, Start: start, End: end}
+		return &pgast.FrameClause{Unit: unit, Start: start, End: end, Exclude: p.parseOptionalFrameExclusion()}
 	}
 
-	return &pgast.FrameClause{Unit: unit, Start: p.parseFramePoint()}
+	return &pgast.FrameClause{Unit: unit, Start: p.parseFramePoint(), Exclude: p.parseOptionalFrameExclusion()}
+}
+
+// parseOptionalFrameExclusion parses an optional
+// "EXCLUDE { CURRENT ROW | GROUP | TIES | NO OTHERS }". EXCLUDE and OTHERS
+// are matched as identifiers, since neither is a keyword token.
+func (p *Parser) parseOptionalFrameExclusion() pgast.FrameExclusion {
+	if !p.atWord("exclude") {
+		return pgast.ExcludeDefault
+	}
+
+	p.advance()
+
+	switch {
+	case p.consume(CURRENT):
+		p.expect(ROW)
+
+		return pgast.ExcludeCurrentRow
+	case p.consume(GROUP):
+		return pgast.ExcludeGroup
+	case p.consume(TIES):
+		return pgast.ExcludeTies
+	case p.at(NO) && p.peekIsWord("others"):
+		p.advance()
+		p.advance()
+
+		return pgast.ExcludeNoOthers
+	default:
+		return failReturn[pgast.FrameExclusion](p, "expected CURRENT ROW, GROUP, TIES, or NO OTHERS after EXCLUDE")
+	}
 }
 
 func (p *Parser) parseFramePoint() *pgast.FramePoint {
@@ -899,16 +928,41 @@ func (p *Parser) parseOrderByClause() pgast.OrderBy {
 	var orders pgast.OrderBy
 
 	for {
-		e := p.parseExpr()
-		dir := p.parseOptionalOrderDirection()
-		nulls := p.parseOptionalNullsOrder()
+		order := &pgast.Order{Expr: p.parseExpr()}
 
-		orders = append(orders, &pgast.Order{Expr: e, Direction: dir, Nulls: nulls})
+		if p.consume(USING) {
+			order.Using = p.parseSortOperator()
+		} else {
+			order.Direction = p.parseOptionalOrderDirection()
+		}
+
+		order.Nulls = p.parseOptionalNullsOrder()
+
+		orders = append(orders, order)
 
 		if !p.consume(COMMA) {
 			return orders
 		}
 	}
+}
+
+// parseSortOperator parses the operator after ORDER BY ... USING: any
+// operator, or OPERATOR([schema.]op).
+func (p *Parser) parseSortOperator() *pgast.Operator {
+	if p.at(OPERATOR) && p.peekAt(LPAREN) {
+		op := p.parseExplicitOperator()
+
+		return &op
+	}
+
+	if !isOperatorToken(p.tok.Type) {
+		return failReturn[*pgast.Operator](p, "expected operator after USING, got %s", p.tok.Type)
+	}
+
+	op := &pgast.Operator{Symbol: p.tok.Literal}
+	p.advance()
+
+	return op
 }
 
 func (p *Parser) parseOptionalOrderDirection() pgast.OrderDirection {

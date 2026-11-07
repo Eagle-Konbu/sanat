@@ -131,17 +131,23 @@ const (
 	DescOrder
 )
 
-// Order represents a single ORDER BY item.
+// Order represents a single ORDER BY item. Using, when set, is the
+// "USING operator" sort operator, which replaces ASC/DESC.
 type Order struct {
 	Expr      Expr
 	Direction OrderDirection
+	Using     *Operator
 	Nulls     NullsOrder
 }
 
 // String returns Order's SQL text.
 func (o *Order) String() string {
 	s := o.Expr.String()
-	if o.Direction == DescOrder {
+
+	switch {
+	case o.Using != nil:
+		s += " USING " + o.Using.String()
+	case o.Direction == DescOrder:
 		s += " DESC"
 	}
 
@@ -423,11 +429,39 @@ func (f *FramePoint) String() string {
 	}
 }
 
+// FrameExclusion represents a window frame's EXCLUDE option.
+type FrameExclusion int8
+
+const (
+	ExcludeDefault FrameExclusion = iota
+	ExcludeCurrentRow
+	ExcludeGroup
+	ExcludeTies
+	ExcludeNoOthers
+)
+
+// String returns FrameExclusion's SQL text, or "" when there is no option.
+func (e FrameExclusion) String() string {
+	switch e {
+	case ExcludeCurrentRow:
+		return "EXCLUDE CURRENT ROW"
+	case ExcludeGroup:
+		return "EXCLUDE GROUP"
+	case ExcludeTies:
+		return "EXCLUDE TIES"
+	case ExcludeNoOthers:
+		return "EXCLUDE NO OTHERS"
+	default:
+		return ""
+	}
+}
+
 // FrameClause represents a window frame specification.
 type FrameClause struct {
-	Unit  FrameUnit
-	Start *FramePoint
-	End   *FramePoint
+	Unit    FrameUnit
+	Start   *FramePoint
+	End     *FramePoint
+	Exclude FrameExclusion
 }
 
 // String returns FrameClause's SQL text.
@@ -436,13 +470,16 @@ func (f *FrameClause) String() string {
 		return ""
 	}
 
-	unit := f.Unit.String()
-
+	s := f.Unit.String() + " " + f.Start.String()
 	if f.End != nil {
-		return unit + " BETWEEN " + f.Start.String() + " AND " + f.End.String()
+		s = f.Unit.String() + " BETWEEN " + f.Start.String() + " AND " + f.End.String()
 	}
 
-	return unit + " " + f.Start.String()
+	if exclude := f.Exclude.String(); exclude != "" {
+		s += " " + exclude
+	}
+
+	return s
 }
 
 // Returning represents a RETURNING clause, shared by INSERT/UPDATE/DELETE/
