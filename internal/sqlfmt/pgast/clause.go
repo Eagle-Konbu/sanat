@@ -545,9 +545,13 @@ func (a *ReturningAlias) String() string {
 // UpdateExpr represents a "col = expr" SET assignment, shared by UPDATE and
 // the DO UPDATE SET clause of ON CONFLICT. The multi-column
 // "(col, ...) = source" form sets Names instead of Name.
+//
+// Each target is a column (*ColName), optionally wrapped in field
+// selections and subscripts naming part of it (*FieldSelectExpr,
+// *ArraySubscriptExpr), as in "col.field = ..." or "col[1] = ...".
 type UpdateExpr struct {
-	Name  *ColName
-	Names []*ColName
+	Name  Expr
+	Names []Expr
 	Expr  Expr
 }
 

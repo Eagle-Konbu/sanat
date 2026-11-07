@@ -93,7 +93,7 @@ type Insert struct {
 	With       *With
 	Table      TableName
 	Alias      TableIdent
-	Columns    Columns
+	Columns    []Expr // target columns, with optional field and subscript indirection (see UpdateExpr)
 	Rows       InsertRows
 	OnConflict *OnConflict
 	Returning  *Returning
@@ -115,7 +115,7 @@ func (ins *Insert) String() string {
 
 	if len(ins.Columns) > 0 {
 		b.WriteString(" (")
-		b.WriteString(ins.Columns.String())
+		b.WriteString(exprListString(ins.Columns))
 		b.WriteString(")")
 	}
 

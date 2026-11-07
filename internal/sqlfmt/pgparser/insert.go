@@ -24,7 +24,7 @@ func (p *Parser) parseInsertAfterWith() *pgast.Insert {
 	}
 
 	if !p.atParenthesizedQuery() {
-		ins.Columns = p.parseOptionalParenColumnList()
+		ins.Columns = p.parseOptionalInsertColumnList()
 	}
 
 	ins.Rows = p.parseInsertRows()
@@ -59,6 +59,20 @@ func (p *Parser) parseInsertRows() pgast.InsertRows {
 	default:
 		return failReturn[pgast.InsertRows](p, "expected VALUES, DEFAULT VALUES, or SELECT, got %s", p.tok.Type)
 	}
+}
+
+// parseOptionalInsertColumnList parses an INSERT's optional
+// "(column, ...)" list, whose columns may carry indirection (col[1],
+// col.field), returning nil if there is none.
+func (p *Parser) parseOptionalInsertColumnList() []pgast.Expr {
+	if !p.consume(LPAREN) {
+		return nil
+	}
+
+	cols := p.parseSetTargetList()
+	p.expect(RPAREN)
+
+	return cols
 }
 
 // atParenthesizedQuery reports whether the current '(' after an INSERT
