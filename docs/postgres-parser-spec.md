@@ -251,10 +251,29 @@ the comment `--a`.
   `ARRAY[[1, 2], [3, 4]]`, whose inner brackets are `ArrayExpr`s with
   `Nested` set.
 
+- Function call arguments: an aggregate's `ORDER BY` inside the parentheses
+  (`FuncExpr.OrderBy`), `WITHIN GROUP (ORDER BY ...)`
+  (`FuncExpr.WithinGroup`), `VARIADIC` on the last argument
+  (`FuncExpr.Variadic`), and the no-op `ALL` modifier, which is dropped like
+  `SELECT ALL`.
+- SQL-standard keyword-argument forms, each with its own node in
+  `pgast/funcform.go`: `EXTRACT(field FROM d)`, `SUBSTRING(s FROM a FOR b)`
+  (`FOR ... FROM` renders as `FROM ... FOR`) and
+  `SUBSTRING(s SIMILAR p ESCAPE e)`, `POSITION(a IN b)`,
+  `TRIM([BOTH | LEADING | TRAILING] [chars] FROM s)`, and
+  `OVERLAY(s PLACING r FROM a [FOR b])`. Their plain comma-separated
+  spellings stay ordinary `FuncExpr`s.
+- `(a, b) OVERLAPS (c, d)` (`OverlapsExpr`); both sides must be two-element
+  rows.
+- Column references of up to three parts (`schema.table.col`), whole-row
+  references (`t.*`, as in `count(t.*)`), and field selection
+  (`FieldSelectExpr`): `(expr).field`, `(expr).*`, `arr[1].f`, and dotted
+  references beyond three parts. As in PostgreSQL, a function call's result
+  must be parenthesized before selecting a field.
+
 Not supported (each a `*ParseError` unless noted): `IS [NOT] DOCUMENT`,
-`AT LOCAL`, `OVERLAPS`, three-part column references, `WITHIN GROUP`,
-`ORDER BY` inside aggregate calls, `VARIADIC` arguments, and SQL-standard
-function syntax such as `EXTRACT(... FROM ...)`.
+`AT LOCAL`, `COLLATION FOR (...)`, and three-part function names
+(`db.schema.f()`).
 
 ### Type Names
 
