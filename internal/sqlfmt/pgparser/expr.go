@@ -674,10 +674,14 @@ func (p *Parser) parsePrimaryExpr() pgast.Expr {
 
 	switch {
 	case p.at(LPAREN):
-		return p.parseParenExprOrSubquery()
+		return p.parseOptionalOverlaps(p.parseParenExprOrSubquery())
 	case p.at(Op):
 		return p.parsePrefixOperatorExpr()
 	case p.atIdentExprStart():
+		if expr, ok := p.tryParseSpecialFuncForm(); ok {
+			return expr
+		}
+
 		if lit, ok := p.tryParseTypedLiteral(); ok {
 			return lit
 		}
@@ -705,7 +709,7 @@ func (p *Parser) tryParseKeywordLedExpr() (pgast.Expr, bool) {
 	case p.at(ARRAY):
 		return p.parseArrayLiteral(), true
 	case p.at(ROW) && p.peekAt(LPAREN):
-		return p.parseRowConstructor(), true
+		return p.parseOptionalOverlaps(p.parseRowConstructor()), true
 	default:
 		return nil, false
 	}

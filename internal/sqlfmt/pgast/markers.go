@@ -60,6 +60,12 @@ func (*OperatorExpr) iExpr()       {}
 func (*NamedArgExpr) iExpr()       {}
 func (*IsNormalizedExpr) iExpr()   {}
 func (*FieldSelectExpr) iExpr()    {}
+func (*ExtractExpr) iExpr()        {}
+func (*SubstringExpr) iExpr()      {}
+func (*PositionExpr) iExpr()       {}
+func (*TrimExpr) iExpr()           {}
+func (*OverlayExpr) iExpr()        {}
+func (*OverlapsExpr) iExpr()       {}
 func (*ArraySubquery) iExpr()      {}
 func (*QuantifiedExpr) iExpr()     {}
 func (*CollateExpr) iExpr()        {}
