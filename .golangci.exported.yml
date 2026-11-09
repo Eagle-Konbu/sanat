@@ -8,10 +8,17 @@ version: "2"
 # must only report issues in the diff (run with --new-from-merge-base or
 # golangci-lint-action's only-new-issues), while every linter in
 # .golangci.yml keeps checking the whole repository. Existing undocumented
-# exported identifiers are left alone until their code is touched.
+# exported identifiers are left alone until their file is touched.
 
 run:
   timeout: 5m
+
+# revive reports a missing doc comment on the declaration line, so a change
+# to only a function's body would fall outside the diff and be filtered out.
+# golangci-lint cannot map a hunk to its enclosing declaration, so report
+# issues anywhere in a changed file instead.
+issues:
+  whole-files: true
 
 linters:
   default: none
