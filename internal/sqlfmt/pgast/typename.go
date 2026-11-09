@@ -99,10 +99,12 @@ func (t *TypeName) baseString() string {
 
 // TypedLiteral represents a string constant preceded by its type, such as
 // date '2020-01-01', double precision '1.5', or interval '1' day. Value is
-// the constant as SQL text ('...').
+// the constant as normalized SQL text ('...'), and ValueRaw is the constant
+// exactly as written in the source, with the same meaning as Literal.Raw.
 type TypedLiteral struct {
-	Type  *TypeName
-	Value string
+	Type     *TypeName
+	Value    string
+	ValueRaw string
 }
 
 // String returns TypedLiteral's SQL text. An interval's field restriction

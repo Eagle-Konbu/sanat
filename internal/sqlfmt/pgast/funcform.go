@@ -7,10 +7,13 @@ import "strings"
 // spellings (substring(s, 1, 2), trim(s)) parse as ordinary FuncExprs.
 
 // ExtractExpr represents EXTRACT(field FROM source). Field is SQL text: an
-// identifier such as year, or a string constant such as 'epoch'.
+// identifier such as year, or a string constant such as 'epoch'. FieldRaw is
+// the field exactly as written in the source, with the same meaning as
+// Literal.Raw and ColIdent.Raw.
 type ExtractExpr struct {
-	Field  string
-	Source Expr
+	Field    string
+	FieldRaw string
+	Source   Expr
 }
 
 // String returns ExtractExpr's SQL text.

@@ -140,7 +140,7 @@ func (p *Parser) parseSelectExpr() pgast.SelectExpr {
 	expr := p.parseExpr()
 	alias := p.parseOptionalColumnAlias()
 
-	return &pgast.AliasedExpr{Expr: expr, As: pgast.ColIdent(alias)}
+	return &pgast.AliasedExpr{Expr: expr, As: alias}
 }
 
 // tryParseQualifiedStar consumes and returns a `table.*` or
@@ -177,8 +177,8 @@ func (p *Parser) tryParseQualifiedStar() pgast.SelectExpr {
 
 // parseOptionalColumnAlias parses an optional select-list (or RETURNING)
 // alias: any keyword after AS, or a BARE_LABEL keyword without it. Returns
-// "" if none is present.
-func (p *Parser) parseOptionalColumnAlias() string {
+// an empty ColIdent if none is present.
+func (p *Parser) parseOptionalColumnAlias() pgast.ColIdent {
 	if p.consume(AS) {
 		return p.readColLabel()
 	}
@@ -187,43 +187,44 @@ func (p *Parser) parseOptionalColumnAlias() string {
 		return p.readColLabel()
 	}
 
-	return ""
+	return pgast.ColIdent{}
 }
 
 // parseOptionalTableAlias parses an optional "[AS] name" table alias, whose
-// name must be a ColId with or without AS. Returns "" if none is present.
-// Every clause that can follow a table reference starts with a reserved or
-// type_func_name keyword, so a ColId here is always an alias.
-func (p *Parser) parseOptionalTableAlias() string {
+// name must be a ColId with or without AS. Returns an empty TableIdent if
+// none is present. Every clause that can follow a table reference starts
+// with a reserved or type_func_name keyword, so a ColId here is always an
+// alias.
+func (p *Parser) parseOptionalTableAlias() pgast.TableIdent {
 	if p.consume(AS) || isColID(p.tok) {
-		return p.readColID()
+		return pgast.TableIdent(p.readColID())
 	}
 
-	return ""
+	return pgast.TableIdent{}
 }
 
 // readColID consumes a ColId: a column, table, alias, CTE, or window name.
-func (p *Parser) readColID() string {
+func (p *Parser) readColID() pgast.ColIdent {
 	return p.readName(isColID)
 }
 
 // readColLabel consumes a ColLabel: an identifier or any keyword.
-func (p *Parser) readColLabel() string {
+func (p *Parser) readColLabel() pgast.ColIdent {
 	return p.readName(isColLabel)
 }
 
-// readName consumes a name token that accepts allows, as SQL text (see
-// identText). The accepts predicate carries the grammar position's keyword
-// rules, such as isColID or isColLabel.
-func (p *Parser) readName(accepts func(Token) bool) string {
+// readName consumes a name token that accepts allows (see identOf). The
+// accepts predicate carries the grammar position's keyword rules, such as
+// isColID or isColLabel.
+func (p *Parser) readName(accepts func(Token) bool) pgast.ColIdent {
 	if !accepts(p.tok) {
 		p.failf("expected identifier, got %s", p.tok.Type)
 	}
 
-	text := identText(p.tok)
+	ident := p.identOf(p.tok)
 	p.advance()
 
-	return text
+	return ident
 }
 
 func (p *Parser) parseOptionalFromClause() []pgast.TableExpr {
@@ -418,7 +419,7 @@ func (p *Parser) parseColumnList() pgast.Columns {
 	var cols pgast.Columns
 
 	for {
-		cols = append(cols, pgast.ColIdent(p.readColID()))
+		cols = append(cols, p.readColID())
 
 		if !p.consume(COMMA) {
 			return cols
@@ -563,11 +564,11 @@ func (p *Parser) parseWindowlessFuncCall() pgast.Expr {
 // parseOptionalAliasClause parses an optional "[AS] alias [(column, ...)]".
 func (p *Parser) parseOptionalAliasClause() (pgast.TableIdent, pgast.Columns) {
 	alias := p.parseOptionalTableAlias()
-	if alias == "" {
-		return "", nil
+	if alias.IsEmpty() {
+		return pgast.TableIdent{}, nil
 	}
 
-	return pgast.TableIdent(alias), p.parseOptionalParenColumnList()
+	return alias, p.parseOptionalParenColumnList()
 }
 
 // parseOptionalTableSample parses an optional
@@ -801,7 +802,7 @@ func (p *Parser) parseOptionalWindowClause() []*pgast.NamedWindow {
 
 		p.expect(RPAREN)
 
-		windows = append(windows, &pgast.NamedWindow{Name: pgast.ColIdent(name), Spec: spec})
+		windows = append(windows, &pgast.NamedWindow{Name: name, Spec: spec})
 
 		if !p.consume(COMMA) {
 			return windows
@@ -832,7 +833,7 @@ func (p *Parser) parseWindowSpecBody() *pgast.WindowSpec {
 	spec := &pgast.WindowSpec{}
 
 	if isBaseWindowName(p.tok) {
-		spec.Name = pgast.ColIdent(p.readColID())
+		spec.Name = p.readColID()
 	}
 
 	if p.consume(PARTITION) {

@@ -29,19 +29,19 @@ func TestSelect_String(t *testing.T) {
 		{
 			"full clauses",
 			&pgast.Select{
-				With:        &pgast.With{CTEs: []*pgast.CommonTableExpr{{Name: "cte", Subquery: selectStar()}}},
+				With:        &pgast.With{CTEs: []*pgast.CommonTableExpr{{Name: pgast.TableIdent{Name: "cte"}, Subquery: selectStar()}}},
 				SelectExprs: []pgast.SelectExpr{&pgast.AliasedExpr{Expr: col("id")}},
-				From:        []pgast.TableExpr{&pgast.AliasedTableExpr{Expr: pgast.TableName{Name: "t"}}},
+				From:        []pgast.TableExpr{&pgast.AliasedTableExpr{Expr: pgast.TableName{Name: pgast.TableIdent{Name: "t"}}}},
 				Where:       &pgast.Where{Expr: col("active")},
 				GroupBy:     &pgast.GroupBy{Elements: []pgast.Expr{col("id")}},
 				Having:      &pgast.Where{Expr: col("cond")},
-				Window:      []*pgast.NamedWindow{{Name: "w", Spec: &pgast.WindowSpec{}}},
+				Window:      []*pgast.NamedWindow{{Name: pgast.ColIdent{Name: "w"}, Spec: &pgast.WindowSpec{}}},
 				OrderBy:     pgast.OrderBy{{Expr: col("id")}},
 				Limit:       &pgast.Limit{Count: lit("10")},
 				Offset:      &pgast.Offset{Start: lit("5")},
 				Fetch:       &pgast.Fetch{Count: lit("1")},
 				Locks: []*pgast.Lock{
-					{Strength: pgast.ForUpdate, Of: []pgast.TableName{{Name: "t"}}},
+					{Strength: pgast.ForUpdate, Of: []pgast.TableName{{Name: pgast.TableIdent{Name: "t"}}}},
 					{Strength: pgast.ForShare},
 				},
 			},
@@ -65,7 +65,7 @@ func TestInsert_String(t *testing.T) {
 		{
 			"values",
 			&pgast.Insert{
-				Table:   pgast.TableName{Name: "users"},
+				Table:   pgast.TableName{Name: pgast.TableIdent{Name: "users"}},
 				Columns: []pgast.Expr{col("id"), col("name")},
 				Rows:    pgast.Values{{lit("1"), lit("'a'")}},
 			},
@@ -74,9 +74,9 @@ func TestInsert_String(t *testing.T) {
 		{
 			"with alias, on conflict, returning",
 			&pgast.Insert{
-				With:       &pgast.With{CTEs: []*pgast.CommonTableExpr{{Name: "cte", Subquery: selectStar()}}},
-				Table:      pgast.TableName{Name: "users"},
-				Alias:      "u",
+				With:       &pgast.With{CTEs: []*pgast.CommonTableExpr{{Name: pgast.TableIdent{Name: "cte"}, Subquery: selectStar()}}},
+				Table:      pgast.TableName{Name: pgast.TableIdent{Name: "users"}},
+				Alias:      pgast.TableIdent{Name: "u"},
 				Rows:       pgast.DefaultValues{},
 				OnConflict: &pgast.OnConflict{DoNothing: true},
 				Returning:  &pgast.Returning{Exprs: []pgast.SelectExpr{&pgast.AliasedExpr{Expr: col("id")}}},
@@ -110,7 +110,7 @@ func TestUpdate_String(t *testing.T) {
 		{
 			"minimal",
 			&pgast.Update{
-				Table: &pgast.AliasedTableExpr{Expr: pgast.TableName{Name: "users"}},
+				Table: &pgast.AliasedTableExpr{Expr: pgast.TableName{Name: pgast.TableIdent{Name: "users"}}},
 				Set:   []*pgast.UpdateExpr{{Name: col("name"), Expr: lit("'a'")}},
 			},
 			"UPDATE users SET name = 'a'",
@@ -118,10 +118,10 @@ func TestUpdate_String(t *testing.T) {
 		{
 			"with from, where, returning",
 			&pgast.Update{
-				With:  &pgast.With{CTEs: []*pgast.CommonTableExpr{{Name: "cte", Subquery: selectStar()}}},
-				Table: &pgast.AliasedTableExpr{Expr: pgast.TableName{Name: "users"}},
+				With:  &pgast.With{CTEs: []*pgast.CommonTableExpr{{Name: pgast.TableIdent{Name: "cte"}, Subquery: selectStar()}}},
+				Table: &pgast.AliasedTableExpr{Expr: pgast.TableName{Name: pgast.TableIdent{Name: "users"}}},
 				Set:   []*pgast.UpdateExpr{{Name: col("name"), Expr: lit("'a'")}},
-				From:  []pgast.TableExpr{&pgast.AliasedTableExpr{Expr: pgast.TableName{Name: "other"}}},
+				From:  []pgast.TableExpr{&pgast.AliasedTableExpr{Expr: pgast.TableName{Name: pgast.TableIdent{Name: "other"}}}},
 				Where: &pgast.Where{Expr: col("active")},
 				Returning: &pgast.Returning{
 					Exprs: []pgast.SelectExpr{&pgast.AliasedExpr{Expr: col("id")}},
@@ -132,7 +132,7 @@ func TestUpdate_String(t *testing.T) {
 		{
 			"only with alias",
 			&pgast.Update{
-				Table: &pgast.AliasedTableExpr{Expr: pgast.TableName{Name: "users"}, As: "u", Only: true},
+				Table: &pgast.AliasedTableExpr{Expr: pgast.TableName{Name: pgast.TableIdent{Name: "users"}}, As: pgast.TableIdent{Name: "u"}, Only: true},
 				Set:   []*pgast.UpdateExpr{{Name: col("name"), Expr: lit("'a'")}},
 			},
 			"UPDATE ONLY users u SET name = 'a'",
@@ -140,7 +140,7 @@ func TestUpdate_String(t *testing.T) {
 		{
 			"descendants without alias",
 			&pgast.Update{
-				Table: &pgast.AliasedTableExpr{Expr: pgast.TableName{Name: "users"}, IncludeDescendants: true},
+				Table: &pgast.AliasedTableExpr{Expr: pgast.TableName{Name: pgast.TableIdent{Name: "users"}}, IncludeDescendants: true},
 				Set:   []*pgast.UpdateExpr{{Name: col("name"), Expr: lit("'a'")}},
 			},
 			"UPDATE users * SET name = 'a'",
@@ -148,7 +148,7 @@ func TestUpdate_String(t *testing.T) {
 		{
 			"set alias keeps as",
 			&pgast.Update{
-				Table: &pgast.AliasedTableExpr{Expr: pgast.TableName{Name: "users"}, As: "set", Only: true},
+				Table: &pgast.AliasedTableExpr{Expr: pgast.TableName{Name: pgast.TableIdent{Name: "users"}}, As: pgast.TableIdent{Name: "set"}, Only: true},
 				Set:   []*pgast.UpdateExpr{{Name: col("name"), Expr: lit("'a'")}},
 			},
 			"UPDATE ONLY users AS set SET name = 'a'",
@@ -170,15 +170,15 @@ func TestDelete_String(t *testing.T) {
 	}{
 		{
 			"minimal",
-			&pgast.Delete{Table: &pgast.AliasedTableExpr{Expr: pgast.TableName{Name: "users"}}},
+			&pgast.Delete{Table: &pgast.AliasedTableExpr{Expr: pgast.TableName{Name: pgast.TableIdent{Name: "users"}}}},
 			"DELETE FROM users",
 		},
 		{
 			"with using, where, returning",
 			&pgast.Delete{
-				With:  &pgast.With{CTEs: []*pgast.CommonTableExpr{{Name: "cte", Subquery: selectStar()}}},
-				Table: &pgast.AliasedTableExpr{Expr: pgast.TableName{Name: "users"}},
-				Using: []pgast.TableExpr{&pgast.AliasedTableExpr{Expr: pgast.TableName{Name: "other"}}},
+				With:  &pgast.With{CTEs: []*pgast.CommonTableExpr{{Name: pgast.TableIdent{Name: "cte"}, Subquery: selectStar()}}},
+				Table: &pgast.AliasedTableExpr{Expr: pgast.TableName{Name: pgast.TableIdent{Name: "users"}}},
+				Using: []pgast.TableExpr{&pgast.AliasedTableExpr{Expr: pgast.TableName{Name: pgast.TableIdent{Name: "other"}}}},
 				Where: &pgast.Where{Expr: col("active")},
 				Returning: &pgast.Returning{
 					Exprs: []pgast.SelectExpr{&pgast.AliasedExpr{Expr: col("id")}},
@@ -188,7 +188,7 @@ func TestDelete_String(t *testing.T) {
 		},
 		{
 			"set alias keeps as",
-			&pgast.Delete{Table: &pgast.AliasedTableExpr{Expr: pgast.TableName{Name: "users"}, As: "set"}},
+			&pgast.Delete{Table: &pgast.AliasedTableExpr{Expr: pgast.TableName{Name: pgast.TableIdent{Name: "users"}}, As: pgast.TableIdent{Name: "set"}}},
 			"DELETE FROM users AS set",
 		},
 	}
@@ -289,7 +289,7 @@ func TestSetOp_String(t *testing.T) {
 				left.Locks = []*pgast.Lock{{Strength: pgast.ForUpdate}}
 
 				right := selectStar()
-				right.With = &pgast.With{CTEs: []*pgast.CommonTableExpr{{Name: "cte", Subquery: selectStar()}}}
+				right.With = &pgast.With{CTEs: []*pgast.CommonTableExpr{{Name: pgast.TableIdent{Name: "cte"}, Subquery: selectStar()}}}
 
 				return &pgast.SetOp{Left: left, Right: right, Op: pgast.Union}
 			}(),
@@ -312,7 +312,7 @@ func TestSetOp_String(t *testing.T) {
 		{
 			"with clauses",
 			&pgast.SetOp{
-				With:    &pgast.With{Recursive: true, CTEs: []*pgast.CommonTableExpr{{Name: "cte", Subquery: selectStar()}}},
+				With:    &pgast.With{Recursive: true, CTEs: []*pgast.CommonTableExpr{{Name: pgast.TableIdent{Name: "cte"}, Subquery: selectStar()}}},
 				Left:    selectStar(),
 				Right:   selectStar(),
 				Op:      pgast.Except,
@@ -343,12 +343,12 @@ func TestWith_String(t *testing.T) {
 		{"nil receiver", nilWith, ""},
 		{
 			"simple",
-			&pgast.With{CTEs: []*pgast.CommonTableExpr{{Name: "cte", Subquery: selectStar()}}},
+			&pgast.With{CTEs: []*pgast.CommonTableExpr{{Name: pgast.TableIdent{Name: "cte"}, Subquery: selectStar()}}},
 			"WITH cte AS (SELECT * FROM t)",
 		},
 		{
 			"recursive",
-			&pgast.With{Recursive: true, CTEs: []*pgast.CommonTableExpr{{Name: "cte", Subquery: selectStar()}}},
+			&pgast.With{Recursive: true, CTEs: []*pgast.CommonTableExpr{{Name: pgast.TableIdent{Name: "cte"}, Subquery: selectStar()}}},
 			"WITH RECURSIVE cte AS (SELECT * FROM t)",
 		},
 	}
@@ -368,23 +368,23 @@ func TestCommonTableExpr_String(t *testing.T) {
 	}{
 		{
 			"without columns",
-			&pgast.CommonTableExpr{Name: "cte", Subquery: selectStar()},
+			&pgast.CommonTableExpr{Name: pgast.TableIdent{Name: "cte"}, Subquery: selectStar()},
 			"cte AS (SELECT * FROM t)",
 		},
 		{
 			"with columns",
-			&pgast.CommonTableExpr{Name: "cte", Columns: pgast.Columns{"a", "b"}, Subquery: selectStar()},
+			&pgast.CommonTableExpr{Name: pgast.TableIdent{Name: "cte"}, Columns: pgast.Columns{pgast.ColIdent{Name: "a"}, pgast.ColIdent{Name: "b"}}, Subquery: selectStar()},
 			"cte (a, b) AS (SELECT * FROM t)",
 		},
 		{
 			"materialized",
-			&pgast.CommonTableExpr{Name: "cte", Materialization: pgast.Materialized, Subquery: selectStar()},
+			&pgast.CommonTableExpr{Name: pgast.TableIdent{Name: "cte"}, Materialization: pgast.Materialized, Subquery: selectStar()},
 			"cte AS MATERIALIZED (SELECT * FROM t)",
 		},
 		{
 			"not materialized with columns",
 			&pgast.CommonTableExpr{
-				Name: "cte", Columns: pgast.Columns{"a"}, Materialization: pgast.NotMaterialized, Subquery: selectStar(),
+				Name: pgast.TableIdent{Name: "cte"}, Columns: pgast.Columns{pgast.ColIdent{Name: "a"}}, Materialization: pgast.NotMaterialized, Subquery: selectStar(),
 			},
 			"cte (a) AS NOT MATERIALIZED (SELECT * FROM t)",
 		},
@@ -408,14 +408,14 @@ func TestMerge_String(t *testing.T) {
 		{
 			"update and insert",
 			&pgast.Merge{
-				Target: &pgast.AliasedTableExpr{Expr: pgast.TableName{Name: "t"}},
-				Source: &pgast.AliasedTableExpr{Expr: pgast.TableName{Name: "s"}},
+				Target: &pgast.AliasedTableExpr{Expr: pgast.TableName{Name: pgast.TableIdent{Name: "t"}}},
+				Source: &pgast.AliasedTableExpr{Expr: pgast.TableName{Name: pgast.TableIdent{Name: "s"}}},
 				On:     &pgast.ComparisonExpr{Operator: pgast.EqualOp, Left: col("t.id"), Right: col("s.id")},
 				Whens: []*pgast.MergeWhen{
 					{Match: pgast.MergeMatched, Action: &pgast.MergeUpdate{Set: setName}},
 					{
 						Match:  pgast.MergeNotMatched,
-						Action: &pgast.MergeInsert{Columns: pgast.Columns{"id"}, Values: []pgast.Expr{col("s.id")}},
+						Action: &pgast.MergeInsert{Columns: pgast.Columns{pgast.ColIdent{Name: "id"}}, Values: []pgast.Expr{col("s.id")}},
 					},
 				},
 			},
@@ -427,16 +427,16 @@ func TestMerge_String(t *testing.T) {
 			"with, only target, and returning with aliases",
 			&pgast.Merge{
 				With: &pgast.With{CTEs: []*pgast.CommonTableExpr{
-					{Name: "s", Subquery: &pgast.Select{SelectExprs: []pgast.SelectExpr{&pgast.AliasedExpr{Expr: lit("1")}}}},
+					{Name: pgast.TableIdent{Name: "s"}, Subquery: &pgast.Select{SelectExprs: []pgast.SelectExpr{&pgast.AliasedExpr{Expr: lit("1")}}}},
 				}},
-				Target: &pgast.AliasedTableExpr{Expr: pgast.TableName{Name: "t"}, As: "x", Only: true},
-				Source: &pgast.AliasedTableExpr{Expr: pgast.TableName{Name: "s"}},
+				Target: &pgast.AliasedTableExpr{Expr: pgast.TableName{Name: pgast.TableIdent{Name: "t"}}, As: pgast.TableIdent{Name: "x"}, Only: true},
+				Source: &pgast.AliasedTableExpr{Expr: pgast.TableName{Name: pgast.TableIdent{Name: "s"}}},
 				On:     lit("TRUE"),
 				Whens:  []*pgast.MergeWhen{{Match: pgast.MergeMatched, Action: pgast.MergeDelete{}}},
 				Returning: &pgast.Returning{
 					Aliases: []*pgast.ReturningAlias{
-						{Kind: pgast.ReturningOld, Name: "o"},
-						{Kind: pgast.ReturningNew, Name: "n"},
+						{Kind: pgast.ReturningOld, Name: pgast.TableIdent{Name: "o"}},
+						{Kind: pgast.ReturningNew, Name: pgast.TableIdent{Name: "n"}},
 					},
 					Exprs: []pgast.SelectExpr{&pgast.AliasedExpr{Expr: col("o.id")}},
 				},
@@ -500,7 +500,7 @@ func TestMergeWhen_String(t *testing.T) {
 		{
 			"insert overriding system value",
 			&pgast.MergeWhen{Match: pgast.MergeNotMatched, Action: &pgast.MergeInsert{
-				Columns:    pgast.Columns{"id"},
+				Columns:    pgast.Columns{pgast.ColIdent{Name: "id"}},
 				Overriding: pgast.OverridingSystemValue,
 				Values:     []pgast.Expr{lit("1")},
 			}},

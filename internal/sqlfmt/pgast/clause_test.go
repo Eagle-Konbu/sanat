@@ -242,7 +242,7 @@ func TestLock_String(t *testing.T) {
 			"update of with nowait",
 			&pgast.Lock{
 				Strength: pgast.ForUpdate,
-				Of:       []pgast.TableName{{Name: "a"}, {Name: "b"}},
+				Of:       []pgast.TableName{{Name: pgast.TableIdent{Name: "a"}}, {Name: pgast.TableIdent{Name: "b"}}},
 				Wait:     pgast.NoWait,
 			},
 			"FOR UPDATE OF a, b NOWAIT",
@@ -257,7 +257,7 @@ func TestLock_String(t *testing.T) {
 }
 
 func TestNamedWindow_String(t *testing.T) {
-	n := &pgast.NamedWindow{Name: "w", Spec: &pgast.WindowSpec{PartitionBy: []pgast.Expr{col("a")}}}
+	n := &pgast.NamedWindow{Name: pgast.ColIdent{Name: "w"}, Spec: &pgast.WindowSpec{PartitionBy: []pgast.Expr{col("a")}}}
 	assertEqual(t, "w AS (PARTITION BY a)", n.String())
 }
 
@@ -271,11 +271,11 @@ func TestWindowSpec_String(t *testing.T) {
 	}{
 		{"nil receiver", nilSpec, ""},
 		{"empty", &pgast.WindowSpec{}, ""},
-		{"name only", &pgast.WindowSpec{Name: "w"}, "w"},
+		{"name only", &pgast.WindowSpec{Name: pgast.ColIdent{Name: "w"}}, "w"},
 		{
 			"full",
 			&pgast.WindowSpec{
-				Name:        "w",
+				Name:        pgast.ColIdent{Name: "w"},
 				PartitionBy: []pgast.Expr{col("dept")},
 				OrderBy:     pgast.OrderBy{{Expr: col("salary")}},
 				Frame: &pgast.FrameClause{
@@ -383,8 +383,8 @@ func TestReturning_String(t *testing.T) {
 			"output aliases",
 			&pgast.Returning{
 				Aliases: []*pgast.ReturningAlias{
-					{Kind: pgast.ReturningNew, Name: "n"},
-					{Kind: pgast.ReturningOld, Name: "o"},
+					{Kind: pgast.ReturningNew, Name: pgast.TableIdent{Name: "n"}},
+					{Kind: pgast.ReturningOld, Name: pgast.TableIdent{Name: "o"}},
 				},
 				Exprs: []pgast.SelectExpr{&pgast.AliasedExpr{Expr: col("o.a")}, &pgast.AliasedExpr{Expr: col("n.a")}},
 			},
@@ -428,7 +428,7 @@ func TestOnConflict_String(t *testing.T) {
 		{
 			"constraint do update",
 			&pgast.OnConflict{
-				Constraint: "users_pkey",
+				Constraint: pgast.ColIdent{Name: "users_pkey"},
 				Set:        []*pgast.UpdateExpr{{Name: col("name"), Expr: lit("'bob'")}},
 			},
 			"ON CONFLICT ON CONSTRAINT users_pkey DO UPDATE SET name = 'bob'",

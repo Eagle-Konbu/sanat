@@ -195,12 +195,12 @@ func (u *Update) String() string {
 // without AS, except an alias named set: PostgreSQL never reads a bare SET
 // after the target as an alias.
 func dmlTargetString(t *AliasedTableExpr) string {
-	if t.As != "set" {
+	if t.As.Name != "set" {
 		return t.String()
 	}
 
 	bare := *t
-	bare.As = ""
+	bare.As = TableIdent{}
 
 	return bare.String() + " AS set"
 }

@@ -108,7 +108,7 @@ func (p *Parser) parseIndexElem() *pgast.IndexElem {
 	case p.atFuncTableStart():
 		elem.Expr = p.parseWindowlessFuncCall()
 	default:
-		elem.Expr = &pgast.ColName{Name: pgast.ColIdent(p.readColID())}
+		elem.Expr = &pgast.ColName{Name: p.readColID()}
 	}
 
 	if p.consume(COLLATE) {
@@ -142,7 +142,7 @@ func (p *Parser) parseOptionalOnConflict() *pgast.OnConflict {
 		p.advance() // consume ON
 		p.advance() // consume CONSTRAINT
 
-		oc.Constraint = pgast.ColIdent(p.readColID())
+		oc.Constraint = p.readColID()
 	case p.consume(LPAREN):
 		oc.Target = p.parseIndexElemList()
 		p.expect(RPAREN)

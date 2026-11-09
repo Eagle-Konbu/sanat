@@ -418,8 +418,17 @@ func (c *ColName) String() string {
 
 // Literal represents a literal value (number, string, boolean, NULL, ...)
 // rendered as-is.
+//
+// Val is the normalized SQL text String renders: pgparser re-encodes every
+// string constant ('...', E'...', $tag$...$tag$, and adjacent constants
+// joined across a newline) as a plain '...'. Raw is the literal exactly as
+// written in the source, spanning every part of a joined constant along with
+// the whitespace between them, for a renderer that must reproduce the user's
+// spelling. Raw is display-only and empty for a literal that was not parsed
+// from source text.
 type Literal struct {
 	Val string
+	Raw string
 }
 
 // String returns Literal's SQL text.

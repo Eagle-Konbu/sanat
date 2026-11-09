@@ -9,7 +9,7 @@ import (
 func TestParseExpr_aggregateArguments(t *testing.T) {
 	t.Run("structure", func(t *testing.T) {
 		assertExpr(t, "string_agg(x, ',' ORDER BY y DESC)", &pgast.FuncExpr{
-			Name:    "string_agg",
+			Name:    pgast.ColIdent{Name: "string_agg"},
 			Args:    []pgast.Expr{col("x"), &pgast.Literal{Val: "','"}},
 			OrderBy: pgast.OrderBy{{Expr: col("y"), Direction: pgast.DescOrder}},
 		})
@@ -56,13 +56,13 @@ func TestParseExpr_aggregateArguments(t *testing.T) {
 func TestParseExpr_indirection(t *testing.T) {
 	t.Run("three-part column", func(t *testing.T) {
 		assertExpr(t, "s.t.c", &pgast.ColName{
-			Qualifier: pgast.TableName{Qualifier: "s", Name: "t"},
-			Name:      "c",
+			Qualifier: pgast.TableName{Qualifier: pgast.TableIdent{Name: "s"}, Name: pgast.TableIdent{Name: "t"}},
+			Name:      pgast.ColIdent{Name: "c"},
 		})
 	})
 
 	t.Run("field of a parenthesized expression", func(t *testing.T) {
-		assertExpr(t, "(x).f", &pgast.FieldSelectExpr{Expr: &pgast.ParenExpr{Expr: col("x")}, Field: "f"})
+		assertExpr(t, "(x).f", &pgast.FieldSelectExpr{Expr: &pgast.ParenExpr{Expr: col("x")}, Field: pgast.ColIdent{Name: "f"}})
 	})
 
 	tests := []struct {

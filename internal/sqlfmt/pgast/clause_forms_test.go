@@ -27,7 +27,7 @@ func TestFrameExclusion_String(t *testing.T) {
 }
 
 func TestOnConflict_String_targets(t *testing.T) {
-	elem := &pgast.IndexElem{Expr: col("a"), Collation: pgast.TableName{Name: `"C"`}, Opclass: pgast.TableName{Name: "text_ops"}}
+	elem := &pgast.IndexElem{Expr: col("a"), Collation: pgast.TableName{Name: pgast.TableIdent{Name: `"C"`}}, Opclass: pgast.TableName{Name: pgast.TableIdent{Name: "text_ops"}}}
 	assertEqual(t, `a COLLATE "C" text_ops`, elem.String())
 
 	oc := &pgast.OnConflict{

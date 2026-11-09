@@ -193,7 +193,7 @@ func TestParseSetOp_with(t *testing.T) {
 func TestParseSetOp_withAttachesToOutermost(t *testing.T) {
 	setOp := mustParseSetOp(t, "WITH x AS (SELECT 1) SELECT 1 UNION SELECT 2 INTERSECT SELECT 3")
 
-	if setOp.With == nil || len(setOp.With.CTEs) != 1 || setOp.With.CTEs[0].Name != "x" {
+	if setOp.With == nil || len(setOp.With.CTEs) != 1 || setOp.With.CTEs[0].Name.Name != "x" {
 		t.Fatalf("outermost With = %#v, want one CTE named x", setOp.With)
 	}
 

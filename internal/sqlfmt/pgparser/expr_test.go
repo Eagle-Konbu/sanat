@@ -32,6 +32,8 @@ func assertExpr(t *testing.T, input string, want pgast.Expr) {
 	t.Helper()
 
 	got := parseExpr(t, input)
+	clearRaw(got)
+
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("ParseExpr(%q) =\n  %#v\nwant\n  %#v", input, got, want)
 	}
@@ -45,11 +47,11 @@ func assertExprError(t *testing.T, input string) {
 	}
 }
 
-func col(name string) *pgast.ColName { return &pgast.ColName{Name: pgast.ColIdent(name)} }
+func col(name string) *pgast.ColName { return &pgast.ColName{Name: pgast.ColIdent{Name: name}} }
 func num(s string) *pgast.Literal    { return &pgast.Literal{Val: s} }
 
 func typeName(name string) *pgast.TypeName {
-	return &pgast.TypeName{Names: []pgast.ColIdent{pgast.ColIdent(name)}}
+	return &pgast.TypeName{Names: []pgast.ColIdent{{Name: name}}}
 }
 
 func TestParseExpr_literals(t *testing.T) {
@@ -72,7 +74,7 @@ func TestParseExpr_questionMarkPlaceholder(t *testing.T) {
 	}{
 		{"bare operand", "?", placeholder},
 		{"comparison operand", "id = ?", &pgast.ComparisonExpr{Left: col("id"), Operator: pgast.EqualOp, Right: placeholder}},
-		{"function argument", "f(?)", &pgast.FuncExpr{Name: "f", Args: []pgast.Expr{placeholder}}},
+		{"function argument", "f(?)", &pgast.FuncExpr{Name: pgast.ColIdent{Name: "f"}, Args: []pgast.Expr{placeholder}}},
 		{"arithmetic operand", "? + 1", &pgast.ArithmeticExpr{Operator: pgast.PlusOp, Left: placeholder, Right: num("1")}},
 		{"jsonb key-exists operator", "data ? 'key'", opExpr(col("data"), "?", &pgast.Literal{Val: "'key'"})},
 		{
@@ -239,7 +241,7 @@ func TestParseExpr_in(t *testing.T) {
 			Operator: pgast.InOp,
 			Right: &pgast.Subquery{Select: &pgast.Select{
 				SelectExprs: []pgast.SelectExpr{&pgast.AliasedExpr{Expr: col("id")}},
-				From:        []pgast.TableExpr{&pgast.AliasedTableExpr{Expr: pgast.TableName{Name: "t"}}},
+				From:        []pgast.TableExpr{&pgast.AliasedTableExpr{Expr: pgast.TableName{Name: pgast.TableIdent{Name: "t"}}}},
 			}},
 		})
 	})
@@ -351,7 +353,7 @@ func TestParseExpr_exists(t *testing.T) {
 	exists := func(sel *pgast.Select) pgast.Expr {
 		return &pgast.ExistsExpr{Subquery: &pgast.Subquery{Select: sel}}
 	}
-	tableT := []pgast.TableExpr{&pgast.AliasedTableExpr{Expr: pgast.TableName{Name: "t"}}}
+	tableT := []pgast.TableExpr{&pgast.AliasedTableExpr{Expr: pgast.TableName{Name: pgast.TableIdent{Name: "t"}}}}
 
 	tests := []struct {
 		name string
@@ -367,7 +369,7 @@ func TestParseExpr_exists(t *testing.T) {
 			"qualified star",
 			"EXISTS (SELECT t.* FROM t)",
 			exists(&pgast.Select{
-				SelectExprs: []pgast.SelectExpr{&pgast.StarExpr{TableName: pgast.TableName{Name: "t"}}},
+				SelectExprs: []pgast.SelectExpr{&pgast.StarExpr{TableName: pgast.TableName{Name: pgast.TableIdent{Name: "t"}}}},
 				From:        tableT,
 			}),
 		},
@@ -375,16 +377,16 @@ func TestParseExpr_exists(t *testing.T) {
 			"explicit aliases",
 			"EXISTS (SELECT a AS x FROM t AS u)",
 			exists(&pgast.Select{
-				SelectExprs: []pgast.SelectExpr{&pgast.AliasedExpr{Expr: col("a"), As: "x"}},
-				From:        []pgast.TableExpr{&pgast.AliasedTableExpr{Expr: pgast.TableName{Name: "t"}, As: "u"}},
+				SelectExprs: []pgast.SelectExpr{&pgast.AliasedExpr{Expr: col("a"), As: pgast.ColIdent{Name: "x"}}},
+				From:        []pgast.TableExpr{&pgast.AliasedTableExpr{Expr: pgast.TableName{Name: pgast.TableIdent{Name: "t"}}, As: pgast.TableIdent{Name: "u"}}},
 			}),
 		},
 		{
 			"bare aliases",
 			"EXISTS (SELECT a x FROM t u)",
 			exists(&pgast.Select{
-				SelectExprs: []pgast.SelectExpr{&pgast.AliasedExpr{Expr: col("a"), As: "x"}},
-				From:        []pgast.TableExpr{&pgast.AliasedTableExpr{Expr: pgast.TableName{Name: "t"}, As: "u"}},
+				SelectExprs: []pgast.SelectExpr{&pgast.AliasedExpr{Expr: col("a"), As: pgast.ColIdent{Name: "x"}}},
+				From:        []pgast.TableExpr{&pgast.AliasedTableExpr{Expr: pgast.TableName{Name: pgast.TableIdent{Name: "t"}}, As: pgast.TableIdent{Name: "u"}}},
 			}),
 		},
 	}
@@ -430,7 +432,7 @@ func TestParseExpr_paren(t *testing.T) {
 			Operator: pgast.InOp,
 			Right: &pgast.Subquery{Select: &pgast.Select{
 				SelectExprs: []pgast.SelectExpr{&pgast.AliasedExpr{Expr: col("a")}, &pgast.AliasedExpr{Expr: col("b")}},
-				From:        []pgast.TableExpr{&pgast.AliasedTableExpr{Expr: pgast.TableName{Name: "t"}}},
+				From:        []pgast.TableExpr{&pgast.AliasedTableExpr{Expr: pgast.TableName{Name: pgast.TableIdent{Name: "t"}}}},
 			}},
 		})
 	})
@@ -444,28 +446,28 @@ func TestParseExpr_paren(t *testing.T) {
 
 func TestParseExpr_funcCall(t *testing.T) {
 	t.Run("plain", func(t *testing.T) {
-		assertExpr(t, "lower(a)", &pgast.FuncExpr{Name: "lower", Args: []pgast.Expr{col("a")}})
+		assertExpr(t, "lower(a)", &pgast.FuncExpr{Name: pgast.ColIdent{Name: "lower"}, Args: []pgast.Expr{col("a")}})
 	})
 
 	t.Run("qualified", func(t *testing.T) {
-		assertExpr(t, "pg_catalog.lower(a)", &pgast.FuncExpr{Qualifier: "pg_catalog", Name: "lower", Args: []pgast.Expr{col("a")}})
+		assertExpr(t, "pg_catalog.lower(a)", &pgast.FuncExpr{Qualifier: pgast.TableIdent{Name: "pg_catalog"}, Name: pgast.ColIdent{Name: "lower"}, Args: []pgast.Expr{col("a")}})
 	})
 
 	t.Run("no args", func(t *testing.T) {
-		assertExpr(t, "now()", &pgast.FuncExpr{Name: "now"})
+		assertExpr(t, "now()", &pgast.FuncExpr{Name: pgast.ColIdent{Name: "now"}})
 	})
 
 	t.Run("star", func(t *testing.T) {
-		assertExpr(t, "count(*)", &pgast.FuncExpr{Name: "count", Star: true})
+		assertExpr(t, "count(*)", &pgast.FuncExpr{Name: pgast.ColIdent{Name: "count"}, Star: true})
 	})
 
 	t.Run("distinct", func(t *testing.T) {
-		assertExpr(t, "count(DISTINCT a)", &pgast.FuncExpr{Name: "count", Distinct: true, Args: []pgast.Expr{col("a")}})
+		assertExpr(t, "count(DISTINCT a)", &pgast.FuncExpr{Name: pgast.ColIdent{Name: "count"}, Distinct: true, Args: []pgast.Expr{col("a")}})
 	})
 
 	t.Run("filter", func(t *testing.T) {
 		assertExpr(t, "count(*) FILTER (WHERE a)", &pgast.FuncExpr{
-			Name: "count", Star: true, Filter: &pgast.Where{Expr: col("a")},
+			Name: pgast.ColIdent{Name: "count"}, Star: true, Filter: &pgast.Where{Expr: col("a")},
 		})
 	})
 }
@@ -479,20 +481,20 @@ func TestParseExpr_funcCallOver(t *testing.T) {
 		{
 			"empty window",
 			"row_number() OVER ()",
-			&pgast.FuncExpr{Name: "row_number", Over: &pgast.WindowSpec{}},
+			&pgast.FuncExpr{Name: pgast.ColIdent{Name: "row_number"}, Over: &pgast.WindowSpec{}},
 		},
 		{
 			"partition by",
 			"sum(a) OVER (PARTITION BY b, c)",
 			&pgast.FuncExpr{
-				Name: "sum", Args: []pgast.Expr{col("a")},
+				Name: pgast.ColIdent{Name: "sum"}, Args: []pgast.Expr{col("a")},
 				Over: &pgast.WindowSpec{PartitionBy: []pgast.Expr{col("b"), col("c")}},
 			},
 		},
 		{
 			"order by",
 			"row_number() OVER (ORDER BY a DESC NULLS LAST, b)",
-			&pgast.FuncExpr{Name: "row_number", Over: &pgast.WindowSpec{OrderBy: pgast.OrderBy{
+			&pgast.FuncExpr{Name: pgast.ColIdent{Name: "row_number"}, Over: &pgast.WindowSpec{OrderBy: pgast.OrderBy{
 				{Expr: col("a"), Direction: pgast.DescOrder, Nulls: pgast.NullsLast},
 				{Expr: col("b")},
 			}}},
@@ -500,7 +502,7 @@ func TestParseExpr_funcCallOver(t *testing.T) {
 		{
 			"partition by and order by",
 			"rank() OVER (PARTITION BY a ORDER BY b ASC NULLS FIRST)",
-			&pgast.FuncExpr{Name: "rank", Over: &pgast.WindowSpec{
+			&pgast.FuncExpr{Name: pgast.ColIdent{Name: "rank"}, Over: &pgast.WindowSpec{
 				PartitionBy: []pgast.Expr{col("a")},
 				OrderBy:     pgast.OrderBy{{Expr: col("b"), Nulls: pgast.NullsFirst}},
 			}},
@@ -508,21 +510,21 @@ func TestParseExpr_funcCallOver(t *testing.T) {
 		{
 			"named window",
 			"row_number() OVER w",
-			&pgast.FuncExpr{Name: "row_number", Over: &pgast.WindowSpec{Name: "w"}, OverRef: true},
+			&pgast.FuncExpr{Name: pgast.ColIdent{Name: "row_number"}, Over: &pgast.WindowSpec{Name: pgast.ColIdent{Name: "w"}}, OverRef: true},
 		},
 		{
 			"refined named window",
 			"row_number() OVER (w ORDER BY a)",
-			&pgast.FuncExpr{Name: "row_number", Over: &pgast.WindowSpec{
-				Name: "w", OrderBy: pgast.OrderBy{{Expr: col("a")}},
+			&pgast.FuncExpr{Name: pgast.ColIdent{Name: "row_number"}, Over: &pgast.WindowSpec{
+				Name: pgast.ColIdent{Name: "w"}, OrderBy: pgast.OrderBy{{Expr: col("a")}},
 			}},
 		},
 		{
 			"after filter",
 			"count(*) FILTER (WHERE a) OVER w",
 			&pgast.FuncExpr{
-				Name: "count", Star: true, Filter: &pgast.Where{Expr: col("a")},
-				Over: &pgast.WindowSpec{Name: "w"}, OverRef: true,
+				Name: pgast.ColIdent{Name: "count"}, Star: true, Filter: &pgast.Where{Expr: col("a")},
+				Over: &pgast.WindowSpec{Name: pgast.ColIdent{Name: "w"}}, OverRef: true,
 			},
 		},
 	}
@@ -537,7 +539,7 @@ func TestParseExpr_funcCallOver(t *testing.T) {
 func TestParseExpr_quotedIdentifiers(t *testing.T) {
 	assertExpr(t, `"MyCol"`, col(`"MyCol"`))
 	assertExpr(t, `"My""Col"`, col(`"My""Col"`))
-	assertExpr(t, `"T"."C"`, &pgast.ColName{Qualifier: pgast.TableName{Name: `"T"`}, Name: `"C"`})
+	assertExpr(t, `"T"."C"`, &pgast.ColName{Qualifier: pgast.TableName{Name: pgast.TableIdent{Name: `"T"`}}, Name: pgast.ColIdent{Name: `"C"`}})
 
 	for _, in := range []string{`"MyCol"`, `"T"."C"`, `a::"MyType"`, `CAST(a AS "MyType")`, `"Fn"(a)`} {
 		if got := parseExpr(t, in).String(); got != in {
@@ -575,7 +577,7 @@ func TestParseExpr_cast(t *testing.T) {
 	})
 
 	t.Run("schema-qualified type", func(t *testing.T) {
-		want := &pgast.TypeName{Names: []pgast.ColIdent{"public", `"MyType"`}}
+		want := &pgast.TypeName{Names: []pgast.ColIdent{{Name: "public"}, {Name: `"MyType"`}}}
 		assertExpr(t, `a::public."MyType"`, &pgast.CastExpr{Expr: col("a"), Type: want})
 	})
 
@@ -845,16 +847,16 @@ func TestParseExpr_operatorRoundTrip(t *testing.T) {
 
 func TestParseExpr_namedArguments(t *testing.T) {
 	t.Run("both spellings", func(t *testing.T) {
-		assertExpr(t, "f(a => 1, b := 2)", &pgast.FuncExpr{Name: "f", Args: []pgast.Expr{
-			&pgast.NamedArgExpr{Name: "a", Value: num("1")},
-			&pgast.NamedArgExpr{Name: "b", Value: num("2"), ColonEquals: true},
+		assertExpr(t, "f(a => 1, b := 2)", &pgast.FuncExpr{Name: pgast.ColIdent{Name: "f"}, Args: []pgast.Expr{
+			&pgast.NamedArgExpr{Name: pgast.ColIdent{Name: "a"}, Value: num("1")},
+			&pgast.NamedArgExpr{Name: pgast.ColIdent{Name: "b"}, Value: num("2"), ColonEquals: true},
 		}})
 	})
 
 	t.Run("keyword name and operator value", func(t *testing.T) {
-		assertExpr(t, "f(1, first => x || y)", &pgast.FuncExpr{Name: "f", Args: []pgast.Expr{
+		assertExpr(t, "f(1, first => x || y)", &pgast.FuncExpr{Name: pgast.ColIdent{Name: "f"}, Args: []pgast.Expr{
 			num("1"),
-			&pgast.NamedArgExpr{Name: "first", Value: opExpr(col("x"), "||", col("y"))},
+			&pgast.NamedArgExpr{Name: pgast.ColIdent{Name: "first"}, Value: opExpr(col("x"), "||", col("y"))},
 		}})
 	})
 }
@@ -862,7 +864,7 @@ func TestParseExpr_namedArguments(t *testing.T) {
 func TestParseExpr_precedenceInteraction(t *testing.T) {
 	t.Run("subscript is part of the cast's type, not applied after it", func(t *testing.T) {
 		assertExpr(t, "a::int[1]", &pgast.CastExpr{Expr: col("a"), Type: &pgast.TypeName{
-			Names: []pgast.ColIdent{"int"}, ArrayBounds: []string{"1"},
+			Names: []pgast.ColIdent{{Name: "int"}}, ArrayBounds: []string{"1"},
 		}})
 	})
 

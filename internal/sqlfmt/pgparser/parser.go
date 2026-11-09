@@ -56,6 +56,11 @@ func (p *Parser) advance() {
 	p.peek2Tok = tok
 }
 
+// rawText returns tok exactly as written in the input.
+func (p *Parser) rawText(tok Token) string {
+	return p.lex.input[tok.Pos.Offset:tok.End.Offset]
+}
+
 func (p *Parser) at(tt TokenType) bool      { return p.tok.Type == tt }
 func (p *Parser) peekAt(tt TokenType) bool  { return p.peekTok.Type == tt }
 func (p *Parser) peek2At(tt TokenType) bool { return p.peek2Tok.Type == tt }

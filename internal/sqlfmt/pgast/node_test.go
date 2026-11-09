@@ -8,37 +8,37 @@ import (
 
 func TestColIdent(t *testing.T) {
 	t.Run("String", func(t *testing.T) {
-		c := pgast.ColIdent("id")
+		c := pgast.ColIdent{Name: "id", Raw: "ID"}
 		assertEqual(t, "id", c.String())
 	})
 
 	t.Run("IsEmpty", func(t *testing.T) {
-		assertEqual(t, true, pgast.ColIdent("").IsEmpty())
-		assertEqual(t, false, pgast.ColIdent("id").IsEmpty())
+		assertEqual(t, true, pgast.ColIdent{Name: ""}.IsEmpty())
+		assertEqual(t, false, pgast.ColIdent{Name: "id"}.IsEmpty())
 	})
 }
 
 func TestTableIdent(t *testing.T) {
 	t.Run("String", func(t *testing.T) {
-		ti := pgast.TableIdent("users")
+		ti := pgast.TableIdent{Name: "users", Raw: "Users"}
 		assertEqual(t, "users", ti.String())
 	})
 
 	t.Run("IsEmpty", func(t *testing.T) {
-		assertEqual(t, true, pgast.TableIdent("").IsEmpty())
-		assertEqual(t, false, pgast.TableIdent("users").IsEmpty())
+		assertEqual(t, true, pgast.TableIdent{Name: ""}.IsEmpty())
+		assertEqual(t, false, pgast.TableIdent{Name: "users"}.IsEmpty())
 	})
 }
 
 func TestTableName(t *testing.T) {
 	t.Run("unqualified", func(t *testing.T) {
-		tn := pgast.TableName{Name: "users"}
+		tn := pgast.TableName{Name: pgast.TableIdent{Name: "users"}}
 		assertEqual(t, "users", tn.String())
 		assertEqual(t, false, tn.IsEmpty())
 	})
 
 	t.Run("qualified", func(t *testing.T) {
-		tn := pgast.TableName{Name: "users", Qualifier: "public"}
+		tn := pgast.TableName{Name: pgast.TableIdent{Name: "users"}, Qualifier: pgast.TableIdent{Name: "public"}}
 		assertEqual(t, "public.users", tn.String())
 	})
 
@@ -54,7 +54,7 @@ func TestColumns(t *testing.T) {
 	})
 
 	t.Run("multiple", func(t *testing.T) {
-		c := pgast.Columns{"id", "name"}
+		c := pgast.Columns{pgast.ColIdent{Name: "id"}, pgast.ColIdent{Name: "name"}}
 		assertEqual(t, "id, name", c.String())
 	})
 }

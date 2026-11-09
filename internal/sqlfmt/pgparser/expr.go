@@ -576,10 +576,10 @@ func (p *Parser) parseCollateExpr() pgast.Expr {
 // parseAnyName parses PostgreSQL's any_name: a ColId followed by any number
 // of ".ColLabel" parts, as in mydb.pg_catalog."C".
 func (p *Parser) parseAnyName() pgast.AnyName {
-	name := pgast.AnyName{pgast.ColIdent(p.readColID())}
+	name := pgast.AnyName{p.readColID()}
 
 	for p.consume(DOT) {
-		name = append(name, pgast.ColIdent(p.readColLabel()))
+		name = append(name, p.readColLabel())
 	}
 
 	return name
@@ -705,6 +705,12 @@ func identText(tok Token) string {
 	return `"` + strings.ReplaceAll(tok.Literal, `"`, `""`) + `"`
 }
 
+// identOf returns an identifier token as a ColIdent: its normalized SQL text
+// (see identText) and its source spelling.
+func (p *Parser) identOf(tok Token) pgast.ColIdent {
+	return pgast.ColIdent{Name: identText(tok), Raw: p.rawText(tok)}
+}
+
 // keywordLiterals holds the keyword tokens that stand for a literal value.
 var keywordLiterals = map[TokenType]string{
 	NULL:  "NULL",
@@ -770,9 +776,7 @@ func (p *Parser) tryParseKeywordLedExpr() (pgast.Expr, bool) {
 // keep its cyclomatic complexity down.
 func (p *Parser) tryParseLiteral() (pgast.Expr, bool) {
 	if text, ok := keywordLiterals[p.tok.Type]; ok {
-		p.advance()
-
-		return &pgast.Literal{Val: text}, true
+		return p.consumeLiteral(text), true
 	}
 
 	if p.atQuestionMarkPlaceholder() {
@@ -787,7 +791,7 @@ func (p *Parser) tryParseLiteral() (pgast.Expr, bool) {
 	case STRING:
 		return p.parseStringLiteral(), true
 	case NationalString:
-		return &pgast.Literal{Val: "N" + p.readStringLiteralText()}, true
+		return p.consumeLiteral("N" + quoteString(p.tok.Literal)), true
 	default:
 		return nil, false
 	}
@@ -803,39 +807,33 @@ func (p *Parser) atQuestionMarkPlaceholder() bool {
 	return p.at(Op) && p.tok.Literal == "?"
 }
 
-func (p *Parser) parseLiteralToken() pgast.Expr {
-	tok := p.tok
+// consumeLiteral consumes the current token as a Literal whose normalized
+// text is val, keeping the token's source spelling as its Raw.
+func (p *Parser) consumeLiteral(val string) *pgast.Literal {
+	lit := &pgast.Literal{Val: val, Raw: p.rawText(p.tok)}
 	p.advance()
 
-	return &pgast.Literal{Val: tok.Literal}
+	return lit
+}
+
+func (p *Parser) parseLiteralToken() pgast.Expr {
+	return p.consumeLiteral(p.tok.Literal)
 }
 
 // parsePlaceholder parses a positional parameter. The lexer keeps only the
 // digits of "$n", so the '$' is restored here.
 func (p *Parser) parsePlaceholder() pgast.Expr {
-	tok := p.tok
-	p.advance()
-
-	return &pgast.Literal{Val: "$" + tok.Literal}
+	return p.consumeLiteral("$" + p.tok.Literal)
 }
 
 // parseStringLiteral re-encodes a lexer-decoded string (which may have come
 // from a plain '...', an E'...' escape string, or a $tag$...$tag$
 // dollar-quoted string) as a plain '...' literal with doubled-quote
-// escaping. standard_conforming_strings=on means no backslash escaping is
-// ever needed on the way back out, unlike internal/sqlfmt/parser's MySQL
-// literal re-encoding, which has a ModeDefault/ModeNoBackslashEscapes split.
-func (p *Parser) parseStringLiteral() pgast.Expr {
-	return &pgast.Literal{Val: p.readStringLiteralText()}
-}
-
-// readStringLiteralText consumes a STRING or NationalString token and returns
-// its content re-encoded as a plain '...' literal.
-func (p *Parser) readStringLiteralText() string {
-	text := quoteString(p.tok.Literal)
-	p.advance()
-
-	return text
+// escaping. standard_conforming_strings=on means a plain '...' literal never
+// needs backslash escaping. The source spelling survives in the Literal's
+// Raw.
+func (p *Parser) parseStringLiteral() *pgast.Literal {
+	return p.consumeLiteral(quoteString(p.tok.Literal))
 }
 
 func quoteString(content string) string {
@@ -1025,26 +1023,26 @@ func (p *Parser) atIdentExprStart() bool {
 // column; a name after the dot may be any keyword.
 func (p *Parser) parseIdentExpr() pgast.Expr {
 	if isTypeFuncName(p.tok) && p.peekAt(LPAREN) {
-		return p.parseFuncCall("", p.readName(isTypeFuncName))
+		return p.parseFuncCall(pgast.TableIdent{}, p.readName(isTypeFuncName))
 	}
 
 	name := p.readColID()
 
 	if !p.consume(DOT) {
-		return &pgast.ColName{Name: pgast.ColIdent(name)}
+		return &pgast.ColName{Name: name}
 	}
 
 	if p.consume(STAR) {
-		return &pgast.FieldSelectExpr{Expr: &pgast.ColName{Name: pgast.ColIdent(name)}, Star: true}
+		return &pgast.FieldSelectExpr{Expr: &pgast.ColName{Name: name}, Star: true}
 	}
 
 	second := p.readColLabel()
 
 	if p.at(LPAREN) {
-		return p.parseFuncCall(name, second)
+		return p.parseFuncCall(pgast.TableIdent(name), second)
 	}
 
-	ref := &pgast.ColName{Qualifier: pgast.TableName{Name: pgast.TableIdent(name)}, Name: pgast.ColIdent(second)}
+	ref := &pgast.ColName{Qualifier: pgast.TableName{Name: pgast.TableIdent(name)}, Name: second}
 
 	if !p.at(DOT) || p.peekAt(STAR) {
 		return ref
@@ -1054,7 +1052,7 @@ func (p *Parser) parseIdentExpr() pgast.Expr {
 
 	return &pgast.ColName{
 		Qualifier: pgast.TableName{Qualifier: pgast.TableIdent(name), Name: pgast.TableIdent(second)},
-		Name:      pgast.ColIdent(p.readColLabel()),
+		Name:      p.readColLabel(),
 	}
 }
 
@@ -1067,16 +1065,16 @@ func (p *Parser) parseFieldSelection(left pgast.Expr) pgast.Expr {
 		return &pgast.FieldSelectExpr{Expr: left, Star: true}
 	}
 
-	return &pgast.FieldSelectExpr{Expr: left, Field: pgast.ColIdent(p.readColLabel())}
+	return &pgast.FieldSelectExpr{Expr: left, Field: p.readColLabel()}
 }
 
 // parseFuncCall parses a function call's argument list, DISTINCT flag or
 // star form, and trailing FILTER (WHERE ...) and OVER clauses. l.tok must be
 // '('.
-func (p *Parser) parseFuncCall(qualifier, name string) pgast.Expr {
+func (p *Parser) parseFuncCall(qualifier pgast.TableIdent, name pgast.ColIdent) pgast.Expr {
 	p.advance() // consume '('
 
-	f := &pgast.FuncExpr{Qualifier: pgast.TableIdent(qualifier), Name: pgast.ColIdent(name)}
+	f := &pgast.FuncExpr{Qualifier: qualifier, Name: name}
 
 	switch {
 	case p.consume(STAR):
@@ -1139,7 +1137,7 @@ func (p *Parser) parseWithinGroup(f *pgast.FuncExpr) {
 // name or a parenthesized window specification.
 func (p *Parser) parseOverClause(f *pgast.FuncExpr) {
 	if !p.consume(LPAREN) {
-		f.Over = &pgast.WindowSpec{Name: pgast.ColIdent(p.readColID())}
+		f.Over = &pgast.WindowSpec{Name: p.readColID()}
 		f.OverRef = true
 
 		return
@@ -1197,7 +1195,7 @@ func (p *Parser) parseFuncArg() pgast.Expr {
 	colonEquals := p.at(ColonEquals)
 	p.advance() // consume "=>" or ":="
 
-	return &pgast.NamedArgExpr{Name: pgast.ColIdent(name), Value: p.parseExpr(), ColonEquals: colonEquals}
+	return &pgast.NamedArgExpr{Name: name, Value: p.parseExpr(), ColonEquals: colonEquals}
 }
 
 // parseExprList parses a comma-separated list of expressions.

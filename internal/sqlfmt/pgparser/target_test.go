@@ -48,7 +48,7 @@ func TestParseUpdate_targetStructure(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	want := &pgast.FieldSelectExpr{Expr: &pgast.ColName{Name: "c"}, Field: "f"}
+	want := &pgast.FieldSelectExpr{Expr: &pgast.ColName{Name: pgast.ColIdent{Name: "c"}}, Field: pgast.ColIdent{Name: "f", Raw: "f"}}
 
 	got, ok := upd.Set[0].Name.(*pgast.FieldSelectExpr)
 	if !ok || got.Field != want.Field || got.Expr.String() != "c" {

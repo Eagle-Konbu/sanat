@@ -20,7 +20,7 @@ func (p *Parser) parseRelationExpr() *pgast.AliasedTableExpr {
 		target.IncludeDescendants = p.consume(STAR)
 	}
 
-	target.As = pgast.TableIdent(p.parseRelationAlias())
+	target.As = p.parseRelationAlias()
 
 	return target
 }
@@ -28,9 +28,9 @@ func (p *Parser) parseRelationExpr() *pgast.AliasedTableExpr {
 // parseRelationAlias parses a DML target's optional alias. As in PostgreSQL,
 // a bare SET here is never an alias, since it starts UPDATE's SET clause;
 // "AS set" is still an alias.
-func (p *Parser) parseRelationAlias() string {
+func (p *Parser) parseRelationAlias() pgast.TableIdent {
 	if p.at(SET) {
-		return ""
+		return pgast.TableIdent{}
 	}
 
 	return p.parseOptionalTableAlias()
@@ -78,7 +78,7 @@ func (p *Parser) parseSetClause() *pgast.UpdateExpr {
 // qualifies the column itself with its table, so a dotted name is always a
 // field selection.
 func (p *Parser) parseSetTarget() pgast.Expr {
-	var target pgast.Expr = &pgast.ColName{Name: pgast.ColIdent(p.readColID())}
+	var target pgast.Expr = &pgast.ColName{Name: p.readColID()}
 
 	for {
 		switch {
@@ -185,8 +185,8 @@ func (p *Parser) parseParenExprOrDefaultList() []pgast.Expr {
 // Literal rendered verbatim rather than accepted by the general expression
 // grammar.
 func (p *Parser) parseExprOrDefault() pgast.Expr {
-	if p.consume(DEFAULT) {
-		return &pgast.Literal{Val: "DEFAULT"}
+	if p.at(DEFAULT) {
+		return p.consumeLiteral("DEFAULT")
 	}
 
 	return p.parseExpr()

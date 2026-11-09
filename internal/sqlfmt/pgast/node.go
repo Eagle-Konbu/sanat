@@ -59,25 +59,38 @@ type MergeAction interface {
 //
 // PostgreSQL folds unquoted identifiers to lower case but keeps a
 // double-quoted identifier's case, so "Users" and users name different
-// objects. ColIdent (and TableIdent) therefore store the identifier as SQL
-// text: pgparser keeps a quoted identifier's surrounding double quotes (with
-// embedded quotes doubled), and String renders the value as-is.
-type ColIdent string
+// objects. Name therefore holds the identifier as normalized SQL text:
+// pgparser folds an unquoted identifier to lower case and keeps a quoted
+// identifier's surrounding double quotes (with embedded quotes doubled), and
+// String renders Name as-is.
+//
+// Raw is the identifier exactly as written in the source (UserId, "UserId"),
+// for a renderer that must reproduce the user's spelling. It is display-only:
+// it never affects String or what the identifier names, and it is empty for
+// an identifier that was not parsed from source text.
+type ColIdent struct {
+	Name string
+	Raw  string
+}
 
 // String returns ColIdent's SQL text.
-func (c ColIdent) String() string { return string(c) }
+func (c ColIdent) String() string { return c.Name }
 
 // IsEmpty reports whether the ColIdent is empty.
-func (c ColIdent) IsEmpty() bool { return c == "" }
+func (c ColIdent) IsEmpty() bool { return c.Name == "" }
 
-// TableIdent represents a table identifier.
-type TableIdent string
+// TableIdent represents a table identifier. Its fields mean the same as
+// ColIdent's.
+type TableIdent struct {
+	Name string
+	Raw  string
+}
 
 // String returns TableIdent's SQL text.
-func (t TableIdent) String() string { return string(t) }
+func (t TableIdent) String() string { return t.Name }
 
 // IsEmpty reports whether the TableIdent is empty.
-func (t TableIdent) IsEmpty() bool { return t == "" }
+func (t TableIdent) IsEmpty() bool { return t.Name == "" }
 
 // TableName represents a possibly qualified table name.
 type TableName struct {
