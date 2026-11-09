@@ -62,6 +62,40 @@ func TestParseExpr_literals(t *testing.T) {
 	assertExpr(t, "$1", &pgast.Literal{Val: "$1"})
 }
 
+func TestParseExpr_questionMarkPlaceholder(t *testing.T) {
+	placeholder := &pgast.Literal{Val: "?"}
+
+	tests := []struct {
+		name string
+		in   string
+		want pgast.Expr
+	}{
+		{"bare operand", "?", placeholder},
+		{"comparison operand", "id = ?", &pgast.ComparisonExpr{Left: col("id"), Operator: pgast.EqualOp, Right: placeholder}},
+		{"function argument", "f(?)", &pgast.FuncExpr{Name: "f", Args: []pgast.Expr{placeholder}}},
+		{"arithmetic operand", "? + 1", &pgast.ArithmeticExpr{Operator: pgast.PlusOp, Left: placeholder, Right: num("1")}},
+		{"jsonb key-exists operator", "data ? 'key'", opExpr(col("data"), "?", &pgast.Literal{Val: "'key'"})},
+		{
+			"jsonb any-key-exists operator",
+			"data ?| array['a']",
+			opExpr(col("data"), "?|", &pgast.ArrayExpr{Elems: []pgast.Expr{&pgast.Literal{Val: "'a'"}}}),
+		},
+		{"jsonb operator with placeholder operand", "data ? ?", opExpr(col("data"), "?", placeholder)},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assertExpr(t, tt.in, tt.want)
+		})
+	}
+}
+
+func TestParseExpr_questionMarkPlaceholderGreedyOperator(t *testing.T) {
+	// Without a space, "=?" lexes as a single operator (scan.l's longest
+	// operator run), leaving the comparison without a right operand.
+	assertExprError(t, "id=?")
+}
+
 func TestParseExpr_stringLiteral(t *testing.T) {
 	tests := []struct {
 		name, in, want string

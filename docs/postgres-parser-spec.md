@@ -224,6 +224,14 @@ the comment `--a`.
 
 - Literals: numbers, strings (rendered back as `'...'`), `NULL`, `TRUE`,
   `FALSE`, and placeholders (`$1`).
+- `?` bind parameters, as Go drivers and query builders write them into
+  PostgreSQL SQL. The lexer reads `?` as a generic `Op` (PostgreSQL's jsonb
+  key-exists operator), so the parser decides by position: a lone `?` `Op`
+  where an operand is expected is a placeholder (`pgast.Literal{Val: "?"}`,
+  rendered back as `?`), while a `?` after an operand stays the infix
+  operator. PostgreSQL has no prefix `?` operator, so the two never collide:
+  `data ? ?` is the jsonb operator applied to a placeholder, and `?|`/`?&`
+  are always operators.
 - Column references `name` and `qualifier.name`, and function calls
   `[qualifier.]name(args)` with `*`, `DISTINCT`, named arguments
   (`name => value`, or the older `name := value`), `FILTER (WHERE ...)`, and
@@ -277,6 +285,12 @@ the comment `--a`.
 Not supported (each a `*ParseError` unless noted): `IS [NOT] DOCUMENT`,
 `AT LOCAL`, `COLLATION FOR (...)`, and three-part function names
 (`db.schema.f()`).
+
+Limitation: a `?` placeholder written directly after another operator
+character is lexed into that operator by the longest-run rule, as PostgreSQL
+itself would: `id=?` lexes as `id`, `=?` and fails to parse (no right
+operand), and `-?` is a single `-?` operator. Spacing it out (`id = ?`)
+parses as expected.
 
 ### Type Names
 

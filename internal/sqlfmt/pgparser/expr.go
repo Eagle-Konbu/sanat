@@ -765,7 +765,7 @@ func (p *Parser) tryParseKeywordLedExpr() (pgast.Expr, bool) {
 }
 
 // tryParseLiteral parses p.tok if it starts one of the literal forms (a
-// keyword literal, number, placeholder, or string), reporting ok=false
+// keyword literal, number, $n or ? placeholder, or string), reporting ok=false
 // without consuming anything otherwise. Split out of parsePrimaryExpr to
 // keep its cyclomatic complexity down.
 func (p *Parser) tryParseLiteral() (pgast.Expr, bool) {
@@ -773,6 +773,10 @@ func (p *Parser) tryParseLiteral() (pgast.Expr, bool) {
 		p.advance()
 
 		return &pgast.Literal{Val: text}, true
+	}
+
+	if p.atQuestionMarkPlaceholder() {
+		return p.parseLiteralToken(), true
 	}
 
 	switch p.tok.Type {
@@ -787,6 +791,16 @@ func (p *Parser) tryParseLiteral() (pgast.Expr, bool) {
 	default:
 		return nil, false
 	}
+}
+
+// atQuestionMarkPlaceholder reports whether p.tok is a lone "?" in operand
+// position. PostgreSQL itself only knows "?" as the jsonb key-exists infix
+// operator, but Go drivers and query builders write "?" bind parameters into
+// PostgreSQL SQL too. PostgreSQL has no prefix "?" operator, so a "?" where
+// an operand is expected can only be such a placeholder; in infix position
+// parseOtherOpExpr consumes it as an operator before reaching here.
+func (p *Parser) atQuestionMarkPlaceholder() bool {
+	return p.at(Op) && p.tok.Literal == "?"
 }
 
 func (p *Parser) parseLiteralToken() pgast.Expr {
