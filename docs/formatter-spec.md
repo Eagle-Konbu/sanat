@@ -43,11 +43,13 @@ db.Exec("select id from users where id = ?", 1)
 
 ## Placeholder Handling
 
-Since the SQL parser cannot handle `?` correctly, substitution and restoration are performed before and after parsing.
+For the MySQL dialect, since the SQL parser cannot handle `?` correctly, substitution and restoration are performed before and after parsing.
 
 1. **Substitution**: `?` → `:_sqla_ph_0`, `:_sqla_ph_1`, ... (indexed in order of appearance)
 2. **Parsing**: Syntax analysis with the in-house SQL parser (see [parser-spec.md](parser-spec.md))
 3. **Restoration**: `:_sqla_ph_N` → `?`
+
+The rewrite is MySQL-only. In PostgreSQL, `?`, `?|`, and `?&` are jsonb operators, so rewriting every `?` would corrupt them; the PostgreSQL parser instead receives the SQL untouched and tells a `?` placeholder from the `?` operator by position (see [postgres-parser-spec.md](postgres-parser-spec.md#primary-expressions)).
 
 ## Format Rules
 
@@ -778,7 +780,7 @@ Configuration files are searched in the following order (first match is used):
 | `keyword_case` | `upper` \| `lower` \| `preserve` | no | `upper` | Casing for operator/predicate keywords. See [Keyword Casing](#keyword-casing). |
 | `comma_style` | `trailing` \| `leading` | no | `trailing` | Comma placement in rendered lists. See [Comma Style](#comma-style). |
 | `sql_mode` | `default` \| `no_backslash_escapes` | no | `default` | SQL mode controlling string-literal parsing. See [SQL Mode](#sql-mode). |
-| `dialect` | `mysql` \| `postgresql` | no | `mysql` | SQL dialect to parse. `postgresql` is not yet supported and fails formatting explicitly. |
+| `dialect` | `mysql` \| `postgresql` | no | `mysql` | SQL dialect to parse. `postgresql` is not wired to the PostgreSQL parser yet, so SQL literals are currently left unchanged. |
 
 ### Configuration Examples
 
@@ -841,7 +843,7 @@ sanat [flags] [pattern ...]
 | `--keyword-case` | | `upper` | Casing for operator/predicate keywords (`upper`, `lower`, `preserve`) |
 | `--comma-style` | | `trailing` | Comma placement in lists (`trailing`, `leading`) |
 | `--sql-mode` | | `default` | SQL mode controlling string-literal parsing (`default`, `no_backslash_escapes`) |
-| `--dialect` | | `mysql` | SQL dialect to parse (`mysql`, `postgresql`). `postgresql` is not yet supported and fails formatting explicitly. |
+| `--dialect` | | `mysql` | SQL dialect to parse (`mysql`, `postgresql`). `postgresql` is not wired to the PostgreSQL parser yet, so SQL literals are currently left unchanged. |
 | `--config` | `-c` | | Configuration file path |
 
 All flags except `--write` are shared with the [lint command](#lint-command).

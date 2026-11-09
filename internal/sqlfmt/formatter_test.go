@@ -1701,10 +1701,10 @@ func TestFormatSQL_CommentsLeftUnchanged(t *testing.T) {
 }
 
 // TestFormatSQLWithOptions_Dialect covers dialect selection: the empty
-// string and DialectMySQL both format normally (today's only implemented
-// dialect), DialectPostgreSQL fails explicitly rather than silently
-// formatting as MySQL (pgparser doesn't exist yet), and an unrecognized
-// dialect string also fails explicitly.
+// string and DialectMySQL both format normally (today's only wired dialect),
+// DialectPostgreSQL leaves the SQL unchanged rather than silently formatting
+// as MySQL (pgparser isn't wired in yet), and an unrecognized dialect string
+// is left unchanged too.
 func TestFormatSQLWithOptions_Dialect(t *testing.T) {
 	tests := []struct {
 		name    string

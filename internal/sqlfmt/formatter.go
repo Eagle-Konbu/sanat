@@ -67,9 +67,12 @@ type Options struct {
 	SQLMode string
 
 	// Dialect selects which SQL dialect's parser formats the input.
-	// Defaults to DialectMySQL. DialectPostgreSQL is not supported yet —
-	// FormatSQLWithOptions reports ok == false rather than silently falling
-	// back to MySQL parsing.
+	// Defaults to DialectMySQL. DialectPostgreSQL is not wired to the
+	// PostgreSQL parser yet, so FormatSQLWithOptions reports ok == false and
+	// leaves the SQL unchanged rather than silently falling back to MySQL
+	// parsing. An unknown value is handled the same way; callers reject
+	// unknown dialect names when validating config, CLI flags, and plugin
+	// settings.
 	Dialect string
 }
 
@@ -95,6 +98,13 @@ func FormatSQLWithOptions(sql string, opts Options) (string, bool) {
 		return sql, false
 	}
 
+	return formatMySQL(sql, opts)
+}
+
+// formatMySQL formats sql with the MySQL parser. The '?' rewrite is
+// MySQL-only: in PostgreSQL, '?', '?|', and '?&' are jsonb operators that
+// must reach the parser intact.
+func formatMySQL(sql string, opts Options) (string, bool) {
 	mode, ok := parserSQLMode(opts.SQLMode)
 	if !ok {
 		return sql, false
@@ -117,10 +127,9 @@ func FormatSQLWithOptions(sql string, opts Options) (string, bool) {
 
 // dialectSupported reports whether opts.Dialect names a dialect
 // FormatSQLWithOptions can currently format. The empty string means
-// DialectMySQL, today's only behavior. DialectPostgreSQL is recognized but
-// not yet implemented (pgparser doesn't exist), so it's rejected the same
-// as an unknown dialect string rather than silently falling back to MySQL
-// parsing — once pgparser lands, this will dispatch to it instead.
+// DialectMySQL. DialectPostgreSQL is not wired to pgparser yet, so it's
+// rejected (leaving the SQL unchanged) the same as an unknown dialect
+// string rather than silently falling back to MySQL parsing.
 func dialectSupported(dialect string) bool {
 	switch dialect {
 	case "", DialectMySQL:
