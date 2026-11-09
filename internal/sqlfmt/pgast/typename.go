@@ -6,6 +6,7 @@ import "strings"
 // time or timestamp type.
 type TimeZoneSpec int8
 
+// Time zone specifications; TimeZoneUnspecified means none was written.
 const (
 	TimeZoneUnspecified TimeZoneSpec = iota
 	WithTimeZone

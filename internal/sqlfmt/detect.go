@@ -13,6 +13,8 @@ var (
 	fmtVerbRe = regexp.MustCompile(`%[+\-# 0]*[*]?[0-9]*[.*]?[0-9]*[vTtbcdoOqxXUeEfFgGsp]`)
 )
 
+// MightBeSQL reports whether s looks like a SQL statement worth formatting:
+// it starts with a recognized statement keyword and contains no fmt verbs.
 func MightBeSQL(s string) bool {
 	s = strings.TrimSpace(s)
 	if s == "" {

@@ -9,6 +9,8 @@ import (
 	"github.com/Eagle-Konbu/sanat/internal/sqlfmt/sqlast"
 )
 
+// Accepted values for the Options fields KeywordCase, CommaStyle, SQLMode,
+// and Dialect.
 const (
 	KeywordCaseUpper    = "upper"
 	KeywordCaseLower    = "lower"
@@ -93,6 +95,9 @@ func FormatSQL(sql string, indent int) (string, bool) {
 	return FormatSQLWithOptions(sql, Options{Indent: indent})
 }
 
+// FormatSQLWithOptions formats sql according to opts. It returns the input
+// unchanged and false when the dialect is unsupported or sql cannot be
+// parsed or rendered.
 func FormatSQLWithOptions(sql string, opts Options) (string, bool) {
 	if !dialectSupported(opts.Dialect) {
 		return sql, false

@@ -72,6 +72,7 @@ func (p *PositionExpr) String() string {
 // TrimSide is the BOTH, LEADING, or TRAILING of a TrimExpr.
 type TrimSide int8
 
+// Trim sides; TrimDefault means none was written.
 const (
 	TrimDefault TrimSide = iota
 	TrimBoth

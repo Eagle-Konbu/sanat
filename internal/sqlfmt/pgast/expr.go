@@ -8,6 +8,7 @@ import (
 // ComparisonOperator represents a comparison operator.
 type ComparisonOperator int8
 
+// Comparison operators.
 const (
 	EqualOp ComparisonOperator = iota
 	LessThanOp
@@ -162,6 +163,7 @@ func (i *IsNormalizedExpr) String() string {
 // TruthValue represents the operand of an IS [NOT] TRUE / FALSE / UNKNOWN test.
 type TruthValue int8
 
+// Truth values tested by IS [NOT] TRUE / FALSE / UNKNOWN.
 const (
 	TruthTrue TruthValue = iota
 	TruthFalse
@@ -236,6 +238,7 @@ func (r *RowExpr) String() string {
 // ArithmeticOperator represents a binary arithmetic operator.
 type ArithmeticOperator int8
 
+// Binary arithmetic operators.
 const (
 	PlusOp ArithmeticOperator = iota
 	MinusOp
@@ -278,6 +281,7 @@ func (a *ArithmeticExpr) String() string {
 // UnaryOperator represents a unary + or - operator.
 type UnaryOperator int8
 
+// Unary operators.
 const (
 	UPlusOp UnaryOperator = iota
 	UMinusOp
@@ -703,6 +707,7 @@ func (n *NamedArgExpr) String() string {
 // for ANY, kept apart only so the expression round-trips as written.
 type Quantifier int8
 
+// Quantifiers of a quantified comparison.
 const (
 	QuantifierAny Quantifier = iota
 	QuantifierSome

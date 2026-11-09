@@ -246,6 +246,7 @@ func (d *Delete) String() string {
 // SetOpType represents UNION, INTERSECT, or EXCEPT.
 type SetOpType int8
 
+// Set operation types.
 const (
 	Union SetOpType = iota
 	Intersect
@@ -385,6 +386,7 @@ func (w *With) String() string {
 // CTEMaterialization represents a CTE's optional [NOT] MATERIALIZED hint.
 type CTEMaterialization int8
 
+// CTE materialization hints; MaterializeDefault means none was written.
 const (
 	MaterializeDefault CTEMaterialization = iota
 	Materialized
@@ -596,6 +598,7 @@ func (ins *MergeInsert) String() string {
 // controls how values for identity columns are treated.
 type Overriding int8
 
+// OVERRIDING clauses; OverridingNone means none was written.
 const (
 	OverridingNone Overriding = iota
 	OverridingSystemValue

@@ -16,6 +16,7 @@ import (
 // TokenType identifies the category of a lexical token.
 type TokenType int
 
+// Token types produced by the lexer.
 const (
 	EOF TokenType = iota
 
