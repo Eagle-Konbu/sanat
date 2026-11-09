@@ -4,10 +4,24 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/Eagle-Konbu/sanat/internal/gofile"
+	"github.com/Eagle-Konbu/sanat/internal/sqlfmt"
 )
+
+// goldenOptions returns the formatter options for a golden file: the
+// PostgreSQL dialect for the pg_*.go files, and the defaults otherwise.
+func goldenOptions(name string) *gofile.Options {
+	opts := &gofile.Options{Indent: 2, Newline: true}
+
+	if strings.HasPrefix(name, "pg_") {
+		opts.Dialect = sqlfmt.DialectPostgreSQL
+	}
+
+	return opts
+}
 
 func TestGoldenFiles(t *testing.T) {
 	inputDir := filepath.Join("..", "..", "testdata", "input")
@@ -42,7 +56,7 @@ func TestGoldenFiles(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			got, err := gofile.RewriteFile(fset, file, literals, &gofile.Options{Indent: 2, Newline: true})
+			got, err := gofile.RewriteFile(fset, file, literals, goldenOptions(entry.Name()))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -78,7 +92,7 @@ func TestGoldenFiles_ExpectedOutputNeedsNoFormatting(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			for _, result := range gofile.FormatLiterals(file, &gofile.Options{Indent: 2, Newline: true}) {
+			for _, result := range gofile.FormatLiterals(file, goldenOptions(entry.Name())) {
 				t.Errorf("already formatted literal would change\ngot:  %s\nwant: %s", result.Node.Value, result.Formatted)
 			}
 		})

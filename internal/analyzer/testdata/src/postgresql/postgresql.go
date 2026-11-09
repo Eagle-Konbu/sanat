@@ -1,0 +1,13 @@
+package postgresql
+
+var unformatted = `select data ? 'email' from users where id = $1` // want "SQL literal is not formatted"
+
+var formatted = `SELECT
+  data ? 'email'
+FROM
+  users
+WHERE
+  id = $1`
+
+// MySQL syntax doesn't parse as PostgreSQL, so it is left alone.
+var mysqlOnly = `select id from users limit 1, 2`
