@@ -22,8 +22,10 @@ returns a `*Lexer` whose `Next()` yields one `Token` (type, literal, and
 1-based line/column position) at a time, ending with `EOF`, or a `*LexError`
 for malformed input.
 
-- **Identifiers**: an unquoted identifier starts with a letter or `_` and may
-  continue with letters, digits, `_`, and `$`. It is folded to lower case, as
+- **Identifiers**: an unquoted identifier starts with an ASCII letter, `_`, or
+  any non-ASCII character, and may continue with those, digits, and `$`. As in
+  PostgreSQL's scanner, every character from U+0080 up counts, including
+  combining marks and symbols. It is folded to lower case, as
   PostgreSQL does, unless it is a keyword (see [Keywords](#keywords)). A
   double-quoted identifier (`QuotedIdent`) keeps its case, and `""` inside it
   is a literal `"`.
@@ -31,13 +33,25 @@ for malformed input.
   `standard_conforming_strings = on` (no backslash escapes); `E'...'` with
   backslash escapes, including `\xHH`, octal, and `\uXXXX`/`\UXXXXXXXX`
   (a UTF-16 surrogate pair is combined); and dollar-quoted `$$...$$` or
-  `$tag$...$tag$`. Adjacent string constants separated by whitespace that
+  `$tag$...$tag$`. An escape that denotes a zero byte (`E'\0'`, `E'\x00'`,
+  `E'\u0000'`) is a `*LexError`, since PostgreSQL text cannot hold one.
+  Adjacent string constants separated by whitespace that
   contains a newline are joined, per PostgreSQL's continuation rule. The
   `STRING` token's literal is the decoded content.
+- **Bit strings and national strings**: `B'0101'` and `X'1F'` lex as one
+  `BitString` token whose literal is the constant's SQL text with an
+  upper-case prefix; a digit outside the prefix's base is a `*LexError`.
+  `N'...'` lexes as a `NationalString` token holding the decoded content, and
+  renders back as `N'...'`.
 - **Numbers**: integers (`INT`) and decimals with an optional fraction and
   exponent (`FLOAT`), including a leading-dot `.5` and a trailing-dot `1.`;
-  `1..2` leaves `..` intact.
+  `1..2` leaves `..` intact. Like PostgreSQL 15+, an identifier character
+  directly after a number (`123abc`, `1.col`, `0x1F`) is a `*LexError`
+  ("trailing junk"), not a number followed by an alias.
 - **Placeholders**: `$1`, `$2`, ... (`Placeholder`, literal without the `$`).
+  `$1abc` is a `*LexError`.
+- **Whitespace**: space, tab, newline, carriage return, form feed, and
+  vertical tab.
 - **Comments**: `--` to end of line (no space required after the dashes) and
   nesting `/* ... */` block comments are skipped.
 - **Operators** follow PostgreSQL's scanner (`scan.l`): the longest run of
@@ -54,11 +68,10 @@ for malformed input.
 Not supported:
 
 - `U&'...'` Unicode-escape strings and `U&"..."` identifiers, rejected with a
-  `*LexError` rather than read as `u & '...'`.
-- `B'...'` and `X'...'` bit-string constants.
-- PostgreSQL 16's non-decimal integer literals and digit separators: like
-  PostgreSQL 15 and earlier, `0x1F` lexes as `0` followed by the identifier
-  `x1f`, so `SELECT 0x1F` parses as `SELECT 0 AS x1f`.
+  dedicated `*LexError` rather than read as `u & '...'`.
+- PostgreSQL 16's non-decimal integer literals (`0x1F`, `0o17`, `0b101`) and
+  digit separators (`1_000`), rejected as trailing junk, as PostgreSQL 15
+  does.
 
 ## Keywords
 
@@ -116,14 +129,15 @@ output layout.
 | `expr.go` | Expressions: predicates, arithmetic, `OperatorExpr`, `FuncExpr`, `NamedArgExpr`, `CaseExpr`, casts, arrays, subqueries, literals, column references |
 | `clause.go` | Clauses: `Where`, `GroupBy` (with grouping sets), `OrderBy`, `Limit`/`Offset`/`Fetch`, `Lock`, windows, `Returning`, `UpdateExpr`, `OnConflict`, `JoinCondition` |
 | `table.go` | FROM items: `AliasedTableExpr`, `JoinTableExpr`, `ParenTableExpr`, `DerivedTable`, and select items `AliasedExpr`, `StarExpr` |
+| `typename.go` | `TypeName` (casts and typed literals) and `TypedLiteral` |
 | `markers.go` | The empty marker methods that seal the interfaces |
 
 Identifiers are stored as SQL text: an unquoted name in its folded lower
 case, a quoted one with its double quotes. Every statement's `With` field
 holds its leading `WITH` clause.
 
-**MERGE** (PostgreSQL 15+; parsed by
-[#87](https://github.com/Eagle-Konbu/sanat/issues/87)): `Merge.Target` is an
+**MERGE** (PostgreSQL 15+; see
+[MERGE Statement Grammar](#merge-statement-grammar)): `Merge.Target` is an
 `*AliasedTableExpr` (so it carries `ONLY` and `*`), and each `MergeWhen` pairs
 a `MergeMatchKind` — `MATCHED`, `NOT MATCHED`, `NOT MATCHED BY TARGET`, or
 `NOT MATCHED BY SOURCE` (the last two PostgreSQL 17+) — with a `MergeAction`:
@@ -143,12 +157,13 @@ func ParseStatement(input string) (pgast.Statement, error)
 ```
 
 `ParseStatement` parses one statement of any supported kind: a query (a
-`SELECT` or set operation, optionally parenthesized), `INSERT`, `UPDATE`, or
-`DELETE`. It reads an optional leading `WITH` clause first, then dispatches on
-the next keyword; any other token is parsed as a query, so it fails as one.
+`SELECT` or set operation, optionally parenthesized), `INSERT`, `UPDATE`,
+`DELETE`, or `MERGE`. It reads an optional leading `WITH` clause first, then
+dispatches on the next keyword; any other token is parsed as a query, so it
+fails as one.
 
-The per-kind entry points `ParseSelect`, `ParseInsert`, `ParseUpdate`, and
-`ParseDelete` share the same plumbing and accept a leading `WITH` the same
+The per-kind entry points `ParseSelect`, `ParseInsert`, `ParseUpdate`,
+`ParseDelete`, and `ParseMerge` share the same plumbing and accept a leading `WITH` the same
 way; `ParseSetOp` additionally requires a set operator. All of them fully
 consume `input`, accepting one optional trailing `;` and failing with a
 `*ParseError` (or `*LexError`) otherwise. `ParseExpr` parses a bare
@@ -181,14 +196,16 @@ Loosest to tightest, matching PostgreSQL's operator precedence table:
 | 3 | `NOT` | right (prefix) | `NotExpr` |
 | 4 | `IS [NOT] {NULL \| TRUE \| FALSE \| UNKNOWN \| DISTINCT FROM}`, `ISNULL`, `NOTNULL` | postfix | `IsExpr`, `IsTruthExpr`, `IsDistinctFromExpr` |
 | 5 | `=` `<>` `<` `>` `<=` `>=` | non-associative (`a = b = c` is an error) | `ComparisonExpr` |
-| 6 | `[NOT] IN`, `[NOT] BETWEEN`, `[NOT] LIKE`, `[NOT] ILIKE` (with `ESCAPE`) | non-associative | `ComparisonExpr`, `RangeCond`, `ILikeExpr` |
+| 6 | `[NOT] IN`, `[NOT] BETWEEN [SYMMETRIC]`, `[NOT] LIKE`, `[NOT] ILIKE`, `[NOT] SIMILAR TO` (with `ESCAPE`) | non-associative | `ComparisonExpr`, `RangeCond`, `ILikeExpr` |
 | 7 | every other operator (`Op` tokens such as `\|\|`, `~`, `->`, `@>`, `<->`) and `OPERATOR([schema.]op)` | left (infix); prefix | `OperatorExpr` |
 | 8 | `+` `-` | left | `ArithmeticExpr` |
 | 9 | `*` `/` `%` | left | `ArithmeticExpr` |
 | 10 | `^` | left (`2 ^ 3 ^ 2` is `(2 ^ 3) ^ 2`) | `ArithmeticExpr` |
-| 11 | unary `+` `-` | right (prefix) | `UnaryExpr` |
-| 12 | `::type` | left (postfix) | `CastExpr` |
-| 13 | `[i]`, `[a:b]` | postfix | `ArraySubscriptExpr` |
+| 11 | `AT TIME ZONE` | left | `AtTimeZoneExpr` |
+| 12 | `COLLATE` | left (postfix) | `CollateExpr` |
+| 13 | unary `+` `-` | right (prefix) | `UnaryExpr` |
+| 14 | `::type` | left (postfix) | `CastExpr` |
+| 15 | `[i]`, `[a:b]` | postfix | `ArraySubscriptExpr` |
 
 **Generic operators** (level 7) are not listed one by one: any operator the
 lexer produces as `Op` is accepted, so new or user-defined operators parse
@@ -214,21 +231,87 @@ the comment `--a`.
 - Parenthesized expressions, row values `(a, b)`, `ROW(...)`, scalar
   subqueries, and `EXISTS (subquery)`.
 - `CASE` (simple and searched), `CAST(expr AS type)`, and `ARRAY[...]`.
-- Cast types are an identifier with optional `(modifiers)` and `[]` array
-  bounds, kept as opaque text.
+- Typed literals, a type name followed by a string constant:
+  `date '2020-01-01'`, `varchar(3) 'abc'`, `pg_catalog.int4 '1'`,
+  `double precision '1.5'`, `interval '1' day`, `interval(2) '1.5'`
+  (`pgast.TypedLiteral`). A type name can't be told apart from a column or
+  function call until the string after it, so the parser parses it
+  speculatively and backtracks when no string follows.
 
-Not supported (each a `*ParseError` unless noted): `SIMILAR TO`,
-`AT TIME ZONE`, `COLLATE`, `IS [NOT] DOCUMENT`/`NORMALIZED`, `OVERLAPS`,
-typed literals (`DATE '2024-01-01'`, `INTERVAL '1 day'`), three-part column
-references, `WITHIN GROUP`, `ORDER BY` inside aggregate calls, `VARIADIC`
-arguments, SQL-standard function syntax such as `EXTRACT(... FROM ...)`, and:
+- Quantified comparisons `left op {ANY | SOME | ALL} (array | subquery)`
+  (`pgast.QuantifiedExpr`), where `op` is a comparison or generic operator,
+  `OPERATOR(...)`, or `[NOT] LIKE`/`ILIKE`. `ANY` and `SOME` are reserved
+  keywords, so `any(arr)` alone is not a function call.
+- `expr COLLATE collation` (`CollateExpr`) and `expr AT TIME ZONE zone`
+  (`AtTimeZoneExpr`; `AT`, `TIME`, and `ZONE` are matched as identifiers).
+- `[NOT] SIMILAR TO pattern [ESCAPE e]` (a `ComparisonExpr` with
+  `SimilarOp`/`NotSimilarOp`), `[NOT] BETWEEN SYMMETRIC` (an explicit
+  `ASYMMETRIC` is the default and is dropped), and
+  `IS [NOT] [NFC | NFD | NFKC | NFKD] NORMALIZED` (`IsNormalizedExpr`).
+- `ARRAY(subquery)` (`ArraySubquery`) and multidimensional
+  `ARRAY[[1, 2], [3, 4]]`, whose inner brackets are `ArrayExpr`s with
+  `Nested` set.
 
-- Quantified comparisons: `= ALL (...)` fails, while `= ANY (...)` and
-  `= SOME (...)` parse as calls to functions named `any`/`some`, which
-  render equivalently.
-- Multi-word cast types: `a::double precision` is misread as
-  `a::double AS precision` in a select list. Single-word types, with
-  modifiers and array bounds, are supported.
+- Function call arguments: an aggregate's `ORDER BY` inside the parentheses
+  (`FuncExpr.OrderBy`), `WITHIN GROUP (ORDER BY ...)`
+  (`FuncExpr.WithinGroup`), `VARIADIC` on the last argument
+  (`FuncExpr.Variadic`), and the no-op `ALL` modifier, which is dropped like
+  `SELECT ALL`.
+- SQL-standard keyword-argument forms, each with its own node in
+  `pgast/funcform.go`: `EXTRACT(field FROM d)`, `SUBSTRING(s FROM a FOR b)`
+  (`FOR ... FROM` renders as `FROM ... FOR`) and
+  `SUBSTRING(s SIMILAR p ESCAPE e)`, `POSITION(a IN b)`,
+  `TRIM([BOTH | LEADING | TRAILING] [chars] FROM s)`, and
+  `OVERLAY(s PLACING r FROM a [FOR b])`. The comma-separated spellings of
+  `SUBSTRING`, `TRIM`, and `OVERLAY` are ordinary `FuncExpr`s, while
+  `EXTRACT` requires `FROM` and `POSITION` requires `IN`. These forms are
+  also accepted as `FROM` items and in `ON CONFLICT` targets.
+- `(a, b) OVERLAPS (c, d)` (`OverlapsExpr`); both sides must be two-element
+  rows.
+- Column references of up to three parts (`schema.table.col`), whole-row
+  references (`t.*`, as in `count(t.*)`), and field selection
+  (`FieldSelectExpr`): `(expr).field`, `(expr).*`, `arr[1].f`, and dotted
+  references beyond three parts. As in PostgreSQL, a function call's result
+  must be parenthesized before selecting a field.
+
+Not supported (each a `*ParseError` unless noted): `IS [NOT] DOCUMENT`,
+`AT LOCAL`, `COLLATION FOR (...)`, and three-part function names
+(`db.schema.f()`).
+
+### Type Names
+
+Implemented in `internal/sqlfmt/pgparser/typename.go`
+([#131](https://github.com/Eagle-Konbu/sanat/issues/131)). Casts
+(`expr::type`, `CAST(expr AS type)`) and typed literals share one type-name
+grammar, producing a structured `pgast.TypeName` (in `pgast/typename.go`):
+
+| Field | Holds | Example |
+|---|---|---|
+| `Names` | the dotted name parts; a built-in multi-word name is one part | `public.mytype`, `double precision` |
+| `Modifiers` | constants or plain identifiers | `numeric(10, 2)`, `geometry(point, 4326)` |
+| `TimeZone` | `WITH` / `WITHOUT TIME ZONE` | `timestamp(3) with time zone` |
+| `IntervalFields` | an interval's field restriction, as text | `interval day to second(3)` |
+| `ArrayBounds` | one entry per `[]` / `[n]` | `int[][3]` |
+
+`CastExpr.Type` is a `*pgast.TypeName` rather than an opaque string, so later
+grammar (such as column definition lists) and the formatter can use its
+parts. Type names render in lower case, as PostgreSQL's documentation spells
+them.
+
+- **Built-in multi-word names**: `double precision`; `character`, `char`,
+  `nchar`, `national character`, and `national char`, each optionally
+  followed by `varying`; `bit [varying]`; `time` and `timestamp` with an
+  optional precision and `with time zone` / `without time zone`; and
+  `interval` with either a precision or a field restriction (`year`,
+  `month`, `day`, `hour`, `minute`, `second[(p)]`, optionally `field TO
+  field`). PostgreSQL makes these words keywords; here they stay identifiers
+  matched by their text at these positions, so they remain usable as names
+  elsewhere. An interval field after a cast is always a field, never an
+  alias, as in PostgreSQL.
+- **Modifiers** accept only integer, numeric, and string constants and plain
+  identifiers, which is all PostgreSQL accepts at analysis.
+- Not supported: the `ARRAY` keyword spelling of array types
+  (`int ARRAY[3]`) and `SETOF`.
 
 ## SELECT Statement Grammar
 
@@ -268,10 +351,34 @@ SELECT [ ALL | DISTINCT [ ON ( expr [, ...] ) ] ]
 - **Row limiting**: `LIMIT` and `OFFSET` each at most once, in either order;
   `FETCH` may not be combined with `LIMIT`.
 
-Not supported: table functions in `FROM` (`FROM generate_series(...)`,
-`WITH ORDINALITY`, `ROWS FROM (...)`), `TABLESAMPLE`, `VALUES` as a query,
-`SELECT INTO`, `GROUP BY ALL`/`DISTINCT`, window frame `EXCLUDE`, and
-`ORDER BY ... USING op`.
+- **Function FROM items** ([#131](https://github.com/Eagle-Konbu/sanat/issues/131)):
+  `func(...)`, `LATERAL func(...)`, and `ROWS FROM (func(...), ...)`, each
+  optionally `WITH ORDINALITY`, as a `pgast.FuncTable` inside an
+  `AliasedTableExpr`.
+- **Alias column lists**: `AS t(a, b)` on tables, derived tables, function
+  calls, and parenthesized joins (`Columns`).
+- **`TABLESAMPLE method (args) [REPEATABLE (seed)]`** after a table's alias
+  (`AliasedTableExpr.Sample`). `TABLESAMPLE` is a type_func_name keyword, so
+  it is never read as an alias.
+- **`ONLY name`, `ONLY (name)`, and `name *`**, as for DML targets.
+- **Nested joins**: a join that still needs its `ON`/`USING` lets its right
+  side absorb the joins that follow, so `a JOIN b JOIN c ON x ON y` is
+  `a JOIN (b JOIN c ON x) ON y`, as in PostgreSQL. `JOIN ... USING (cols)
+  AS alias` (PostgreSQL 14+) sets `JoinCondition.UsingAlias`.
+- **`VALUES` and `TABLE name` queries**: like PostgreSQL's parse tree, both
+  are a `pgast.Select`, with `Values` (the rows) or `Table` (the relation)
+  set, so they work at the top level, as set-operation operands, in every
+  subquery position, as CTE bodies, and with trailing `ORDER BY`/`LIMIT`.
+  `VALUES` starts a query only when `(` follows, since it is also a
+  col_name keyword.
+- **Empty select list**: `SELECT FROM t` and a bare `SELECT` (not after
+  `DISTINCT`).
+- **Window frame `EXCLUDE CURRENT ROW | GROUP | TIES | NO OTHERS`**
+  (`FrameClause.Exclude`) and **`ORDER BY expr USING op`** (`Order.Using`),
+  in every sort clause.
+
+Not supported: column definition lists for functions returning `record`
+(`f() AS t(a int)`), `SELECT INTO`, and `GROUP BY ALL`/`DISTINCT`.
 
 ## Shared DML Grammar
 
@@ -280,22 +387,26 @@ Not supported: table functions in `FROM` (`FROM generate_series(...)`,
 that `INSERT`, `UPDATE`, and `DELETE` share, and that `MERGE`'s actions reuse:
 
 - **Target relation** (`parseRelationExpr`): `[ ONLY ] table_name [ * ] [ [ AS ] alias ]`,
-  parsed into an `*pgast.AliasedTableExpr` by `UPDATE` and `DELETE`. `ONLY`
-  sets `Only`; an explicit `*` (include inheritance descendants, already the
-  default) sets `IncludeDescendants` so it round-trips as written. The two are
+  parsed into an `*pgast.AliasedTableExpr` by `UPDATE`, `DELETE`, and
+  `MERGE`. `ONLY` sets `Only`; an explicit `*` (include inheritance
+  descendants, already the default) sets `IncludeDescendants` so it
+  round-trips as written. The two are
   mutually exclusive, as in PostgreSQL. `ONLY (table_name)` is accepted and
   normalized to `ONLY table_name`. The alias renders without `AS`, like table
   aliases in `SELECT`. A bare `SET` is never taken as the alias, as in
   PostgreSQL, so `AS set` is accepted and keeps its `AS` when rendered.
-- **SET assignment list** (`parseSetClauseList`), used by `UPDATE` and
-  `ON CONFLICT DO UPDATE`; see [UPDATE](#update-statement-grammar) for its
-  forms.
+- **SET assignment list** (`parseSetClauseList`), used by `UPDATE`,
+  `ON CONFLICT DO UPDATE`, and `MERGE`'s `UPDATE SET` action; see
+  [UPDATE](#update-statement-grammar) for its forms.
 - **A single `VALUES` row** (`parseParenExprOrDefaultList`):
-  `( { expr | DEFAULT } [, ...] )`, used per row by `INSERT ... VALUES` and by
-  `ROW(...)` sources in `SET`.
+  `( { expr | DEFAULT } [, ...] )`, used per row by `INSERT ... VALUES`, by
+  `MERGE`'s `INSERT ... VALUES` action, and by `ROW(...)` sources in `SET`.
 - **Optional column list** (`parseOptionalParenColumnList`), used after an
-  `INSERT` target, by `ON CONFLICT`, and by CTE names.
-- **`RETURNING`** (`parseOptionalReturning`).
+  `INSERT` target, by `MERGE`'s `INSERT` action, by `ON CONFLICT`, and by CTE
+  names.
+- **`RETURNING`** (`parseOptionalReturning`). `MERGE` uses its own
+  `parseOptionalMergeReturning`, which also accepts PostgreSQL 18's
+  `WITH (OLD AS ..., NEW AS ...)`.
 
 ## INSERT Statement Grammar
 
@@ -341,10 +452,22 @@ INSERT INTO table_name [ AS alias ] [ ( column [, ...] ) ]
 - **`RETURNING`** reuses the `SELECT` list grammar (`*`, `table.*`, and
   `expr [[AS] name]`); `String()` always renders an alias with `AS`.
 
-Not yet implemented: `OVERRIDING { SYSTEM | USER } VALUE`, `ON CONFLICT ON CONSTRAINT name`,
-expression/`COLLATE`/operator-class conflict targets, a
-`WHERE index_predicate` on the conflict target, and PostgreSQL 18's
-`RETURNING WITH (...)`.
+- **Conflict targets** ([#131](https://github.com/Eagle-Konbu/sanat/issues/131)):
+  `ON CONSTRAINT name` (`OnConflict.Constraint`), or a list of
+  `pgast.IndexElem`s (`OnConflict.Target`) — a column, function call, or
+  parenthesized expression, each with an optional `COLLATE` and operator
+  class — followed by an optional `WHERE index_predicate`
+  (`OnConflict.TargetWhere`).
+- **Column list**: each column may carry indirection (`arr[1]`,
+  `c.field`), as with `UPDATE`'s `SET` targets, so `Insert.Columns` is a
+  list of target expressions.
+- **Parenthesized query source**: `INSERT INTO t (SELECT ...)` is told apart
+  from a column list by the token after `(`. A `VALUES` source followed by a
+  set operator or trailing clause continues as a query, and `TABLE name` is
+  accepted.
+
+Not yet implemented: `OVERRIDING { SYSTEM | USER } VALUE` and PostgreSQL
+18's `RETURNING WITH (...)`.
 
 ## UPDATE Statement Grammar
 
@@ -411,8 +534,6 @@ multi-table `UPDATE` target, so the two parsers share no logic.
 - `WHERE CURRENT OF cursor_name`, which needs `DECLARE CURSOR` session state;
   it is rejected with an explicit error.
 - `RETURNING WITH (OLD/NEW AS ...)` (PostgreSQL 18 only).
-- Array-subscript SET targets (`col[1] = ...`) and nested field targets
-  (`col.a.b = ...`).
 - MySQL-only clauses such as `ORDER BY`/`LIMIT` are rejected as trailing
   input.
 
@@ -460,6 +581,105 @@ Deferred:
   formatter never has; it currently fails to parse.
 - `RETURNING WITH (OLD/NEW AS ...)` — PostgreSQL 18 only.
 
+## MERGE Statement Grammar
+
+Implemented in `internal/sqlfmt/pgparser/merge.go`
+([#87](https://github.com/Eagle-Konbu/sanat/issues/87)).
+
+```go
+func ParseMerge(input string) (*pgast.Merge, error)
+```
+
+Like the other entry points, it fully consumes `input`, accepting one
+optional trailing `;` and failing with a `*ParseError` (or `*LexError`)
+otherwise. `ParseStatement` dispatches to it on a leading `MERGE`.
+
+```text
+[ WITH [ RECURSIVE ] with_query [, ...] ]
+MERGE INTO [ ONLY ] target_table [ * ] [ [ AS ] alias ]
+USING data_source ON join_condition
+    when_clause [ ... ]
+    [ RETURNING [ WITH ( { OLD | NEW } AS output_alias [, ...] ) ]
+                { * | output_expr [ [ AS ] output_name ] } [, ...] ]
+
+when_clause :=
+    WHEN MATCHED [ AND condition ] THEN { merge_update | merge_delete | DO NOTHING }
+  | WHEN NOT MATCHED [ BY TARGET ] [ AND condition ] THEN { merge_insert | DO NOTHING }
+  | WHEN NOT MATCHED BY SOURCE [ AND condition ] THEN { merge_update | merge_delete | DO NOTHING }
+
+merge_update := UPDATE SET set_clause [, ...]
+merge_delete := DELETE
+merge_insert := INSERT [ ( column [, ...] ) ]
+                    [ OVERRIDING { SYSTEM | USER } VALUE ]
+                    { VALUES ( { expr | DEFAULT } [, ...] ) | DEFAULT VALUES }
+```
+
+**Version gating.** `MERGE` is PostgreSQL 15+, unlike the rest of the 13+
+grammar this package accepts. The parser accepts every form up to
+PostgreSQL 18 without a version switch; the PostgreSQL version each form
+needs is:
+
+| Feature | Since |
+|---|---|
+| `MERGE` with `WHEN MATCHED` / `WHEN NOT MATCHED` | PostgreSQL 15 |
+| `WHEN NOT MATCHED BY SOURCE`, explicit `BY TARGET` | PostgreSQL 17 |
+| `RETURNING`, `merge_action()` | PostgreSQL 17 |
+| `MERGE` as a CTE body | PostgreSQL 17 |
+| `RETURNING WITH (OLD AS ..., NEW AS ...)` | PostgreSQL 18 |
+
+- **Target**: the shared [target relation](#shared-dml-grammar) grammar,
+  stored in `Merge.Target`, so `ONLY`, `*`, and the alias behave exactly as
+  for `UPDATE` and `DELETE`.
+- **Data source**: a single `FROM` item (`parseTableReference`) — a table, a
+  derived table, a `LATERAL` derived table, or a join of them — stored in
+  `Merge.Source`. A comma-separated list is rejected, as in PostgreSQL. A
+  joined source carries its own `ON`, so
+  `USING a JOIN b ON a.id = b.a_id ON t.id = a.id` reads the first `ON` as
+  the join's and the second as `MERGE`'s.
+- **`WHEN` clauses**: at least one is required, kept in written order in
+  `Merge.Whens`. The match kind is stored as a `pgast.MergeMatchKind`; an
+  explicit `BY TARGET` is kept apart from plain `NOT MATCHED` so it
+  round-trips as written. The optional `AND condition` is any expression.
+- **Actions** follow PostgreSQL's grammar, not its later analysis: `MATCHED`
+  and `NOT MATCHED BY SOURCE` take `UPDATE SET`, `DELETE`, or `DO NOTHING`,
+  and `NOT MATCHED [BY TARGET]` takes `INSERT` or `DO NOTHING`; any other
+  pairing is a parse error. `UPDATE SET` shares
+  [`UPDATE`'s SET grammar](#update-statement-grammar) (including multi-column,
+  `ROW(...)`, sub-SELECT, and `DEFAULT` sources); neither `UPDATE` nor
+  `DELETE` takes a table name or `WHERE` here. `INSERT` takes a single
+  `VALUES` row, whose items may be `DEFAULT`, or `DEFAULT VALUES`, which
+  admits neither a column list nor `OVERRIDING` (a nil
+  `MergeInsert.Values`).
+- **`OVERRIDING { SYSTEM | USER } VALUE`** is stored as
+  `MergeInsert.Overriding`. `USER` is a reserved keyword in PostgreSQL, but it
+  has no token here (its use as the current user name in expressions is not
+  modeled), so after `OVERRIDING` it is matched as an unquoted identifier;
+  `"user"` quoted is rejected, as in PostgreSQL.
+- **`RETURNING`** reuses the `SELECT` list grammar. `merge_action()` needs no
+  special handling: it parses as an ordinary function call. The PostgreSQL 18
+  `WITH (OLD AS o, NEW AS n)` output aliases are stored in
+  `Returning.Aliases` in written order; PostgreSQL's analysis-time check that
+  each of `OLD` and `NEW` appears at most once is not repeated.
+- **Keywords**: `MERGE`, `MATCHED`, `SOURCE`, `TARGET`, `OVERRIDING`,
+  `SYSTEM`, `VALUE`, `OLD`, and `NEW` are unreserved keywords, so they remain
+  usable as names everywhere (see [Keywords](#keywords)), including inside a
+  `MERGE` (`MERGE INTO target source USING merge matched ...`).
+
+Not supported:
+
+- `RETURNING WITH (...)` on `INSERT`, `UPDATE`, and `DELETE` (PostgreSQL 18).
+- Array-subscript and field-indirection columns in the `INSERT` column list
+  and `SET` targets (as for `INSERT` and `UPDATE`).
+- Table functions as the data source (as for `FROM`).
+
+### Testing
+
+`internal/sqlfmt/pgparser/merge_test.go` holds table-driven round-trip tests
+for the target, the data source, every `WHEN` branch shape, multiple `WHEN`
+clauses on one statement, `RETURNING` (including `WITH (OLD/NEW AS ...)`),
+leading `WITH` and `MERGE` as a CTE body, keywords used as names, structural
+assertions on the AST, and error cases with their messages.
+
 ## Set Operation Grammar
 
 Implemented in `internal/sqlfmt/pgparser/setop.go`
@@ -475,8 +695,8 @@ func ParseSetOp(input string) (*pgast.SetOp, error)
 plus any trailing clauses on the combined result, and an optional trailing
 `;`. It fails with a `*ParseError` when the input is a single (possibly
 parenthesized) SELECT with no set operator. Use `ParseSelect` only for an
-unparenthesized single SELECT: it requires the input to start with `SELECT` (or `WITH`),
-so it rejects a leading `(`, and it also rejects a top-level set operation.
+unparenthesized single `SELECT`, `VALUES`, or `TABLE` query, optionally
+preceded by `WITH`: it rejects a leading `(` and a top-level set operation.
 
 ### Grammar
 
@@ -520,7 +740,8 @@ row_limit  := LIMIT ... [ OFFSET ... ]
 - A leading `WITH` clause (see [Common Table Expressions](#common-table-expressions))
   scopes the whole query and is stored on the outermost statement. To scope
   one to a single operand, parenthesize the operand.
-- `VALUES` and `TABLE name` operands are not supported yet.
+- `VALUES` and `TABLE name` operands are `Select`s (see
+  [SELECT](#select-statement-grammar)), so they combine like any other.
 
 ### Subquery Positions
 
@@ -570,16 +791,16 @@ subquery position.
 ```
 with_clause := WITH [ RECURSIVE ] with_query [, ...]
 with_query  := cte_name [ ( column [, ...] ) ] AS [ [ NOT ] MATERIALIZED ]
-               ( query | insert | update | delete )
+               ( query | insert | update | delete | merge )
 ```
 
 - The clause is stored in the `With` field of the statement it leads
-  (`pgast.Select`, `SetOp`, `Insert`, `Update`, or `Delete`). Each CTE is a
+  (`pgast.Select`, `SetOp`, `Insert`, `Update`, `Delete`, or `Merge`). Each CTE is a
   `pgast.CommonTableExpr`, whose `Subquery` holds whichever statement the
   body parses to.
 - **Bodies** may be a query (a `SELECT` or set operation, optionally
-  parenthesized), or a data-modifying `INSERT`/`UPDATE`/`DELETE`, typically
-  with `RETURNING`, as in
+  parenthesized), or a data-modifying `INSERT`/`UPDATE`/`DELETE`/`MERGE`
+  (`MERGE` since PostgreSQL 17), typically with `RETURNING`, as in
   `WITH deleted AS (DELETE FROM logs RETURNING *) INSERT INTO archive SELECT * FROM deleted`.
   Any body may lead with its own nested `WITH`.
 - **`[NOT] MATERIALIZED`** is stored as `CommonTableExpr.Materialization`
@@ -603,11 +824,8 @@ with_query  := cte_name [ ( column [, ...] ) ] AS [ [ NOT ] MATERIALIZED ]
 
 Deferred:
 
-- `MERGE` as a CTE body
-  ([#87](https://github.com/Eagle-Konbu/sanat/issues/87)).
 - The `SEARCH { BREADTH | DEPTH } FIRST BY ...` and `CYCLE ...` clauses on
   recursive CTEs (PostgreSQL 14+).
-- `VALUES` as a CTE body (as for set-operation operands).
 
 ### Testing
 

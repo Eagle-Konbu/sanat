@@ -97,6 +97,20 @@ func (t TableName) String() string {
 // IsEmpty reports whether the TableName is empty.
 func (t TableName) IsEmpty() bool { return t.Name.IsEmpty() }
 
+// AnyName represents a dotted name of any length, such as a collation's
+// [database.][schema.]name.
+type AnyName []ColIdent
+
+// String returns AnyName's SQL text.
+func (n AnyName) String() string {
+	strs := make([]string, len(n))
+	for i, part := range n {
+		strs[i] = part.String()
+	}
+
+	return strings.Join(strs, ".")
+}
+
 // Columns represents a list of column identifiers.
 type Columns []ColIdent
 

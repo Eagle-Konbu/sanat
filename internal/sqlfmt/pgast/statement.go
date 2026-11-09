@@ -5,8 +5,16 @@ import "strings"
 // Select represents a SELECT statement. WITH is modeled on Select (and the
 // other DML statements below) rather than as its own wrapper statement,
 // since PostgreSQL CTEs prefix any of SELECT/INSERT/UPDATE/DELETE/MERGE.
+//
+// A VALUES query and the "TABLE name" shorthand are Selects too, as in
+// PostgreSQL's own parse tree, so they work wherever a query does: Values
+// holds a VALUES query's rows, and Table the relation of TABLE name. When
+// either is set, only With and the trailing ORDER BY through locking clauses
+// may be set besides it.
 type Select struct {
 	With        *With
+	Values      [][]Expr
+	Table       *AliasedTableExpr
 	Distinct    bool
 	DistinctOn  *DistinctOn
 	SelectExprs []SelectExpr
@@ -28,22 +36,16 @@ func (s *Select) String() string {
 
 	writeOptionalPrefix(&b, s.With)
 
-	b.WriteString("SELECT ")
-
 	switch {
-	case s.DistinctOn != nil:
-		b.WriteString(s.DistinctOn.String())
-		b.WriteString(" ")
-	case s.Distinct:
-		b.WriteString("DISTINCT ")
+	case s.Values != nil:
+		b.WriteString(Values(s.Values).String())
+	case s.Table != nil:
+		b.WriteString("TABLE ")
+		b.WriteString(s.Table.String())
+	default:
+		s.writeSelectCore(&b)
 	}
 
-	writeSelectExprs(&b, s.SelectExprs)
-	writeFromClause(&b, s.From)
-	writeWhereClause(&b, "WHERE", s.Where)
-	writeSuffix(&b, s.GroupBy)
-	writeWhereClause(&b, "HAVING", s.Having)
-	writeWindowClause(&b, s.Window)
 	writeSuffix(&b, s.OrderBy)
 	writeSuffix(&b, s.Limit)
 	writeSuffix(&b, s.Offset)
@@ -56,6 +58,31 @@ func (s *Select) String() string {
 	return b.String()
 }
 
+// writeSelectCore renders the SELECT keyword through the WINDOW clause. An
+// empty select list, as in "SELECT FROM t", renders no list.
+func (s *Select) writeSelectCore(b *strings.Builder) {
+	b.WriteString("SELECT")
+
+	switch {
+	case s.DistinctOn != nil:
+		b.WriteString(" ")
+		b.WriteString(s.DistinctOn.String())
+	case s.Distinct:
+		b.WriteString(" DISTINCT")
+	}
+
+	if len(s.SelectExprs) > 0 {
+		b.WriteString(" ")
+		writeSelectExprs(b, s.SelectExprs)
+	}
+
+	writeFromClause(b, s.From)
+	writeWhereClause(b, "WHERE", s.Where)
+	writeSuffix(b, s.GroupBy)
+	writeWhereClause(b, "HAVING", s.Having)
+	writeWindowClause(b, s.Window)
+}
+
 // Insert represents an INSERT statement.
 //
 // Its target is a TableName plus an Alias rather than the *AliasedTableExpr
@@ -66,7 +93,7 @@ type Insert struct {
 	With       *With
 	Table      TableName
 	Alias      TableIdent
-	Columns    Columns
+	Columns    []Expr // target columns, with optional field and subscript indirection (see UpdateExpr)
 	Rows       InsertRows
 	OnConflict *OnConflict
 	Returning  *Returning
@@ -88,7 +115,7 @@ func (ins *Insert) String() string {
 
 	if len(ins.Columns) > 0 {
 		b.WriteString(" (")
-		b.WriteString(ins.Columns.String())
+		b.WriteString(exprListString(ins.Columns))
 		b.WriteString(")")
 	}
 

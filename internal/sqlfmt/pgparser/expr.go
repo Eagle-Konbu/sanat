@@ -12,8 +12,8 @@ import (
 // Precedence, loosest to tightest (per
 // https://www.postgresql.org/docs/current/sql-syntax-lexical.html#SQL-PRECEDENCE):
 // OR > AND > NOT > IS/ISNULL/NOTNULL > plain comparison > BETWEEN/IN/LIKE/
-// ILIKE > any other operator > + - > * / % > ^ > unary +/- > :: cast >
-// primary (including array subscript, which is resolved inside cast's type-
+// ILIKE/SIMILAR TO > any other operator > + - > * / % > ^ > AT TIME ZONE >
+// COLLATE > unary +/- > :: cast > primary (including array subscript, which is resolved inside cast's type-
 // name grammar rather than as a separate postfix tier — see parseTypeName).
 func (p *Parser) parseExpr() pgast.Expr {
 	return p.parseOrExpr()
@@ -91,7 +91,36 @@ func (p *Parser) parseIsSuffix(left pgast.Expr) pgast.Expr {
 		return &pgast.IsExpr{Not: not, Expr: left}
 	}
 
+	if form, ok := p.tryReadNormalizedTest(); ok {
+		return &pgast.IsNormalizedExpr{Not: not, Expr: left, Form: form}
+	}
+
 	return &pgast.IsTruthExpr{Not: not, Expr: left, Value: p.readTruthValue()}
+}
+
+// normalizationForms are the Unicode normalization forms an IS NORMALIZED
+// test may name.
+var normalizationForms = map[string]bool{"nfc": true, "nfd": true, "nfkc": true, "nfkd": true}
+
+// tryReadNormalizedTest consumes the "[form] NORMALIZED" of an IS [NOT]
+// NORMALIZED test, returning the form in upper case ("" if omitted), or
+// reports ok=false without consuming anything. Like UNKNOWN, these words
+// are matched as identifiers.
+func (p *Parser) tryReadNormalizedTest() (string, bool) {
+	switch {
+	case p.atWord("normalized"):
+		p.advance()
+
+		return "", true
+	case p.at(IDENT) && normalizationForms[p.tok.Literal] && p.peekIsWord("normalized"):
+		form := asciiUpper(p.tok.Literal)
+		p.advance()
+		p.advance()
+
+		return form, true
+	default:
+		return "", false
+	}
 }
 
 // readTruthValue reads the TRUE / FALSE / UNKNOWN operand of an IS test.
@@ -104,14 +133,14 @@ func (p *Parser) readTruthValue() pgast.TruthValue {
 		return value
 	}
 
-	if p.at(IDENT) && p.tok.Literal == "unknown" {
+	if p.atWord("unknown") {
 		p.advance()
 
 		return pgast.TruthUnknown
 	}
 
 	return failReturn[pgast.TruthValue](p,
-		"expected NULL, TRUE, FALSE, UNKNOWN, or DISTINCT FROM after IS, got %s", p.tok.Type)
+		"expected NULL, TRUE, FALSE, UNKNOWN, NORMALIZED, or DISTINCT FROM after IS, got %s", p.tok.Type)
 }
 
 var simpleComparisonOps = map[TokenType]pgast.ComparisonOperator{
@@ -135,7 +164,57 @@ func (p *Parser) parseComparisonExpr() pgast.Expr {
 
 	p.advance()
 
+	if p.atQuantifier() {
+		return p.parseQuantifiedExpr(left, pgast.Operator{Symbol: op.String()})
+	}
+
 	return &pgast.ComparisonExpr{Left: left, Operator: op, Right: p.parseRangePredicateExpr()}
+}
+
+var quantifiers = map[TokenType]pgast.Quantifier{
+	ANY:  pgast.QuantifierAny,
+	SOME: pgast.QuantifierSome,
+	ALL:  pgast.QuantifierAll,
+}
+
+// atQuantifier reports whether the current tokens start the
+// "ANY | SOME | ALL (...)" right-hand side of a quantified comparison.
+func (p *Parser) atQuantifier() bool {
+	_, ok := quantifiers[p.tok.Type]
+
+	return ok && p.peekAt(LPAREN)
+}
+
+// parseQuantifiedExpr parses "ANY | SOME | ALL (subquery | array)" as the
+// right-hand side of left op. The current token must be the quantifier.
+func (p *Parser) parseQuantifiedExpr(left pgast.Expr, op pgast.Operator) pgast.Expr {
+	quantifier := quantifiers[p.tok.Type]
+	p.advance()
+	p.expect(LPAREN)
+
+	right := p.parseSubqueryOrExpr()
+
+	p.expect(RPAREN)
+
+	return &pgast.QuantifiedExpr{Left: left, Operator: op, Quantifier: quantifier, Right: right}
+}
+
+// parseSubqueryOrExpr parses the content of a parenthesized position that
+// holds either a query, returned as a *pgast.Subquery, or an expression,
+// just after its opening '('. A leading parenthesized query that continues
+// into a set operation, as in "((SELECT 1) UNION SELECT 2)", is a query too.
+func (p *Parser) parseSubqueryOrExpr() pgast.Expr {
+	if isQueryStart(p.tok.Type, p.peekTok.Type) {
+		return &pgast.Subquery{Select: p.parseSubqueryStatement()}
+	}
+
+	expr := p.parseExpr()
+
+	if query := p.tryContinueQueryFromExpr(expr); query != nil {
+		return &pgast.Subquery{Select: query}
+	}
+
+	return expr
 }
 
 // parseRangePredicateExpr parses an optional [NOT] IN / [NOT] BETWEEN /
@@ -147,27 +226,43 @@ func (p *Parser) parseRangePredicateExpr() pgast.Expr {
 
 	// not is always consistent with one of the cases below:
 	// consumeNegatedPredicateKeyword only consumes NOT when the following
-	// token is already IN/BETWEEN/LIKE/ILIKE.
+	// token is already IN/BETWEEN/LIKE/ILIKE/SIMILAR TO.
 	switch {
 	case p.at(IN):
 		return p.parseInExpr(left, not)
 	case p.at(BETWEEN):
 		return p.parseBetweenExpr(left, not)
-	case p.at(LIKE):
+	case p.at(LIKE), p.at(ILIKE):
 		return p.parseLikeExpr(left, not)
-	case p.at(ILIKE):
-		return p.parseILikeExpr(left, not)
+	case p.atSimilarTo():
+		return p.parseSimilarToExpr(left, not)
 	default:
 		return left
 	}
 }
 
+// atSimilarTo reports whether the current tokens are SIMILAR TO. A bare
+// SIMILAR is SUBSTRING's "SIMILAR pattern" separator instead.
+func (p *Parser) atSimilarTo() bool {
+	return p.at(SIMILAR) && p.peekAt(TO)
+}
+
 // consumeNegatedPredicateKeyword consumes a leading NOT that belongs to a
-// [NOT] IN / [NOT] BETWEEN / [NOT] LIKE / [NOT] ILIKE predicate, as opposed
+// [NOT] IN / BETWEEN / LIKE / ILIKE / SIMILAR TO predicate, as opposed
 // to a prefix logical NOT (already handled by parseNotExpr, above this
 // precedence level).
 func (p *Parser) consumeNegatedPredicateKeyword() bool {
-	if !p.at(NOT) || (!p.peekAt(IN) && !p.peekAt(BETWEEN) && !p.peekAt(LIKE) && !p.peekAt(ILIKE)) {
+	if !p.at(NOT) {
+		return false
+	}
+
+	switch p.peekTok.Type {
+	case IN, BETWEEN, LIKE, ILIKE:
+	case SIMILAR:
+		if !p.peek2At(TO) {
+			return false
+		}
+	default:
 		return false
 	}
 
@@ -187,7 +282,7 @@ func (p *Parser) parseInExpr(left pgast.Expr, not bool) pgast.Expr {
 		op = pgast.NotInOp
 	}
 
-	if isQueryStart(p.tok.Type) {
+	if isQueryStart(p.tok.Type, p.peekTok.Type) {
 		sel := p.parseSubqueryStatement()
 		p.expect(RPAREN)
 
@@ -216,40 +311,78 @@ func (p *Parser) parseInExpr(left pgast.Expr, not bool) pgast.Expr {
 	return &pgast.ComparisonExpr{Left: left, Operator: op, Right: pgast.ValTuple(values)}
 }
 
-// parseBetweenExpr parses the "BETWEEN x AND y" suffix applied to left. The
-// bounds are parsed below the predicate levels, so the first AND is always
-// BETWEEN's separator and "a BETWEEN 1 AND 2 AND b" is
-// "(a BETWEEN 1 AND 2) AND b".
+// parseBetweenExpr parses "BETWEEN [SYMMETRIC | ASYMMETRIC] x AND y" applied
+// to left; ASYMMETRIC is the default, so it is not modeled. The bounds are
+// parsed below the predicate levels, so the first AND is always BETWEEN's
+// separator and "a BETWEEN 1 AND 2 AND b" is "(a BETWEEN 1 AND 2) AND b".
 func (p *Parser) parseBetweenExpr(left pgast.Expr, not bool) pgast.Expr {
 	p.advance() // consume BETWEEN
+
+	symmetric := p.consume(SYMMETRIC)
+	if !symmetric {
+		p.consume(ASYMMETRIC)
+	}
 
 	from := p.parseOtherOpExpr()
 	p.expect(AND)
 
 	to := p.parseOtherOpExpr()
 
-	return &pgast.RangeCond{Not: not, Left: left, From: from, To: to}
+	return &pgast.RangeCond{Not: not, Symmetric: symmetric, Left: left, From: from, To: to}
 }
 
+// parseLikeExpr parses the "LIKE pattern [ESCAPE e]" or "ILIKE ..." suffix
+// applied to left, or a quantified "LIKE ANY (...)".
 func (p *Parser) parseLikeExpr(left pgast.Expr, not bool) pgast.Expr {
-	p.advance() // consume LIKE
+	ilike := p.at(ILIKE)
+	p.advance() // consume LIKE / ILIKE
+
+	if p.atQuantifier() {
+		return p.parseQuantifiedExpr(left, likeOperator(ilike, not))
+	}
+
+	right := p.parseOtherOpExpr()
+	escape := p.parseOptionalEscape()
+
+	if ilike {
+		return &pgast.ILikeExpr{Not: not, Left: left, Right: right, Escape: escape}
+	}
 
 	op := pgast.LikeOp
 	if not {
 		op = pgast.NotLikeOp
 	}
 
+	return &pgast.ComparisonExpr{Left: left, Operator: op, Right: right, Escape: escape}
+}
+
+func likeOperator(ilike, not bool) pgast.Operator {
+	symbol := "LIKE"
+	if ilike {
+		symbol = "ILIKE"
+	}
+
+	if not {
+		symbol = "NOT " + symbol
+	}
+
+	return pgast.Operator{Symbol: symbol}
+}
+
+// parseSimilarToExpr parses the "SIMILAR TO pattern [ESCAPE e]" suffix
+// applied to left.
+func (p *Parser) parseSimilarToExpr(left pgast.Expr, not bool) pgast.Expr {
+	p.advance() // consume SIMILAR
+	p.advance() // consume TO
+
+	op := pgast.SimilarOp
+	if not {
+		op = pgast.NotSimilarOp
+	}
+
 	right := p.parseOtherOpExpr()
 
 	return &pgast.ComparisonExpr{Left: left, Operator: op, Right: right, Escape: p.parseOptionalEscape()}
-}
-
-func (p *Parser) parseILikeExpr(left pgast.Expr, not bool) pgast.Expr {
-	p.advance() // consume ILIKE
-
-	right := p.parseOtherOpExpr()
-
-	return &pgast.ILikeExpr{Not: not, Left: left, Right: right, Escape: p.parseOptionalEscape()}
 }
 
 // parseOptionalEscape parses a LIKE/ILIKE pattern's optional trailing
@@ -273,6 +406,12 @@ func (p *Parser) parseOtherOpExpr() pgast.Expr {
 		op, ok := p.tryParseOperator()
 		if !ok {
 			return left
+		}
+
+		if p.atQuantifier() {
+			left = p.parseQuantifiedExpr(left, op)
+
+			continue
 		}
 
 		left = &pgast.OperatorExpr{Left: left, Operator: op, Right: p.parseAdditiveExpr()}
@@ -358,10 +497,7 @@ func (p *Parser) parseAdditiveExpr() pgast.Expr {
 	left := p.parseMultiplicativeExpr()
 
 	for p.at(PLUS) || p.at(MINUS) {
-		op := arithmeticOps[p.tok.Type]
-		p.advance()
-
-		left = &pgast.ArithmeticExpr{Left: left, Operator: op, Right: p.parseMultiplicativeExpr()}
+		left = p.parseArithmeticRight(left, (*Parser).parseMultiplicativeExpr)
 	}
 
 	return left
@@ -371,26 +507,79 @@ func (p *Parser) parseMultiplicativeExpr() pgast.Expr {
 	left := p.parseExponentExpr()
 
 	for p.at(STAR) || p.at(SLASH) || p.at(PERCENT) {
-		op := arithmeticOps[p.tok.Type]
-		p.advance()
-
-		left = &pgast.ArithmeticExpr{Left: left, Operator: op, Right: p.parseExponentExpr()}
+		left = p.parseArithmeticRight(left, (*Parser).parseExponentExpr)
 	}
 
 	return left
+}
+
+// parseArithmeticRight consumes the current arithmetic operator and parses
+// its right operand with parseOperand, or a quantified
+// "ANY | SOME | ALL (...)", as in "a + ANY (arr)", which PostgreSQL accepts
+// after any operator.
+func (p *Parser) parseArithmeticRight(left pgast.Expr, parseOperand func(*Parser) pgast.Expr) pgast.Expr {
+	op := arithmeticOps[p.tok.Type]
+	p.advance()
+
+	if p.atQuantifier() {
+		return p.parseQuantifiedExpr(left, pgast.Operator{Symbol: op.String()})
+	}
+
+	return &pgast.ArithmeticExpr{Left: left, Operator: op, Right: parseOperand(p)}
 }
 
 // parseExponentExpr parses '^', which PostgreSQL makes left-associative
 // ("2 ^ 3 ^ 2" is "(2 ^ 3) ^ 2") and looser than unary minus ("-2 ^ 2" is
 // "(-2) ^ 2"), unlike the usual mathematical convention.
 func (p *Parser) parseExponentExpr() pgast.Expr {
-	left := p.parseUnaryExpr()
+	left := p.parseAtTimeZoneExpr()
 
-	for p.consume(CARET) {
-		left = &pgast.ArithmeticExpr{Left: left, Operator: pgast.ExpOp, Right: p.parseUnaryExpr()}
+	for p.at(CARET) {
+		left = p.parseArithmeticRight(left, (*Parser).parseAtTimeZoneExpr)
 	}
 
 	return left
+}
+
+// parseAtTimeZoneExpr parses left-associative "expr AT TIME ZONE zone",
+// which binds tighter than '^' but looser than COLLATE. AT, TIME, and ZONE
+// are matched as identifiers, since none is a keyword token.
+func (p *Parser) parseAtTimeZoneExpr() pgast.Expr {
+	left := p.parseCollateExpr()
+
+	for p.atWord("at") && p.peekIsWord("time") && p.peek2IsWord("zone") {
+		p.advance()
+		p.advance()
+		p.advance()
+
+		left = &pgast.AtTimeZoneExpr{Expr: left, Zone: p.parseCollateExpr()}
+	}
+
+	return left
+}
+
+// parseCollateExpr parses "expr COLLATE collation", which binds looser than
+// unary minus: "-a COLLATE c" is "(-a) COLLATE c".
+func (p *Parser) parseCollateExpr() pgast.Expr {
+	left := p.parseUnaryExpr()
+
+	for p.consume(COLLATE) {
+		left = &pgast.CollateExpr{Expr: left, Collation: p.parseAnyName()}
+	}
+
+	return left
+}
+
+// parseAnyName parses PostgreSQL's any_name: a ColId followed by any number
+// of ".ColLabel" parts, as in mydb.pg_catalog."C".
+func (p *Parser) parseAnyName() pgast.AnyName {
+	name := pgast.AnyName{pgast.ColIdent(p.readColID())}
+
+	for p.consume(DOT) {
+		name = append(name, pgast.ColIdent(p.readColLabel()))
+	}
+
+	return name
 }
 
 // parseUnaryExpr parses prefix + and -. They bind looser than a "::" cast,
@@ -432,11 +621,44 @@ func (p *Parser) parseCastExpr() pgast.Expr {
 func (p *Parser) parseSubscriptExpr() pgast.Expr {
 	left := p.parsePrimaryExpr()
 
-	for p.at(LBRACKET) {
-		left = p.parseSubscript(left)
+	for {
+		switch {
+		case p.atIndirectionAfterStar(left):
+			p.failImproperStar()
+		case p.at(LBRACKET):
+			left = p.parseSubscript(left)
+		case p.at(DOT) && acceptsFieldSelection(left):
+			left = p.parseFieldSelection(left)
+		default:
+			return left
+		}
 	}
+}
 
-	return left
+// acceptsFieldSelection reports whether a ".field" may follow expr. As in
+// PostgreSQL, a field is selected from a column reference, a parenthesized
+// expression, a scalar subquery, or a subscript or field of one; a function
+// call's result must be parenthesized first, as in "(f(x)).field".
+func acceptsFieldSelection(expr pgast.Expr) bool {
+	switch expr.(type) {
+	case *pgast.ColName, *pgast.ParenExpr, *pgast.Subquery, *pgast.ArraySubscriptExpr, *pgast.FieldSelectExpr:
+		return true
+	default:
+		return false
+	}
+}
+
+// atIndirectionAfterStar reports whether a field selection or subscript
+// follows a ".*" field selection, which PostgreSQL allows only as the last
+// indirection.
+func (p *Parser) atIndirectionAfterStar(expr pgast.Expr) bool {
+	field, ok := expr.(*pgast.FieldSelectExpr)
+
+	return ok && field.Star && (p.at(DOT) || p.at(LBRACKET))
+}
+
+func (p *Parser) failImproperStar() {
+	p.failf(`improper use of "*"`)
 }
 
 // parseSubscript parses a single "[expr]" or "[expr:expr]" (slice, with
@@ -465,40 +687,6 @@ func (p *Parser) parseSubscript(left pgast.Expr) pgast.Expr {
 	return &pgast.ArraySubscriptExpr{Expr: left, From: from, To: to, Slice: true}
 }
 
-// parseTypeName parses a cast's target type: an identifier, optionally
-// followed by a parenthesized numeric modifier list (numeric(10, 2),
-// varchar(255)) and/or array-bounds suffixes (int[], int[3]). PostgreSQL's
-// full type-name grammar also supports multi-word built-in names ("double
-// precision", "timestamp with time zone") and schema qualification; those
-// are out of scope here; the formatter treats a cast's type as an opaque
-// string it round-trips, not a structure it validates.
-func (p *Parser) parseTypeName() pgast.ColIdent {
-	var b strings.Builder
-
-	b.WriteString(p.readTypeIdent())
-
-	if p.at(LPAREN) {
-		b.WriteString(p.readTypeModifier())
-	}
-
-	for p.at(LBRACKET) {
-		b.WriteString(p.readArrayBound())
-	}
-
-	return pgast.ColIdent(b.String())
-}
-
-func (p *Parser) readTypeIdent() string {
-	if !isTypeFuncName(p.tok) {
-		return failReturn[string](p, "expected type name, got %s", p.tok.Type)
-	}
-
-	text := identText(p.tok)
-	p.advance()
-
-	return text
-}
-
 // identText returns an identifier token as SQL text: a QuotedIdent is
 // re-quoted (doubling any embedded quotes) so its case and quoting survive
 // into the AST, per the pgast.ColIdent contract.
@@ -512,50 +700,6 @@ func identText(tok Token) string {
 	}
 
 	return `"` + strings.ReplaceAll(tok.Literal, `"`, `""`) + `"`
-}
-
-// readTypeModifier reads a type's parenthesized modifier list. Only integer
-// modifiers are accepted, which covers the built-in types (numeric(10, 2),
-// varchar(255)); the list is re-joined with ", " so its spacing is
-// normalized.
-func (p *Parser) readTypeModifier() string {
-	p.advance() // consume '('
-
-	var parts []string
-
-	for {
-		if p.tok.Type != INT {
-			p.failf("expected integer in type modifier, got %s", p.tok.Type)
-		}
-
-		parts = append(parts, p.tok.Literal)
-		p.advance()
-
-		if !p.consume(COMMA) {
-			break
-		}
-	}
-
-	p.expect(RPAREN)
-
-	return "(" + strings.Join(parts, ", ") + ")"
-}
-
-// readArrayBound reads one "[]" or "[n]" array-type suffix. PostgreSQL
-// ignores the declared size, but it is kept so the cast round-trips as
-// written.
-func (p *Parser) readArrayBound() string {
-	p.advance() // consume '['
-
-	bound := ""
-	if p.tok.Type == INT {
-		bound = p.tok.Literal
-		p.advance()
-	}
-
-	p.expect(RBRACKET)
-
-	return "[" + bound + "]"
 }
 
 // keywordLiterals holds the keyword tokens that stand for a literal value.
@@ -576,10 +720,18 @@ func (p *Parser) parsePrimaryExpr() pgast.Expr {
 
 	switch {
 	case p.at(LPAREN):
-		return p.parseParenExprOrSubquery()
+		return p.parseOptionalOverlaps(p.parseParenExprOrSubquery())
 	case p.at(Op):
 		return p.parsePrefixOperatorExpr()
 	case p.atIdentExprStart():
+		if expr, ok := p.tryParseSpecialFuncForm(); ok {
+			return expr
+		}
+
+		if lit, ok := p.tryParseTypedLiteral(); ok {
+			return lit
+		}
+
 		return p.parseIdentExpr()
 	default:
 		return failReturn[pgast.Expr](p, "unexpected token %s in expression", p.tok.Type)
@@ -603,7 +755,7 @@ func (p *Parser) tryParseKeywordLedExpr() (pgast.Expr, bool) {
 	case p.at(ARRAY):
 		return p.parseArrayLiteral(), true
 	case p.at(ROW) && p.peekAt(LPAREN):
-		return p.parseRowConstructor(), true
+		return p.parseOptionalOverlaps(p.parseRowConstructor()), true
 	default:
 		return nil, false
 	}
@@ -621,12 +773,14 @@ func (p *Parser) tryParseLiteral() (pgast.Expr, bool) {
 	}
 
 	switch p.tok.Type {
-	case INT, FLOAT:
+	case INT, FLOAT, BitString:
 		return p.parseLiteralToken(), true
 	case Placeholder:
 		return p.parsePlaceholder(), true
 	case STRING:
 		return p.parseStringLiteral(), true
+	case NationalString:
+		return &pgast.Literal{Val: "N" + p.readStringLiteralText()}, true
 	default:
 		return nil, false
 	}
@@ -655,10 +809,20 @@ func (p *Parser) parsePlaceholder() pgast.Expr {
 // ever needed on the way back out, unlike internal/sqlfmt/parser's MySQL
 // literal re-encoding, which has a ModeDefault/ModeNoBackslashEscapes split.
 func (p *Parser) parseStringLiteral() pgast.Expr {
-	tok := p.tok
+	return &pgast.Literal{Val: p.readStringLiteralText()}
+}
+
+// readStringLiteralText consumes a STRING or NationalString token and returns
+// its content re-encoded as a plain '...' literal.
+func (p *Parser) readStringLiteralText() string {
+	text := quoteString(p.tok.Literal)
 	p.advance()
 
-	return &pgast.Literal{Val: "'" + strings.ReplaceAll(tok.Literal, "'", "''") + "'"}
+	return text
+}
+
+func quoteString(content string) string {
+	return "'" + strings.ReplaceAll(content, "'", "''") + "'"
 }
 
 // parseParenExprOrSubquery parses a parenthesized expression, row value, or
@@ -666,7 +830,7 @@ func (p *Parser) parseStringLiteral() pgast.Expr {
 func (p *Parser) parseParenExprOrSubquery() pgast.Expr {
 	p.advance() // consume '('
 
-	if isQueryStart(p.tok.Type) {
+	if isQueryStart(p.tok.Type, p.peekTok.Type) {
 		sel := p.parseSubqueryStatement()
 		p.expect(RPAREN)
 
@@ -790,20 +954,45 @@ func (p *Parser) parseCastCall() pgast.Expr {
 	return &pgast.CastExpr{Expr: expr, Type: typeName, Explicit: true}
 }
 
-// parseArrayLiteral parses an ARRAY[...] constructor, which may be empty.
-// The ARRAY(subquery) form is not supported.
+// parseArrayLiteral parses an ARRAY[...] constructor or an ARRAY(subquery).
 func (p *Parser) parseArrayLiteral() pgast.Expr {
 	p.advance() // consume ARRAY
-	p.expect(LBRACKET)
 
-	if p.consume(RBRACKET) {
-		return &pgast.ArrayExpr{}
+	if p.consume(LPAREN) {
+		sel := p.parseQuery()
+		p.expect(RPAREN)
+
+		return &pgast.ArraySubquery{Select: sel}
 	}
 
-	elems := p.parseExprList()
+	return p.parseArrayBrackets(false)
+}
+
+// parseArrayBrackets parses "[...]": either expressions or, for a
+// multidimensional array, bracketed sub-arrays, as in [[1, 2], [3, 4]].
+func (p *Parser) parseArrayBrackets(nested bool) *pgast.ArrayExpr {
+	p.expect(LBRACKET)
+
+	array := &pgast.ArrayExpr{Nested: nested}
+
+	switch {
+	case p.consume(RBRACKET):
+		return array
+	case p.at(LBRACKET):
+		for {
+			array.Elems = append(array.Elems, p.parseArrayBrackets(true))
+
+			if !p.consume(COMMA) {
+				break
+			}
+		}
+	default:
+		array.Elems = p.parseExprList()
+	}
+
 	p.expect(RBRACKET)
 
-	return &pgast.ArrayExpr{Elems: elems}
+	return array
 }
 
 // atIdentExprStart reports whether the current token starts a column
@@ -828,13 +1017,40 @@ func (p *Parser) parseIdentExpr() pgast.Expr {
 		return &pgast.ColName{Name: pgast.ColIdent(name)}
 	}
 
+	if p.consume(STAR) {
+		return &pgast.FieldSelectExpr{Expr: &pgast.ColName{Name: pgast.ColIdent(name)}, Star: true}
+	}
+
 	second := p.readColLabel()
 
 	if p.at(LPAREN) {
 		return p.parseFuncCall(name, second)
 	}
 
-	return &pgast.ColName{Qualifier: pgast.TableName{Name: pgast.TableIdent(name)}, Name: pgast.ColIdent(second)}
+	ref := &pgast.ColName{Qualifier: pgast.TableName{Name: pgast.TableIdent(name)}, Name: pgast.ColIdent(second)}
+
+	if !p.at(DOT) || p.peekAt(STAR) {
+		return ref
+	}
+
+	p.advance() // consume '.'
+
+	return &pgast.ColName{
+		Qualifier: pgast.TableName{Qualifier: pgast.TableIdent(name), Name: pgast.TableIdent(second)},
+		Name:      pgast.ColIdent(p.readColLabel()),
+	}
+}
+
+// parseFieldSelection parses a ".field" or ".*" applied to left. The
+// current token must be '.'.
+func (p *Parser) parseFieldSelection(left pgast.Expr) pgast.Expr {
+	p.advance() // consume '.'
+
+	if p.consume(STAR) {
+		return &pgast.FieldSelectExpr{Expr: left, Star: true}
+	}
+
+	return &pgast.FieldSelectExpr{Expr: left, Field: pgast.ColIdent(p.readColLabel())}
 }
 
 // parseFuncCall parses a function call's argument list, DISTINCT flag or
@@ -850,11 +1066,14 @@ func (p *Parser) parseFuncCall(qualifier, name string) pgast.Expr {
 		f.Star = true
 	case p.at(RPAREN):
 	default:
-		f.Distinct = p.consume(DISTINCT)
-		f.Args = p.parseFuncArgList()
+		p.parseFuncArgs(f)
 	}
 
 	p.expect(RPAREN)
+
+	if p.atWord("within") && p.peekAt(GROUP) {
+		p.parseWithinGroup(f)
+	}
 
 	if p.consume(FILTER) {
 		p.expect(LPAREN)
@@ -872,6 +1091,33 @@ func (p *Parser) parseFuncCall(qualifier, name string) pgast.Expr {
 	return f
 }
 
+// parseWithinGroup parses an ordered-set aggregate's
+// "WITHIN GROUP (ORDER BY ...)" into f, rejecting it, as PostgreSQL does,
+// when the call already has DISTINCT, VARIADIC, or an ORDER BY. The current
+// token must be WITHIN.
+func (p *Parser) parseWithinGroup(f *pgast.FuncExpr) {
+	switch {
+	case f.Distinct:
+		p.failf("cannot use DISTINCT with WITHIN GROUP")
+	case f.Variadic:
+		p.failf("cannot use VARIADIC with WITHIN GROUP")
+	case len(f.OrderBy) > 0:
+		p.failf("cannot use multiple ORDER BY clauses with WITHIN GROUP")
+	}
+
+	p.advance() // consume WITHIN
+	p.advance() // consume GROUP
+	p.expect(LPAREN)
+
+	if !p.at(ORDER) {
+		p.failf("expected ORDER BY in WITHIN GROUP, got %s", p.tok.Type)
+	}
+
+	f.WithinGroup = p.parseOrderByClause()
+
+	p.expect(RPAREN)
+}
+
 // parseOverClause parses the window after OVER into f: either a bare window
 // name or a parenthesized window specification.
 func (p *Parser) parseOverClause(f *pgast.FuncExpr) {
@@ -887,17 +1133,38 @@ func (p *Parser) parseOverClause(f *pgast.FuncExpr) {
 	p.expect(RPAREN)
 }
 
-// parseFuncArgList parses a function call's comma-separated arguments, each
-// an expression or a named "name => value" (or "name := value") argument.
-func (p *Parser) parseFuncArgList() []pgast.Expr {
-	var args []pgast.Expr
+// parseFuncArgs parses a function call's non-empty argument list into f:
+// an optional ALL (a no-op, like SELECT ALL) or DISTINCT, comma-separated
+// arguments of which only the last may be VARIADIC, and an aggregate's
+// optional ORDER BY. As in PostgreSQL, VARIADIC cannot follow ALL or
+// DISTINCT.
+func (p *Parser) parseFuncArgs(f *pgast.FuncExpr) {
+	all := p.consume(ALL)
+	if !all {
+		f.Distinct = p.consume(DISTINCT)
+	}
 
 	for {
-		args = append(args, p.parseFuncArg())
+		if p.at(VARIADIC) && (all || f.Distinct) {
+			p.failf("VARIADIC cannot be combined with ALL or DISTINCT")
+		}
+
+		if p.consume(VARIADIC) {
+			f.Variadic = true
+			f.Args = append(f.Args, p.parseFuncArg())
+
+			break
+		}
+
+		f.Args = append(f.Args, p.parseFuncArg())
 
 		if !p.consume(COMMA) {
-			return args
+			break
 		}
+	}
+
+	if p.at(ORDER) {
+		f.OrderBy = p.parseOrderByClause()
 	}
 }
 
