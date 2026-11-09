@@ -267,13 +267,17 @@ func TestColName_String(t *testing.T) {
 	})
 
 	t.Run("qualified", func(t *testing.T) {
-		c := &pgast.ColName{Name: "id", Qualifier: pgast.TableName{Name: "users"}}
+		c := &pgast.ColName{Name: pgast.ColIdent{Name: "id"}, Qualifier: pgast.TableName{Name: pgast.TableIdent{Name: "users"}}}
 		assertEqual(t, "users.id", c.String())
 	})
 }
 
 func TestLiteral_String(t *testing.T) {
 	assertEqual(t, "42", lit("42").String())
+
+	t.Run("ignores Raw", func(t *testing.T) {
+		assertEqual(t, "'ab'", (&pgast.Literal{Val: "'ab'", Raw: "'a'\n'b'"}).String())
+	})
 }
 
 func TestFuncExpr_String(t *testing.T) {
@@ -282,22 +286,22 @@ func TestFuncExpr_String(t *testing.T) {
 		f    *pgast.FuncExpr
 		want string
 	}{
-		{"plain call", &pgast.FuncExpr{Name: "lower", Args: []pgast.Expr{col("name")}}, "lower(name)"},
+		{"plain call", &pgast.FuncExpr{Name: pgast.ColIdent{Name: "lower"}, Args: []pgast.Expr{col("name")}}, "lower(name)"},
 		{
 			"qualified",
-			&pgast.FuncExpr{Qualifier: "pg_catalog", Name: "lower", Args: []pgast.Expr{col("name")}},
+			&pgast.FuncExpr{Qualifier: pgast.TableIdent{Name: "pg_catalog"}, Name: pgast.ColIdent{Name: "lower"}, Args: []pgast.Expr{col("name")}},
 			"pg_catalog.lower(name)",
 		},
-		{"count star", &pgast.FuncExpr{Name: "count", Star: true}, "count(*)"},
+		{"count star", &pgast.FuncExpr{Name: pgast.ColIdent{Name: "count"}, Star: true}, "count(*)"},
 		{
 			"distinct",
-			&pgast.FuncExpr{Name: "count", Distinct: true, Args: []pgast.Expr{col("id")}},
+			&pgast.FuncExpr{Name: pgast.ColIdent{Name: "count"}, Distinct: true, Args: []pgast.Expr{col("id")}},
 			"count(DISTINCT id)",
 		},
 		{
 			"filter",
 			&pgast.FuncExpr{
-				Name: "count", Star: true,
+				Name: pgast.ColIdent{Name: "count"}, Star: true,
 				Filter: &pgast.Where{Expr: col("active")},
 			},
 			"count(*) FILTER (WHERE active)",
@@ -305,14 +309,14 @@ func TestFuncExpr_String(t *testing.T) {
 		{
 			"over",
 			&pgast.FuncExpr{
-				Name: "row_number",
+				Name: pgast.ColIdent{Name: "row_number"},
 				Over: &pgast.WindowSpec{OrderBy: pgast.OrderBy{{Expr: col("id")}}},
 			},
 			"row_number() OVER (ORDER BY id)",
 		},
 		{
 			"over window name",
-			&pgast.FuncExpr{Name: "row_number", Over: &pgast.WindowSpec{Name: "w"}, OverRef: true},
+			&pgast.FuncExpr{Name: pgast.ColIdent{Name: "row_number"}, Over: &pgast.WindowSpec{Name: pgast.ColIdent{Name: "w"}}, OverRef: true},
 			"row_number() OVER w",
 		},
 	}
@@ -396,7 +400,7 @@ func TestOperatorExpr_String(t *testing.T) {
 			"schema-qualified",
 			&pgast.OperatorExpr{
 				Left:     col("a"),
-				Operator: pgast.Operator{Schema: "pg_catalog", Symbol: "~", Explicit: true},
+				Operator: pgast.Operator{Schema: pgast.TableIdent{Name: "pg_catalog"}, Symbol: "~", Explicit: true},
 				Right:    lit("'x'"),
 			},
 			"a OPERATOR(pg_catalog.~) 'x'",
@@ -411,6 +415,6 @@ func TestOperatorExpr_String(t *testing.T) {
 }
 
 func TestNamedArgExpr_String(t *testing.T) {
-	assertEqual(t, "n => 1", (&pgast.NamedArgExpr{Name: "n", Value: lit("1")}).String())
-	assertEqual(t, "n := 1", (&pgast.NamedArgExpr{Name: "n", Value: lit("1"), ColonEquals: true}).String())
+	assertEqual(t, "n => 1", (&pgast.NamedArgExpr{Name: pgast.ColIdent{Name: "n"}, Value: lit("1")}).String())
+	assertEqual(t, "n := 1", (&pgast.NamedArgExpr{Name: pgast.ColIdent{Name: "n"}, Value: lit("1"), ColonEquals: true}).String())
 }

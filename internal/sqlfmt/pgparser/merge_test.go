@@ -333,11 +333,11 @@ func TestParseMerge_structure(t *testing.T) {
 		t.Errorf("With = %#v, want one CTE", merge.With)
 	}
 
-	if !merge.Target.Only || merge.Target.As != "tgt" {
+	if !merge.Target.Only || merge.Target.As.Name != "tgt" {
 		t.Errorf("Target = %#v, want ONLY t aliased tgt", merge.Target)
 	}
 
-	wantAliases := []*pgast.ReturningAlias{{Kind: pgast.ReturningNew, Name: "n"}}
+	wantAliases := []*pgast.ReturningAlias{{Kind: pgast.ReturningNew, Name: pgast.TableIdent{Name: "n", Raw: "n"}}}
 	if merge.Returning == nil || !reflect.DeepEqual(merge.Returning.Aliases, wantAliases) {
 		t.Errorf("Returning = %#v, want WITH (NEW AS n)", merge.Returning)
 	}

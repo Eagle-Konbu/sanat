@@ -60,7 +60,7 @@ func TestParseExpr_collateAndTimeZone(t *testing.T) {
 	t.Run("collate binds looser than unary minus", func(t *testing.T) {
 		assertExpr(t, `-a COLLATE "C"`, &pgast.CollateExpr{
 			Expr:      &pgast.UnaryExpr{Operator: pgast.UMinusOp, Expr: col("a")},
-			Collation: pgast.AnyName{`"C"`},
+			Collation: pgast.AnyName{pgast.ColIdent{Name: `"C"`}},
 		})
 	})
 

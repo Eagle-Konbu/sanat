@@ -52,10 +52,10 @@ func (p *Parser) parseSimpleTypeName() *pgast.TypeName {
 		}
 	}
 
-	t := &pgast.TypeName{Names: []pgast.ColIdent{pgast.ColIdent(p.readTypeIdent())}}
+	t := &pgast.TypeName{Names: []pgast.ColIdent{p.readTypeIdent()}}
 
 	for p.consume(DOT) {
-		t.Names = append(t.Names, pgast.ColIdent(p.readColLabel()))
+		t.Names = append(t.Names, p.readColLabel())
 	}
 
 	t.Modifiers = p.parseOptionalTypeModifiers()
@@ -100,7 +100,7 @@ func (p *Parser) tryParseBuiltinTypeName() *pgast.TypeName {
 }
 
 func builtinType(name string) *pgast.TypeName {
-	return &pgast.TypeName{Names: []pgast.ColIdent{pgast.ColIdent(name)}}
+	return &pgast.TypeName{Names: []pgast.ColIdent{{Name: name}}}
 }
 
 // finishCharacterType parses the optional VARYING and length modifier after
@@ -208,16 +208,16 @@ func (p *Parser) readIntervalField() string {
 }
 
 // readTypeIdent reads the first word of a generic type name, which may be
-// any type_function_name; a quoted name keeps its quoting (see identText).
-func (p *Parser) readTypeIdent() string {
+// any type_function_name; a quoted name keeps its quoting (see identOf).
+func (p *Parser) readTypeIdent() pgast.ColIdent {
 	if !isTypeFuncName(p.tok) {
-		return failReturn[string](p, "expected type name, got %s", p.tok.Type)
+		return failReturn[pgast.ColIdent](p, "expected type name, got %s", p.tok.Type)
 	}
 
-	text := identText(p.tok)
+	ident := p.identOf(p.tok)
 	p.advance()
 
-	return text
+	return ident
 }
 
 // parseOptionalBuiltinTypeModifier parses a built-in character, bit,
@@ -276,7 +276,7 @@ func (p *Parser) parseTypeModifier() pgast.Expr {
 	case p.at(STRING):
 		return p.parseStringLiteral()
 	case isColID(p.tok):
-		return &pgast.ColName{Name: pgast.ColIdent(p.readColID())}
+		return &pgast.ColName{Name: p.readColID()}
 	default:
 		return failReturn[pgast.Expr](p, "expected constant or identifier in type modifier, got %s", p.tok.Type)
 	}
@@ -316,7 +316,8 @@ func (p *Parser) tryParseTypedLiteral() (pgast.Expr, bool) {
 		return nil, false
 	}
 
-	lit := &pgast.TypedLiteral{Type: t, Value: p.readStringLiteralText()}
+	value := p.parseStringLiteral()
+	lit := &pgast.TypedLiteral{Type: t, Value: value.Val, ValueRaw: value.Raw}
 
 	if isPlainInterval(t) {
 		t.IntervalFields = p.parseOptionalIntervalFields()
@@ -346,7 +347,7 @@ var multiWordTypeStarts = map[string]bool{
 // isPlainInterval reports whether t is a bare interval type, whose typed
 // literal may carry a field restriction after the string.
 func isPlainInterval(t *pgast.TypeName) bool {
-	return len(t.Names) == 1 && t.Names[0] == "interval" && len(t.Modifiers) == 0 && t.IntervalFields == ""
+	return len(t.Names) == 1 && t.Names[0].Name == "interval" && len(t.Modifiers) == 0 && t.IntervalFields == ""
 }
 
 // atWord reports whether the current token is the unquoted identifier

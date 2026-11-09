@@ -92,17 +92,21 @@ name + value) rather than as an enum — see
 
 ## Lexer (`parser.Lexer`)
 
-`Lexer.Next() (Token, error)` streams one `Token{Type, Literal, Pos}` at a
-time; `Position` carries byte offset, 1-based line, and 1-based (rune)
+`Lexer.Next() (Token, error)` streams one `Token{Type, Literal, Raw, Pos}`
+at a time. `Literal` is the token's value (e.g. a `STRING`'s decoded
+contents); `Raw` is the token's exact source text, quotes and escapes
+included. `Position` carries byte offset, 1-based line, and 1-based (rune)
 column for error reporting. A `*LexError` is returned — never a synthetic
-token — for unterminated strings/identifiers/comments and illegal
+token — for unterminated strings/identifiers, comments, and illegal
 characters.
 
 ```mermaid
 flowchart TD
-    A[Next byte] --> B{Whitespace or comment?}
+    A[Next byte] --> B{Whitespace?}
     B -- Yes --> C[Skip and repeat]
-    B -- No --> D{Char class?}
+    B -- No --> K{Comment?}
+    K -- Yes --> L["LexError: comments are not supported"]
+    K -- No --> D{Char class?}
     D -- letter/underscore --> E[Identifier or keyword]
     D -- backtick --> F["Quoted identifier (backtick-delimited)"]
     D -- digit --> G[Integer or float literal]
@@ -172,9 +176,13 @@ treatment of every other keyword (there's no non-reserved carve-out for
   swallowed into `123.`.
 - **Strings**: single-quoted, with backslash escapes (`\n`, `\r`, `\0`,
   `\Z`, `\\`, `\'`) and MySQL's doubled-quote (`''`) escaping. `\%` and
-  `\_` are left un-decoded by the lexer (and re-escaped as-is by the
-  parser's `escapeStringLiteral`) since they are only meaningful inside a
-  `LIKE` pattern. This backslash-escape handling applies under `ModeDefault`
+  `\_` are left un-decoded in `Literal` since they are only meaningful
+  inside a `LIKE` pattern. The parser builds a string literal's
+  `sqlast.Literal.Val` from the token's `Raw` text, not from the decoded
+  value, so the literal is rendered exactly as written: `'it''s'` stays
+  `'it''s'`, `'it\'s'` stays `'it\'s'`, and a literal newline stays a
+  literal newline. The same applies to `ENUM`/`SET` type parameters. This
+  backslash-escape handling applies under `ModeDefault`
   only; see [SQL Mode](#sql-mode) for `ModeNoBackslashEscapes`, which
   disables it. `x'1A'`/`X'1A'` (hex) and `b'101'`/`B'101'` (bit) string
   literals are also recognized; the quote must immediately follow the
@@ -184,16 +192,17 @@ treatment of every other keyword (there's no non-reserved carve-out for
   hex digits with an even number of digits (`x''` is valid); bit string
   content must consist of only `0`/`1` digits.
 - **Comments**: `--` and `#` line comments and `/* ... */` block comments
-  are skipped like whitespace. Per MySQL, a `--` only starts a comment when
-  followed by whitespace or a control character — `balance--1` is `balance -
-  (-1)`, not `balance` followed by a comment. A bare trailing `--` with
-  nothing after it (end of input) doesn't count as that whitespace either,
-  so it lexes as two `MINUS` tokens rather than an empty comment. `/*+ ... */`
-  optimizer hints and `/*! ... */`
-  (including version-gated `/*!50700 ... */`) executable comments carry
-  semantic content rather than being purely decorative, so the lexer reports
-  a `LexError` on them instead of silently discarding that content; parse
-  entry points that hit this fall back to returning the input unchanged.
+  (including `/*+ ... */` optimizer hints and `/*! ... */` / `/*!50700 ...
+  */` executable comments) are reported as a `LexError` rather than skipped.
+  The AST has nowhere to keep a comment, so skipping it would silently drop
+  it from the formatted output; parse entry points that hit this fail, and
+  the formatter returns the input unchanged. Comment markers inside a string
+  literal or a quoted identifier are part of that token and don't count. Per
+  MySQL, a `--` only starts a comment when followed by whitespace or a
+  control character — `balance--1` is `balance - (-1)`, not `balance`
+  followed by a comment. A bare trailing `--` with nothing after it (end of
+  input) doesn't count as that whitespace either, so it lexes as two `MINUS`
+  tokens rather than an empty comment.
 - **User variables**: `@` followed by an identifier (`@rank`, `@my_var`) is
   lexed as a single `AtVariable` token, whose `Literal` carries the name
   without the leading `@`. Only the single-`@` user-variable form is
@@ -305,17 +314,13 @@ MySQL's `NO_BACKSLASH_ESCAPES` sql_mode:
   read like any other character instead of introducing an escape sequence.
   Doubled-quote (`''`) escaping is unaffected, since MySQL doesn't gate it on
   `NO_BACKSLASH_ESCAPES` either.
-- **Re-encoding** (`escapeStringLiteral`, used by `parseStringLiteral` and
-  `parseTypeParams`' `STRING` case): since the lexer never decoded a
-  backslash escape in this mode, the decoded value already holds every
-  backslash, control character, and literal newline verbatim, so re-encoding
-  only needs to double embedded quote characters — backslash isn't written
-  as an escape on the way back out either.
+- **Rendering**: unaffected. String literals keep their source text (see
+  [Literal Handling](#literal-handling)), so no mode-specific re-encoding
+  is needed.
 
-Concretely, under `ModeNoBackslashEscapes`, `'it''s'` round-trips as
-`'it''s'` (not `'it\'s'`, which would be malformed once the connection
-actually has `NO_BACKSLASH_ESCAPES` set), and a literal newline inside a
-string round-trips as a literal newline (not the two characters `\n`).
+The mode still matters for lexing because it decides where a string ends:
+under `ModeNoBackslashEscapes`, `'a\'` is a complete literal, while under
+`ModeDefault` the `\'` is an escaped quote and the literal is unterminated.
 
 ### Error Handling Model
 

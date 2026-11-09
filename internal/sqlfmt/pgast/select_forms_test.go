@@ -17,8 +17,8 @@ func TestSelect_String_queryForms(t *testing.T) {
 			&pgast.Select{Values: [][]pgast.Expr{{lit("1")}, {lit("2")}}, OrderBy: pgast.OrderBy{{Expr: lit("1")}}},
 			"VALUES (1), (2) ORDER BY 1",
 		},
-		{"table", &pgast.Select{Table: &pgast.AliasedTableExpr{Expr: pgast.TableName{Name: "t"}, Only: true}}, "TABLE ONLY t"},
-		{"empty select list", &pgast.Select{From: []pgast.TableExpr{&pgast.AliasedTableExpr{Expr: pgast.TableName{Name: "t"}}}}, "SELECT FROM t"},
+		{"table", &pgast.Select{Table: &pgast.AliasedTableExpr{Expr: pgast.TableName{Name: pgast.TableIdent{Name: "t"}}, Only: true}}, "TABLE ONLY t"},
+		{"empty select list", &pgast.Select{From: []pgast.TableExpr{&pgast.AliasedTableExpr{Expr: pgast.TableName{Name: pgast.TableIdent{Name: "t"}}}}}, "SELECT FROM t"},
 		{"bare select", &pgast.Select{}, "SELECT"},
 	}
 

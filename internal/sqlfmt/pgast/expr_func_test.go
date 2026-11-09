@@ -12,20 +12,20 @@ func TestFuncExpr_String_aggregateForms(t *testing.T) {
 		f    *pgast.FuncExpr
 		want string
 	}{
-		{"variadic only argument", &pgast.FuncExpr{Name: "f", Args: []pgast.Expr{col("a")}, Variadic: true}, "f(VARIADIC a)"},
+		{"variadic only argument", &pgast.FuncExpr{Name: pgast.ColIdent{Name: "f"}, Args: []pgast.Expr{col("a")}, Variadic: true}, "f(VARIADIC a)"},
 		{
 			"variadic last argument",
-			&pgast.FuncExpr{Name: "f", Args: []pgast.Expr{col("a"), col("b")}, Variadic: true},
+			&pgast.FuncExpr{Name: pgast.ColIdent{Name: "f"}, Args: []pgast.Expr{col("a"), col("b")}, Variadic: true},
 			"f(a, VARIADIC b)",
 		},
 		{
 			"order by",
-			&pgast.FuncExpr{Name: "string_agg", Args: []pgast.Expr{col("a")}, OrderBy: pgast.OrderBy{{Expr: col("b")}}},
+			&pgast.FuncExpr{Name: pgast.ColIdent{Name: "string_agg"}, Args: []pgast.Expr{col("a")}, OrderBy: pgast.OrderBy{{Expr: col("b")}}},
 			"string_agg(a ORDER BY b)",
 		},
 		{
 			"within group",
-			&pgast.FuncExpr{Name: "mode", WithinGroup: pgast.OrderBy{{Expr: col("b")}}},
+			&pgast.FuncExpr{Name: pgast.ColIdent{Name: "mode"}, WithinGroup: pgast.OrderBy{{Expr: col("b")}}},
 			"mode() WITHIN GROUP (ORDER BY b)",
 		},
 	}
@@ -38,6 +38,6 @@ func TestFuncExpr_String_aggregateForms(t *testing.T) {
 }
 
 func TestFieldSelectExpr_String(t *testing.T) {
-	assertEqual(t, "(x).f", (&pgast.FieldSelectExpr{Expr: &pgast.ParenExpr{Expr: col("x")}, Field: "f"}).String())
+	assertEqual(t, "(x).f", (&pgast.FieldSelectExpr{Expr: &pgast.ParenExpr{Expr: col("x")}, Field: pgast.ColIdent{Name: "f"}}).String())
 	assertEqual(t, "t.*", (&pgast.FieldSelectExpr{Expr: col("t"), Star: true}).String())
 }

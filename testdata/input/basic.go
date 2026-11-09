@@ -37,4 +37,10 @@ func queries(db *sql.DB) {
 
 	// Raw string SELECT with JOIN: should be formatted
 	db.Query(`select u.id, o.total from users u join orders o on u.id = o.user_id where o.total > ?`, 100)
+
+	// Raw string SELECT with CTE: should be formatted
+	db.Query(`with active as (select id from users where active = ?) select id from active`, true)
+
+	// Should NOT be changed: MERGE is detected but MySQL cannot parse it
+	db.Exec(`merge into users u using staged s on u.id = s.id when matched then delete`)
 }

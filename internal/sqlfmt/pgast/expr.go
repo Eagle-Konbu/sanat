@@ -8,6 +8,7 @@ import (
 // ComparisonOperator represents a comparison operator.
 type ComparisonOperator int8
 
+// Comparison operators.
 const (
 	EqualOp ComparisonOperator = iota
 	LessThanOp
@@ -162,6 +163,7 @@ func (i *IsNormalizedExpr) String() string {
 // TruthValue represents the operand of an IS [NOT] TRUE / FALSE / UNKNOWN test.
 type TruthValue int8
 
+// Truth values tested by IS [NOT] TRUE / FALSE / UNKNOWN.
 const (
 	TruthTrue TruthValue = iota
 	TruthFalse
@@ -236,6 +238,7 @@ func (r *RowExpr) String() string {
 // ArithmeticOperator represents a binary arithmetic operator.
 type ArithmeticOperator int8
 
+// Binary arithmetic operators.
 const (
 	PlusOp ArithmeticOperator = iota
 	MinusOp
@@ -278,6 +281,7 @@ func (a *ArithmeticExpr) String() string {
 // UnaryOperator represents a unary + or - operator.
 type UnaryOperator int8
 
+// Unary operators.
 const (
 	UPlusOp UnaryOperator = iota
 	UMinusOp
@@ -418,8 +422,17 @@ func (c *ColName) String() string {
 
 // Literal represents a literal value (number, string, boolean, NULL, ...)
 // rendered as-is.
+//
+// Val is the normalized SQL text String renders: pgparser re-encodes every
+// string constant ('...', E'...', $tag$...$tag$, and adjacent constants
+// joined across a newline) as a plain '...'. Raw is the literal exactly as
+// written in the source, spanning every part of a joined constant along with
+// the whitespace between them, for a renderer that must reproduce the user's
+// spelling. Raw is display-only and empty for a literal that was not parsed
+// from source text.
 type Literal struct {
 	Val string
+	Raw string
 }
 
 // String returns Literal's SQL text.
@@ -694,6 +707,7 @@ func (n *NamedArgExpr) String() string {
 // for ANY, kept apart only so the expression round-trips as written.
 type Quantifier int8
 
+// Quantifiers of a quantified comparison.
 const (
 	QuantifierAny Quantifier = iota
 	QuantifierSome

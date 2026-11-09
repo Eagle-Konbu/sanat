@@ -87,7 +87,7 @@ cat file.go | sanat > formatted.go
 | `--newline` | `true` | Add newline after opening backtick |
 | `--keyword-case` | `upper` | Casing for operator/predicate keywords (`upper`, `lower`, `preserve`) |
 | `--comma-style` | `trailing` | Comma placement in lists (`trailing`, `leading`) |
-| `--sql-mode` | `default` | SQL mode controlling string-literal parsing and rendering (`default`, `no_backslash_escapes`) |
+| `--sql-mode` | `default` | SQL mode controlling string-literal parsing (`default`, `no_backslash_escapes`) |
 | `-c, --config` | | Path to config file |
 
 ## Standalone Lint
@@ -235,7 +235,7 @@ linters:
 | `newline` | `true` | Add newline after opening backtick |
 | `keyword-case` | `upper` | Casing for operator/predicate keywords (`upper`, `lower`, `preserve`) |
 | `comma-style` | `trailing` | Comma placement in lists (`trailing`, `leading`) |
-| `sql-mode` | `default` | SQL mode controlling string-literal parsing and rendering (`default`, `no_backslash_escapes`) |
+| `sql-mode` | `default` | SQL mode controlling string-literal parsing (`default`, `no_backslash_escapes`) |
 | `config` | | Path to a `.sanat.yml` / `.sanat.yaml` / `.sanat.toml` file |
 
 Each option is resolved independently with this precedence:

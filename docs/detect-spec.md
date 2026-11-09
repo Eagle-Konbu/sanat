@@ -89,17 +89,19 @@ Inner content after backtick stripping: `SELECT %s FROM %s WHERE id = %d`
 The following regex pattern is used to detect a leading keyword (case-insensitive).
 
 ```
-(?i)^\s*(SELECT|INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|TRUNCATE|START|BEGIN|COMMIT|ROLLBACK|SAVEPOINT|RELEASE|SET|SHOW|DESCRIBE|EXPLAIN|USE)\b
+(?i)^\s*(WITH|SELECT|INSERT|UPDATE|DELETE|MERGE|CREATE|ALTER|DROP|TRUNCATE|START|BEGIN|COMMIT|ROLLBACK|SAVEPOINT|RELEASE|SET|SHOW|DESCRIBE|EXPLAIN|USE)\b
 ```
 
 ### Target Keywords
 
 | Keyword | Description |
 |---------|-------------|
+| `WITH` | Common table expression (`WITH [RECURSIVE] ...`) before a DML statement |
 | `SELECT` | Data retrieval |
 | `INSERT` | Data insertion |
 | `UPDATE` | Data modification |
 | `DELETE` | Data deletion |
+| `MERGE` | PostgreSQL: conditional insert/update/delete (`MERGE INTO ... USING ...`) |
 | `CREATE` | DDL: create table/index |
 | `ALTER` | DDL: alter table |
 | `DROP` | DDL: drop table/index |
@@ -116,7 +118,7 @@ The following regex pattern is used to detect a leading keyword (case-insensitiv
 | `EXPLAIN` | Admin: explain statement |
 | `USE` | Admin: use database |
 
-Every keyword listed here has a corresponding statement parser in `internal/sqlfmt/parser` (see [parser-spec.md](parser-spec.md)). Statement kinds the parser does not yet support — stored program syntax (`CALL`, `PREPARE`, `EXECUTE`, `DEALLOCATE PREPARE`) and the `DESC` alias for `DESCRIBE` — are deliberately excluded: detecting a statement the formatter cannot format would just send it to `FormatSQLWithOptions`, which would fail and leave the literal untouched, so there is no benefit to detecting it.
+Every keyword listed here has a corresponding statement parser in `internal/sqlfmt/parser` (see [parser-spec.md](parser-spec.md)) or `internal/sqlfmt/pgparser` (see [postgres-parser-spec.md](postgres-parser-spec.md)). `MightBeSQL` is dialect-independent, so a keyword only one dialect supports is still detected under the other: `MERGE` exists only in PostgreSQL, and under the MySQL dialect a detected `MERGE` literal simply fails to parse and is left unchanged. `VALUES` and `TABLE`, which can also start a PostgreSQL statement, are deliberately not detected. Statement kinds the parser does not yet support — stored program syntax (`CALL`, `PREPARE`, `EXECUTE`, `DEALLOCATE PREPARE`) and the `DESC` alias for `DESCRIBE` — are deliberately excluded: detecting a statement the formatter cannot format would just send it to `FormatSQLWithOptions`, which would fail and leave the literal untouched, so there is no benefit to detecting it.
 
 Leading whitespace is allowed, but a word boundary (`\b`) is required after the keyword.
 
@@ -247,6 +249,11 @@ Inner content: `  SELECT id FROM users`
 | Input | Result | Reason |
 |-------|--------|--------|
 | `select id from users` | SQL | Starts with `SELECT` |
+| `WITH recent AS (SELECT id FROM users) SELECT id FROM recent` | SQL | Starts with `WITH` |
+| `MERGE INTO users u USING staged s ON u.id = s.id WHEN MATCHED THEN DELETE` | SQL | Starts with `MERGE` |
+| `WITHOUT ROWID` | Not SQL | `WITH` is followed by a word character, so `\b` fails |
+| `VALUES (1, 2)` | Not SQL | `VALUES` is not a target keyword |
+| `TABLE users` | Not SQL | `TABLE` is not a target keyword |
 | `INSERT INTO users (name) VALUES (?)` | SQL | Starts with `INSERT` |
 | `update users set name = ?` | SQL | Starts with `UPDATE` (lowercase) |
 | `delete from users where id = ?` | SQL | Starts with `DELETE` (lowercase) |

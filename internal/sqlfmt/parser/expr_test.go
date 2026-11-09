@@ -65,10 +65,14 @@ func TestParseExpr_stringLiteral(t *testing.T) {
 		name, in, want string
 	}{
 		{"plain", `'abc'`, `'abc'`},
-		{"doubled quote escape", `'it''s'`, `'it\'s'`},
-		{"backslash escape", `'a\'b'`, `'a\'b'`},
+		{"empty", `''`, `''`},
+		{"doubled quote kept doubled", `'it''s'`, `'it''s'`},
+		{"backslash quote kept", `'it\'s'`, `'it\'s'`},
+		{"backslash escapes kept", `'a\n\t\\b'`, `'a\n\t\\b'`},
+		{"unrecognized escape kept", `'a\xb'`, `'a\xb'`},
 		{"preserves like escapes", `'50\%'`, `'50\%'`},
-		{"newline roundtrips as backslash-n", "'a\nb'", `'a\nb'`},
+		{"literal newline kept", "'a\nb'", "'a\nb'"},
+		{"multibyte", `'café'`, `'café'`},
 	}
 
 	for _, tt := range tests {

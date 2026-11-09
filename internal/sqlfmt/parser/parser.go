@@ -31,7 +31,6 @@ type Parser struct {
 	tok      Token
 	peekTok  Token
 	peek2Tok Token
-	mode     SQLMode
 
 	// inOnDupUpdate is true while parsing the assignment list of an ON
 	// DUPLICATE KEY UPDATE clause, the only place MySQL accepts VALUES(col)
@@ -50,7 +49,7 @@ func NewParser(input string) *Parser {
 // mode, priming its three-token lookahead buffer. It panics (with a
 // *LexError) if the input cannot be lexed at all.
 func NewParserWithMode(input string, mode SQLMode) *Parser {
-	p := &Parser{lex: NewWithMode(input, mode), mode: mode}
+	p := &Parser{lex: NewWithMode(input, mode)}
 
 	for range 3 {
 		p.advance()

@@ -43,11 +43,13 @@ db.Exec("select id from users where id = ?", 1)
 
 ## Placeholder Handling
 
-Since the SQL parser cannot handle `?` correctly, substitution and restoration are performed before and after parsing.
+For the MySQL dialect, since the SQL parser cannot handle `?` correctly, substitution and restoration are performed before and after parsing.
 
 1. **Substitution**: `?` → `:_sqla_ph_0`, `:_sqla_ph_1`, ... (indexed in order of appearance)
 2. **Parsing**: Syntax analysis with the in-house SQL parser (see [parser-spec.md](parser-spec.md))
 3. **Restoration**: `:_sqla_ph_N` → `?`
+
+The rewrite is MySQL-only. `FormatSQLWithOptions` does not parse or format PostgreSQL SQL yet: with the PostgreSQL dialect it returns the input unchanged with `ok == false`. When it does, the rewrite must not be applied there, since in PostgreSQL `?`, `?|`, and `?&` are jsonb operators and rewriting every `?` would corrupt them. The standalone PostgreSQL parser (`internal/sqlfmt/pgparser`) instead takes the SQL untouched and tells a `?` placeholder from the `?` operator by position (see [postgres-parser-spec.md](postgres-parser-spec.md#primary-expressions)).
 
 ## Format Rules
 
@@ -56,7 +58,9 @@ Since the SQL parser cannot handle `?` correctly, substitution and restoration a
 - Clause keywords and aggregate/window function names are converted to **UPPERCASE**; operator/predicate keywords follow the [`keyword_case`](#keyword-casing) option instead
 - Each clause is placed on a **separate line**
 - Clause contents are **indented** (default: 2 spaces)
-- Backtick-quoted identifiers (MySQL style) are parsed and re-rendered unquoted
+- Backtick-quoted identifiers (MySQL style) are parsed and re-rendered unquoted. Unquoting can change meaning (`` `select` `` becomes the keyword `select`, and `` `a -- b` `` becomes a comment), but this cannot happen to SQL taken from Go source: a Go raw string literal cannot contain a backtick. Code that calls `FormatSQL` directly with other input must not rely on backtick-quoted identifiers surviving
+- String literals are emitted **exactly as written**: escapes are not re-encoded, so `'it\'s'` stays `'it\'s'` and `'a''b'` stays `'a''b'`
+- SQL containing a **comment** (`--`, `#`, `/* ... */`, including optimizer hints and `/*! ... */`) is **returned as-is**, since the formatter cannot keep comments in its output. Comment-like text inside a string literal or quoted identifier (e.g. `'-- not a comment'`) is not a comment
 - If parsing fails, the **original string is returned as-is**
 
 ### Keyword Casing
@@ -656,35 +660,12 @@ sanat cannot infer it from the SQL text.
 | `default` (default) | Backslash is a string-literal escape character (`\n`, `\'`, `\\`, ...), matching MySQL's default sql_mode |
 | `no_backslash_escapes` | Backslash has no special meaning in a string literal; a literal quote can only be embedded by doubling it, matching MySQL's `NO_BACKSLASH_ESCAPES` sql_mode |
 
-This affects both how sanat *parses* input SQL and how it *re-renders*
-string literals, so the mode must match the mode the SQL was written for —
-otherwise reformatting can change a literal's meaning. For example, given
-`SET sql_mode = 'NO_BACKSLASH_ESCAPES'` and `SELECT 'it''s'`:
-
-**`sql_mode: default` (wrong mode for this input):**
-
-```sql
-SELECT
-  'it\'s'
-```
-
-This re-encodes the doubled quote with a backslash escape, which is only
-valid because the *default* mode still supports it — under the
-`NO_BACKSLASH_ESCAPES` connection this string actually came from, `\'` would
-not close the string, corrupting the query when it's rendered back into
-source and later sent to that connection.
-
-**`sql_mode: no_backslash_escapes` (correct mode for this input):**
-
-```sql
-SELECT
-  'it''s'
-```
-
-The doubled quote round-trips as a doubled quote, and a literal newline
-inside a string round-trips as a literal newline (not the two characters
-`\n`) — both are the only ways `NO_BACKSLASH_ESCAPES` allows those meanings
-to be expressed.
+String literals are always emitted exactly as written, so the mode never
+changes how a literal is rendered. It only affects how sanat *parses* the
+input — in particular, where a string literal ends. For example,
+`SELECT 'a\', b` is a two-column select under `no_backslash_escapes`, but
+under `default` the `\'` is an escaped quote and the literal is
+unterminated, so the input is returned unchanged.
 
 ### Locking Clauses
 
@@ -798,8 +779,8 @@ Configuration files are searched in the following order (first match is used):
 | `newline` | bool | no | `true` | Whether to insert a newline after the opening backtick |
 | `keyword_case` | `upper` \| `lower` \| `preserve` | no | `upper` | Casing for operator/predicate keywords. See [Keyword Casing](#keyword-casing). |
 | `comma_style` | `trailing` \| `leading` | no | `trailing` | Comma placement in rendered lists. See [Comma Style](#comma-style). |
-| `sql_mode` | `default` \| `no_backslash_escapes` | no | `default` | SQL mode controlling string-literal parsing and rendering. See [SQL Mode](#sql-mode). |
-| `dialect` | `mysql` \| `postgresql` | no | `mysql` | SQL dialect to parse. `postgresql` is not yet supported and fails formatting explicitly. |
+| `sql_mode` | `default` \| `no_backslash_escapes` | no | `default` | SQL mode controlling string-literal parsing. See [SQL Mode](#sql-mode). |
+| `dialect` | `mysql` \| `postgresql` | no | `mysql` | SQL dialect to parse. `postgresql` is not wired to the PostgreSQL parser yet, so SQL literals are currently left unchanged. |
 
 ### Configuration Examples
 
@@ -861,8 +842,8 @@ sanat [flags] [pattern ...]
 | `--newline` | | `true` | Newline after opening backtick |
 | `--keyword-case` | | `upper` | Casing for operator/predicate keywords (`upper`, `lower`, `preserve`) |
 | `--comma-style` | | `trailing` | Comma placement in lists (`trailing`, `leading`) |
-| `--sql-mode` | | `default` | SQL mode controlling string-literal parsing and rendering (`default`, `no_backslash_escapes`) |
-| `--dialect` | | `mysql` | SQL dialect to parse (`mysql`, `postgresql`). `postgresql` is not yet supported and fails formatting explicitly. |
+| `--sql-mode` | | `default` | SQL mode controlling string-literal parsing (`default`, `no_backslash_escapes`) |
+| `--dialect` | | `mysql` | SQL dialect to parse (`mysql`, `postgresql`). `postgresql` is not wired to the PostgreSQL parser yet, so SQL literals are currently left unchanged. |
 | `--config` | `-c` | | Configuration file path |
 
 All flags except `--write` are shared with the [lint command](#lint-command).

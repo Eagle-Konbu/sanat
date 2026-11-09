@@ -6,13 +6,15 @@ import (
 )
 
 var (
-	sqlPrefixRe = regexp.MustCompile(`(?i)^\s*(SELECT|INSERT|UPDATE|DELETE|` +
+	sqlPrefixRe = regexp.MustCompile(`(?i)^\s*(WITH|SELECT|INSERT|UPDATE|DELETE|MERGE|` +
 		`CREATE|ALTER|DROP|TRUNCATE|` +
 		`START|BEGIN|COMMIT|ROLLBACK|SAVEPOINT|RELEASE|SET|` +
 		`SHOW|DESCRIBE|EXPLAIN|USE)\b`)
 	fmtVerbRe = regexp.MustCompile(`%[+\-# 0]*[*]?[0-9]*[.*]?[0-9]*[vTtbcdoOqxXUeEfFgGsp]`)
 )
 
+// MightBeSQL reports whether s looks like a SQL statement worth formatting:
+// it starts with a recognized statement keyword and contains no fmt verbs.
 func MightBeSQL(s string) bool {
 	s = strings.TrimSpace(s)
 	if s == "" {

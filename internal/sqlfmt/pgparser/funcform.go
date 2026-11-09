@@ -40,12 +40,19 @@ func (p *Parser) tryParseSpecialFuncForm() (pgast.Expr, bool) {
 		return nil, false
 	}
 
+	nameRaw := p.rawText(p.tok)
 	p.advance() // consume the name
 	p.advance() // consume '('
 
 	expr := parse(p)
 
 	p.expect(RPAREN)
+
+	// The plain argument-list spellings fall back to an ordinary FuncExpr,
+	// whose name the form's parser filled in without seeing the name token.
+	if f, ok := expr.(*pgast.FuncExpr); ok {
+		f.Name.Raw = nameRaw
+	}
 
 	return expr, true
 }
@@ -54,28 +61,30 @@ func (p *Parser) tryParseSpecialFuncForm() (pgast.Expr, bool) {
 // the field is an identifier (YEAR through SECOND are identifiers to this
 // lexer) or a string constant, never a keyword.
 func (p *Parser) parseExtract() pgast.Expr {
-	var field string
+	extract := &pgast.ExtractExpr{FieldRaw: p.rawText(p.tok)}
 
 	switch {
 	case p.at(STRING):
-		field = p.readStringLiteralText()
+		extract.Field = quoteString(p.tok.Literal)
 	case p.at(IDENT), p.at(QuotedIdent):
-		field = identText(p.tok)
-		p.advance()
+		extract.Field = identText(p.tok)
 	default:
 		p.failf("expected EXTRACT field, got %s", p.tok.Type)
 	}
 
+	p.advance()
 	p.expect(FROM)
 
-	return &pgast.ExtractExpr{Field: field, Source: p.parseExpr()}
+	extract.Source = p.parseExpr()
+
+	return extract
 }
 
 // parseSubstring parses "s [FROM start] [FOR count]" (in either order),
 // "s SIMILAR pattern ESCAPE escape", or a plain argument list.
 func (p *Parser) parseSubstring() pgast.Expr {
 	if p.at(RPAREN) {
-		return &pgast.FuncExpr{Name: "substring"}
+		return &pgast.FuncExpr{Name: pgast.ColIdent{Name: "substring"}}
 	}
 
 	sub := &pgast.SubstringExpr{Expr: p.parseExpr()}
@@ -178,7 +187,9 @@ func (p *Parser) parseOverlay() pgast.Expr {
 // finishPlainFuncArgs finishes the ordinary comma-separated spelling of a
 // keyword-argument function whose first argument has been parsed.
 func (p *Parser) finishPlainFuncArgs(name string, first pgast.Expr) pgast.Expr {
-	return &pgast.FuncExpr{Name: pgast.ColIdent(name), Args: append([]pgast.Expr{first}, p.parseOptionalCommaExprs()...)}
+	args := append([]pgast.Expr{first}, p.parseOptionalCommaExprs()...)
+
+	return &pgast.FuncExpr{Name: pgast.ColIdent{Name: name}, Args: args}
 }
 
 // parseOptionalCommaExprs parses ", expr" repeatedly.

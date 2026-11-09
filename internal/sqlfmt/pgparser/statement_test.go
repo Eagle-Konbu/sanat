@@ -112,6 +112,30 @@ func TestParseStatement_with(t *testing.T) {
 	}
 }
 
+func TestParseStatement_questionMarkPlaceholder(t *testing.T) {
+	tests := []struct {
+		name, in, want string
+		wantType       pgast.Statement
+	}{
+		{"where comparison", "SELECT * FROM t WHERE id = ?", "SELECT * FROM t WHERE id = ?", &pgast.Select{}},
+		{"values row", "INSERT INTO t VALUES (?,?)", "INSERT INTO t VALUES (?, ?)", &pgast.Insert{}},
+		{"jsonb operator", "SELECT * FROM t WHERE data ? 'key'", "SELECT * FROM t WHERE data ? 'key'", &pgast.Select{}},
+		{
+			"jsonb operator and placeholder",
+			"UPDATE t SET a = ? WHERE data ?| array['a']",
+			"UPDATE t SET a = ? WHERE data ?| ARRAY['a']",
+			&pgast.Update{},
+		},
+		{"limit and offset", "SELECT * FROM t LIMIT ? OFFSET ?", "SELECT * FROM t LIMIT ? OFFSET ?", &pgast.Select{}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assertStatementRoundTrip(t, tt.in, tt.want, tt.wantType)
+		})
+	}
+}
+
 func TestParseStatement_errors(t *testing.T) {
 	tests := []string{
 		"",

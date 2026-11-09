@@ -19,6 +19,7 @@ import (
 // TokenType identifies the category of a lexical token.
 type TokenType int
 
+// Token types produced by the lexer.
 const (
 	EOF TokenType = iota
 
@@ -425,7 +426,11 @@ type Position struct {
 
 // Token is a single lexical token produced by the Lexer.
 type Token struct {
-	Type    TokenType
+	Type TokenType
+	// Literal is the token's value, e.g. the decoded contents of a STRING
+	// or QuotedIdent.
 	Literal string
-	Pos     Position
+	// Raw is the token's exact source text, including quotes and escapes.
+	Raw string
+	Pos Position
 }

@@ -49,12 +49,24 @@ func NewWithMode(input string, mode SQLMode) *Lexer {
 // Next returns the next token in the input, or an error if the input is malformed.
 // The final token before an error-free end of input has Type EOF.
 func (l *Lexer) Next() (Token, error) {
-	if err := l.skipWhitespaceAndComments(); err != nil {
+	if err := l.skipWhitespace(); err != nil {
 		return Token{}, err
 	}
 
 	pos := l.currentPos()
 
+	tok, err := l.readToken(pos)
+	if err != nil {
+		return Token{}, err
+	}
+
+	tok.Raw = l.input[pos.Offset:l.pos]
+
+	return tok, nil
+}
+
+// readToken reads the token starting at pos; Next fills in its Raw text.
+func (l *Lexer) readToken(pos Position) (Token, error) {
 	switch {
 	case l.ch == eof:
 		return Token{Type: EOF, Pos: pos}, nil
@@ -141,65 +153,25 @@ func (l *Lexer) peekAt(n int) rune {
 
 func (l *Lexer) peek() rune { return l.peekAt(1) }
 
-func (l *Lexer) skipWhitespaceAndComments() error {
-	for {
-		switch {
-		case isSpace(l.ch):
-			l.readChar()
-		case l.ch == '#':
-			l.skipLineComment()
-		case l.isDashComment():
-			l.readChar()
-			l.readChar()
-			l.skipLineComment()
-		case l.ch == '/' && l.peek() == '*':
-			if err := l.skipBlockComment(); err != nil {
-				return err
-			}
-		default:
-			return nil
-		}
+// skipWhitespace skips whitespace before the next token. Comments are
+// reported as a *LexError rather than skipped: the AST has nowhere to keep
+// them, so formatting would silently drop them. Callers fall back to
+// returning the input unchanged instead. This also covers /*+ ... */
+// optimizer hints and /*! ... */ executable comments, which carry meaning.
+func (l *Lexer) skipWhitespace() error {
+	for isSpace(l.ch) {
+		l.readChar()
 	}
+
+	if l.ch == '#' || l.isDashComment() || (l.ch == '/' && l.peek() == '*') {
+		return &LexError{Pos: l.currentPos(), Msg: "comments are not supported"}
+	}
+
+	return nil
 }
 
 func (l *Lexer) isDashComment() bool {
 	return l.ch == '-' && l.peek() == '-' && isCommentBoundary(l.peekAt(2))
-}
-
-func (l *Lexer) skipLineComment() {
-	for l.ch != '\n' && l.ch != eof {
-		l.readChar()
-	}
-}
-
-func (l *Lexer) skipBlockComment() error {
-	startPos := l.currentPos()
-	l.readChar() // consume '/'
-	l.readChar() // consume '*'
-
-	// /*+ ... */ optimizer hints and /*! ... */ (or /*!50700 ... */
-	// version-gated) executable comments carry semantic content that a
-	// plain comment does not. Discarding them like an ordinary block
-	// comment would silently drop meaning from the formatted output, so
-	// this is reported as a lex error instead: callers fall back to
-	// returning the input unchanged rather than mangling it.
-	if l.ch == '+' || l.ch == '!' {
-		return &LexError{Pos: startPos, Msg: "MySQL optimizer hints and executable comments are not supported"}
-	}
-
-	for {
-		switch {
-		case l.ch == eof:
-			return &LexError{Pos: startPos, Msg: "unterminated block comment"}
-		case l.ch == '*' && l.peek() == '/':
-			l.readChar()
-			l.readChar()
-
-			return nil
-		default:
-			l.readChar()
-		}
-	}
 }
 
 // tryReadPrefixedStringLiteral reads MySQL's x'..'/b'..' hex- and
@@ -608,15 +580,15 @@ var singleCharTokens = map[rune]TokenType{
 }
 
 func isSpace(ch rune) bool {
-	return ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r'
+	return ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r' || ch == '\f' || ch == '\v'
 }
 
 // isCommentBoundary reports whether ch is what MySQL requires immediately
-// after "--" for it to start a comment: whitespace or a control character.
-// EOF doesn't count — a bare trailing "--" with nothing after it is not a
-// comment start, matching MySQL's stricter enforcement of this rule.
+// after "--" for it to start a comment: whitespace. EOF doesn't count — a
+// bare trailing "--" with nothing after it is not a comment start, matching
+// MySQL's stricter enforcement of this rule.
 func isCommentBoundary(ch rune) bool {
-	return isSpace(ch) || ch == '\f' || ch == '\v'
+	return isSpace(ch)
 }
 
 func isDigit(ch rune) bool {

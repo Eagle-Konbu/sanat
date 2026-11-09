@@ -18,9 +18,13 @@ internal/sqlfmt/
 
 Implemented in `internal/sqlfmt/pgparser/lexer.go` and `token.go`
 ([#79](https://github.com/Eagle-Konbu/sanat/issues/79)). `pgparser.New(input)`
-returns a `*Lexer` whose `Next()` yields one `Token` (type, literal, and
-1-based line/column position) at a time, ending with `EOF`, or a `*LexError`
-for malformed input.
+returns a `*Lexer` whose `Next()` yields one `Token` at a time, ending with
+`EOF`, or a `*LexError` for malformed input. A token carries its type, its
+literal, and its start (`Pos`) and end (`End`, just past its last character)
+positions, each a byte offset plus a 1-based line and rune column, so
+`input[Pos.Offset:End.Offset]` is the token's exact source text. For string
+constants joined across a newline, that span covers every part and the
+whitespace between them.
 
 - **Identifiers**: an unquoted identifier starts with an ASCII letter, `_`, or
   any non-ASCII character, and may continue with those, digits, and `$`. As in
@@ -53,7 +57,12 @@ for malformed input.
 - **Whitespace**: space, tab, newline, carriage return, form feed, and
   vertical tab.
 - **Comments**: `--` to end of line (no space required after the dashes) and
-  nesting `/* ... */` block comments are skipped.
+  nesting `/* ... */` block comments are skipped, so they never reach the
+  AST. `pgparser.ContainsComment(sql)` reports whether the input holds any,
+  for a formatter that must leave commented SQL unchanged. It lexes the input
+  rather than searching its text, so `--` or `/*` inside a string constant,
+  dollar-quoted string, or quoted identifier does not count. On a lex error,
+  it reports only the comments before the error.
 - **Operators** follow PostgreSQL's scanner (`scan.l`): the longest run of
   operator characters ``~ ! @ # ^ & | ` ? + - * / % < > =`` is one
   operator, cut short where a `--` or `/*` comment starts. A multi-character
@@ -132,9 +141,32 @@ output layout.
 | `typename.go` | `TypeName` (casts and typed literals) and `TypedLiteral` |
 | `markers.go` | The empty marker methods that seal the interfaces |
 
-Identifiers are stored as SQL text: an unquoted name in its folded lower
-case, a quoted one with its double quotes. Every statement's `With` field
-holds its leading `WITH` clause.
+Identifiers (`ColIdent`, `TableIdent`) store their `Name` as SQL text: an
+unquoted name in its folded lower case, a quoted one with its double quotes.
+Every statement's `With` field holds its leading `WITH` clause.
+
+**Source spelling (`Raw`).** `String()` renders the normalized text above,
+but a renderer that must reproduce the user's spelling reads the
+display-only `Raw` fields instead, which the parser fills with the exact
+source text:
+
+| Node | Normalized field | Raw field | Example source → normalized / raw |
+|---|---|---|---|
+| `ColIdent`, `TableIdent` | `Name` | `Raw` | `UserId` → `userid` / `UserId`; `"UserId"` → `"UserId"` / `"UserId"` |
+| `Literal` | `Val` | `Raw` | `E'a\nb'` → `'a` newline `b'` / `E'a\nb'`; `'a'` newline `'b'` → `'ab'` / the whole span |
+| `TypedLiteral` | `Value` | `ValueRaw` | `DATE $d$2020-01-01$d$` → `'2020-01-01'` / `$d$2020-01-01$d$` |
+| `ExtractExpr` | `Field` | `FieldRaw` | `EXTRACT(YEAR FROM d)` → `year` / `YEAR` |
+
+Every identifier the parser reads from the source carries `Raw`: column
+references and their qualifiers, table names and schemas, table, column, and
+`USING` aliases, CTE, window, and constraint names, function names and
+qualifiers (including the plain argument-list spelling of `substring`,
+`trim`, and similar), named arguments, collations, `OPERATOR(schema.op)`
+schemas, and type-name parts. `Raw` is empty for nodes not built from source
+text, including built-in multi-word type names such as `double precision`,
+which the parser assembles from several keywords. Every `Literal` the parser
+reads from a token carries `Raw`, including numbers, placeholders, and
+`NULL`/`TRUE`/`FALSE`/`DEFAULT` (whose `Val` is upper case).
 
 **MERGE** (PostgreSQL 15+; see
 [MERGE Statement Grammar](#merge-statement-grammar)): `Merge.Target` is an
@@ -222,8 +254,18 @@ the comment `--a`.
 
 ### Primary Expressions
 
-- Literals: numbers, strings (rendered back as `'...'`), `NULL`, `TRUE`,
-  `FALSE`, and placeholders (`$1`).
+- Literals: numbers, strings (rendered back as `'...'`, with the source
+  spelling kept in `Raw`), `NULL`, `TRUE`, `FALSE`, and placeholders (`$1`).
+- `?` bind parameters, as Go drivers and query builders write them into
+  PostgreSQL SQL. The lexer reads `?` as a generic `Op` (PostgreSQL's jsonb
+  key-exists operator), so the parser decides by position: a lone `?` `Op`
+  where an operand is expected is a placeholder (`pgast.Literal{Val: "?"}`,
+  rendered back as `?`), while a `?` after an operand stays the infix
+  operator. PostgreSQL has no built-in prefix `?` operator, so the two never
+  collide: `data ? ?` is the jsonb operator applied to a placeholder, and
+  `?|`/`?&` are always operators. A user-defined prefix `?` operator is not
+  supported, since `SELECT ? x` would be ambiguous with a placeholder
+  aliased `x`.
 - Column references `name` and `qualifier.name`, and function calls
   `[qualifier.]name(args)` with `*`, `DISTINCT`, named arguments
   (`name => value`, or the older `name := value`), `FILTER (WHERE ...)`, and
@@ -277,6 +319,12 @@ the comment `--a`.
 Not supported (each a `*ParseError` unless noted): `IS [NOT] DOCUMENT`,
 `AT LOCAL`, `COLLATION FOR (...)`, and three-part function names
 (`db.schema.f()`).
+
+Limitation: a `?` placeholder written directly after another operator
+character is lexed into that operator by the longest-run rule, as PostgreSQL
+itself would: `id=?` lexes as `id`, `=?` and fails to parse (no right
+operand), and `-?` is a single `-?` operator. Spacing it out (`id = ?`)
+parses as expected.
 
 ### Type Names
 

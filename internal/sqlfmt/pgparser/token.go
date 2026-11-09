@@ -1,10 +1,11 @@
-// Package pgparser implements a lexer (and, in later issues, a parser) for
-// PostgreSQL 13+ DML syntax, producing the pgast AST the formatter walks to
-// render output. It is a separate package from internal/sqlfmt/parser rather
-// than a Dialect-gated branch inside it, because PostgreSQL and MySQL's
-// lexical rules genuinely conflict (double-quoted identifiers vs. backtick
-// quoting, dollar-quoting/placeholders, opposite default backslash-escape
-// behavior). This issue implements only the lexer (tokenizer) — no grammar.
+// Package pgparser implements a lexer and a recursive-descent parser for
+// PostgreSQL 13+ DML syntax (SELECT, INSERT, UPDATE, DELETE, and MERGE,
+// with WITH and set operations), producing the pgast AST the formatter walks
+// to render output. It is a separate package from internal/sqlfmt/parser
+// rather than a Dialect-gated branch inside it, because PostgreSQL and
+// MySQL's lexical rules genuinely conflict (double-quoted identifiers vs.
+// backtick quoting, dollar-quoting/placeholders, opposite default
+// backslash-escape behavior).
 package pgparser
 
 import (
@@ -15,6 +16,7 @@ import (
 // TokenType identifies the category of a lexical token.
 type TokenType int
 
+// Token types produced by the lexer.
 const (
 	EOF TokenType = iota
 
@@ -423,9 +425,13 @@ type Position struct {
 	Column int // 1-based, in runes
 }
 
-// Token is a single lexical token produced by the Lexer.
+// Token is a single lexical token produced by the Lexer. Pos and End bound
+// the token's exact source text, input[Pos.Offset:End.Offset], which for a
+// string constant joined across a newline spans every part and the
+// whitespace between them.
 type Token struct {
 	Type    TokenType
 	Literal string
-	Pos     Position
+	Pos     Position // where the token starts
+	End     Position // just past the token's last character
 }

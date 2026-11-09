@@ -2,6 +2,7 @@ package parser_test
 
 import (
 	"errors"
+	"slices"
 	"testing"
 
 	"github.com/Eagle-Konbu/sanat/internal/sqlfmt/parser"
@@ -521,7 +522,7 @@ func TestLexer_Punctuation(t *testing.T) {
 }
 
 func TestLexer_WhitespaceSkipped(t *testing.T) {
-	assertTokens(t, "  id\t\n  ,  name  ", []wantToken{
+	assertTokens(t, "  id\t\n\f\v  ,\r name  ", []wantToken{
 		{parser.IDENT, "id"},
 		{parser.COMMA, ","},
 		{parser.IDENT, "name"},
@@ -529,50 +530,64 @@ func TestLexer_WhitespaceSkipped(t *testing.T) {
 	})
 }
 
+// TestLexer_Comments covers comment rejection: the AST cannot keep
+// comments, so the lexer reports them as errors instead of dropping them.
 func TestLexer_Comments(t *testing.T) {
-	tests := []struct {
+	leading := []struct {
+		name string
+		in   string
+	}{
+		{"leading double dash", "-- comment\nid"},
+		{"leading hash", "# comment\nid"},
+		{"leading block comment", "/* comment */ id"},
+	}
+
+	for _, tt := range leading {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := parser.New(tt.in).Next()
+
+			if _, ok := errors.AsType[*parser.LexError](err); !ok {
+				t.Fatalf("Next() error = %v, want *parser.LexError for comment", err)
+			}
+		})
+	}
+
+	rejected := []struct {
+		name string
+		in   string
+	}{
+		{"double dash to end of line", "id -- this is a comment\n, name"},
+		{"double dash then tab", "id --\tcomment"},
+		{"double dash then form feed", "id --\fcomment"},
+		{"double dash then vertical tab", "id --\vcomment"},
+		{"double dash to EOF", "id -- trailing comment"},
+		{"hash to end of line", "id # comment\n, name"},
+		{"block comment", "id /* comment\nspanning lines */, name"},
+		{"unterminated block comment", "id /* unterminated"},
+		{"optimizer hint", "id /*+ MAX_EXECUTION_TIME(1000) */ 1"},
+		{"executable comment", "id /*!50700 1 */"},
+	}
+
+	for _, tt := range rejected {
+		t.Run(tt.name, func(t *testing.T) {
+			l := parser.New(tt.in)
+			if _, err := l.Next(); err != nil {
+				t.Fatalf("Next() error = %v, want nil for first token", err)
+			}
+
+			_, err := l.Next()
+
+			if _, ok := errors.AsType[*parser.LexError](err); !ok {
+				t.Fatalf("Next() error = %v, want *parser.LexError for comment", err)
+			}
+		})
+	}
+
+	accepted := []struct {
 		name string
 		in   string
 		want []wantToken
 	}{
-		{
-			name: "double dash to end of line",
-			in:   "id -- this is a comment\n, name",
-			want: []wantToken{
-				{parser.IDENT, "id"},
-				{parser.COMMA, ","},
-				{parser.IDENT, "name"},
-				{parser.EOF, ""},
-			},
-		},
-		{
-			name: "double dash to EOF",
-			in:   "id -- trailing comment",
-			want: []wantToken{
-				{parser.IDENT, "id"},
-				{parser.EOF, ""},
-			},
-		},
-		{
-			name: "hash to end of line",
-			in:   "id # comment\n, name",
-			want: []wantToken{
-				{parser.IDENT, "id"},
-				{parser.COMMA, ","},
-				{parser.IDENT, "name"},
-				{parser.EOF, ""},
-			},
-		},
-		{
-			name: "block comment",
-			in:   "id /* comment\nspanning lines */, name",
-			want: []wantToken{
-				{parser.IDENT, "id"},
-				{parser.COMMA, ","},
-				{parser.IDENT, "name"},
-				{parser.EOF, ""},
-			},
-		},
 		{
 			name: "double dash without trailing space is not a comment",
 			in:   "a--b",
@@ -594,46 +609,75 @@ func TestLexer_Comments(t *testing.T) {
 				{parser.EOF, ""},
 			},
 		},
+		{
+			name: "comment markers inside a string literal",
+			in:   "'-- # /* */'",
+			want: []wantToken{
+				{parser.STRING, "-- # /* */"},
+				{parser.EOF, ""},
+			},
+		},
+		{
+			name: "comment markers inside a quoted identifier",
+			in:   "`a -- #b /*c*/`",
+			want: []wantToken{
+				{parser.QuotedIdent, "a -- #b /*c*/"},
+				{parser.EOF, ""},
+			},
+		},
 	}
 
-	for _, tt := range tests {
+	for _, tt := range accepted {
 		t.Run(tt.name, func(t *testing.T) {
 			assertTokens(t, tt.in, tt.want)
 		})
 	}
+}
 
-	t.Run("unterminated block comment", func(t *testing.T) {
-		l := parser.New("id /* unterminated")
-		if _, err := l.Next(); err != nil {
-			t.Fatalf("Next() error = %v, want nil for first token", err)
-		}
+// TestLexer_Raw covers Token.Raw, the exact source text of each token,
+// which the parser uses to keep string literals as written.
+func TestLexer_Raw(t *testing.T) {
+	tests := []struct {
+		name string
+		mode parser.SQLMode
+		in   string
+		want []string
+	}{
+		{"plain string", parser.ModeDefault, "'abc'", []string{"'abc'"}},
+		{"doubled quote", parser.ModeDefault, "'a''b'", []string{"'a''b'"}},
+		{"backslash escapes", parser.ModeDefault, `'it\'s \n \\'`, []string{`'it\'s \n \\'`}},
+		{"literal newline", parser.ModeDefault, "'a\nb'", []string{"'a\nb'"}},
+		{"no backslash escapes", parser.ModeNoBackslashEscapes, `'a\'`, []string{`'a\'`}},
+		{"hex and bit strings", parser.ModeDefault, "X'1a' b'01'", []string{"X'1a'", "b'01'"}},
+		{"multibyte", parser.ModeDefault, "'café' = x", []string{"'café'", "=", "x"}},
+		{"quoted identifier", parser.ModeDefault, "`a``b`", []string{"`a``b`"}},
+		{"surrounding whitespace excluded", parser.ModeDefault, "  'a'  ,  1 ", []string{"'a'", ",", "1"}},
+	}
 
-		if _, err := l.Next(); err == nil {
-			t.Fatal("expected error for unterminated block comment")
-		}
-	})
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			l := parser.NewWithMode(tt.in, tt.mode)
 
-	t.Run("optimizer hint is rejected", func(t *testing.T) {
-		l := parser.New("SELECT /*+ MAX_EXECUTION_TIME(1000) */ 1")
-		if _, err := l.Next(); err != nil {
-			t.Fatalf("Next() error = %v, want nil for first token", err)
-		}
+			var got []string
 
-		if _, err := l.Next(); err == nil {
-			t.Fatal("expected error for /*+ ... */ optimizer hint")
-		}
-	})
+			for {
+				tok, err := l.Next()
+				if err != nil {
+					t.Fatalf("Next() error = %v", err)
+				}
 
-	t.Run("executable comment is rejected", func(t *testing.T) {
-		l := parser.New("SELECT /*!50700 1 */")
-		if _, err := l.Next(); err != nil {
-			t.Fatalf("Next() error = %v, want nil for first token", err)
-		}
+				if tok.Type == parser.EOF {
+					break
+				}
 
-		if _, err := l.Next(); err == nil {
-			t.Fatal("expected error for /*! ... */ executable comment")
-		}
-	})
+				got = append(got, tok.Raw)
+			}
+
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("Raw = %q, want %q", got, tt.want)
+			}
+		})
+	}
 }
 
 func TestLexer_IllegalCharacter(t *testing.T) {

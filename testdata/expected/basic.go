@@ -92,4 +92,24 @@ FROM
 WHERE
   o.total > ?
 `, 100)
+
+	// Raw string SELECT with CTE: should be formatted
+	db.Query(`
+WITH
+  active AS (
+    SELECT
+      id
+    FROM
+      users
+    WHERE
+      active = ?
+  )
+SELECT
+  id
+FROM
+  active
+`, true)
+
+	// Should NOT be changed: MERGE is detected but MySQL cannot parse it
+	db.Exec(`merge into users u using staged s on u.id = s.id when matched then delete`)
 }

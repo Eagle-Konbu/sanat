@@ -9,6 +9,8 @@ import (
 	"github.com/Eagle-Konbu/sanat/internal/sqlfmt/sqlast"
 )
 
+// Accepted values for the Options fields KeywordCase, CommaStyle, SQLMode,
+// and Dialect.
 const (
 	KeywordCaseUpper    = "upper"
 	KeywordCaseLower    = "lower"
@@ -67,35 +69,24 @@ type Options struct {
 	SQLMode string
 
 	// Dialect selects which SQL dialect's parser formats the input.
-	// Defaults to DialectMySQL. DialectPostgreSQL is not supported yet —
-	// FormatSQLWithOptions reports ok == false rather than silently falling
-	// back to MySQL parsing.
+	// Defaults to DialectMySQL. DialectPostgreSQL is not wired to the
+	// PostgreSQL parser yet, so FormatSQLWithOptions reports ok == false and
+	// leaves the SQL unchanged rather than silently falling back to MySQL
+	// parsing. An unknown value is handled the same way; callers reject
+	// unknown dialect names when validating config, CLI flags, and plugin
+	// settings.
 	Dialect string
 }
 
-// formatter holds the resolved rendering options for a single FormatSQL call.
+// formatter renders a MySQL sqlast statement. The dialect-neutral layout
+// helpers it relies on (padding, keyword casing, comma-style lists) live on
+// the embedded renderer so the PostgreSQL renderer can share them.
 type formatter struct {
-	indent      int
-	keywordCase string
-	commaStyle  string
+	renderer
 }
 
 func newFormatter(opts Options) *formatter {
-	f := &formatter{
-		indent:      opts.Indent,
-		keywordCase: opts.KeywordCase,
-		commaStyle:  opts.CommaStyle,
-	}
-
-	if f.keywordCase == "" {
-		f.keywordCase = KeywordCaseUpper
-	}
-
-	if f.commaStyle == "" {
-		f.commaStyle = CommaStyleTrailing
-	}
-
-	return f
+	return &formatter{renderer: newRenderer(opts)}
 }
 
 // FormatSQL formats sql with the given indent width, using the default
@@ -104,11 +95,21 @@ func FormatSQL(sql string, indent int) (string, bool) {
 	return FormatSQLWithOptions(sql, Options{Indent: indent})
 }
 
+// FormatSQLWithOptions formats sql according to opts. It returns the input
+// unchanged and false when the dialect is unsupported or sql cannot be
+// parsed or rendered.
 func FormatSQLWithOptions(sql string, opts Options) (string, bool) {
 	if !dialectSupported(opts.Dialect) {
 		return sql, false
 	}
 
+	return formatMySQL(sql, opts)
+}
+
+// formatMySQL formats sql with the MySQL parser. The '?' rewrite is
+// MySQL-only: in PostgreSQL, '?', '?|', and '?&' are jsonb operators that
+// must reach the parser intact.
+func formatMySQL(sql string, opts Options) (string, bool) {
 	mode, ok := parserSQLMode(opts.SQLMode)
 	if !ok {
 		return sql, false
@@ -131,10 +132,9 @@ func FormatSQLWithOptions(sql string, opts Options) (string, bool) {
 
 // dialectSupported reports whether opts.Dialect names a dialect
 // FormatSQLWithOptions can currently format. The empty string means
-// DialectMySQL, today's only behavior. DialectPostgreSQL is recognized but
-// not yet implemented (pgparser doesn't exist), so it's rejected the same
-// as an unknown dialect string rather than silently falling back to MySQL
-// parsing — once pgparser lands, this will dispatch to it instead.
+// DialectMySQL. DialectPostgreSQL is not wired to pgparser yet, so it's
+// rejected (leaving the SQL unchanged) the same as an unknown dialect
+// string rather than silently falling back to MySQL parsing.
 func dialectSupported(dialect string) bool {
 	switch dialect {
 	case "", DialectMySQL:
@@ -399,22 +399,6 @@ func (f *formatter) formatExplain(b *strings.Builder, s *sqlast.Explain, depth i
 	f.formatStatement(b, s.Statement, depth+1)
 }
 
-func (f *formatter) pad(depth int) string {
-	return strings.Repeat(" ", depth*f.indent)
-}
-
-// keyword renders a hardcoded operator/predicate literal (e.g. "AS", "AND")
-// according to the configured keyword case. sqlast always renders these
-// uppercase on its own, so KeywordCaseUpper and KeywordCasePreserve both take
-// the identity branch here; only KeywordCaseLower does any work.
-func (f *formatter) keyword(word string) string {
-	if f.keywordCase == KeywordCaseLower {
-		return strings.ToLower(word)
-	}
-
-	return strings.ToUpper(word)
-}
-
 // applyKeywordCase lowercases operator/predicate keywords embedded in text
 // produced by an sqlast node's String() method (which always renders them
 // uppercase), skipping quoted regions so literal contents are left intact.
@@ -467,44 +451,6 @@ func quotedRegionEnd(s string, start int, c byte) int {
 	}
 
 	return i
-}
-
-// itemPrefix returns the indentation/comma prefix to write before item i of
-// an n-item list, per the configured comma style.
-func (f *formatter) itemPrefix(pi string, i int) string {
-	if f.commaStyle == CommaStyleLeading && i > 0 {
-		return leadingCommaPrefix(pi)
-	}
-
-	return pi
-}
-
-// itemSuffix returns the trailing comma (if any) to write after item i of an
-// n-item list, per the configured comma style.
-func (f *formatter) itemSuffix(i, n int) string {
-	if f.commaStyle == CommaStyleLeading {
-		return ""
-	}
-
-	if i < n-1 {
-		return ","
-	}
-
-	return ""
-}
-
-// writeList writes pre-rendered single-line items, applying the configured
-// comma style.
-func (f *formatter) writeList(b *strings.Builder, pi string, lines []string) {
-	for i, line := range lines {
-		b.WriteString(f.itemPrefix(pi, i) + line + f.itemSuffix(i, len(lines)) + "\n")
-	}
-}
-
-func leadingCommaPrefix(pi string) string {
-	n := max(len(pi)-2, 0)
-
-	return strings.Repeat(" ", n) + ", "
 }
 
 func (f *formatter) formatWith(b *strings.Builder, with *sqlast.With, depth int) {

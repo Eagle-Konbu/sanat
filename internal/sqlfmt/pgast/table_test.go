@@ -12,29 +12,29 @@ func TestAliasedTableExpr_String(t *testing.T) {
 		a    *pgast.AliasedTableExpr
 		want string
 	}{
-		{"simple", &pgast.AliasedTableExpr{Expr: pgast.TableName{Name: "users"}}, "users"},
+		{"simple", &pgast.AliasedTableExpr{Expr: pgast.TableName{Name: pgast.TableIdent{Name: "users"}}}, "users"},
 		{
 			"with alias",
-			&pgast.AliasedTableExpr{Expr: pgast.TableName{Name: "users"}, As: "u"},
+			&pgast.AliasedTableExpr{Expr: pgast.TableName{Name: pgast.TableIdent{Name: "users"}}, As: pgast.TableIdent{Name: "u"}},
 			"users u",
 		},
 		{
 			"lateral",
 			&pgast.AliasedTableExpr{
 				Expr:    &pgast.DerivedTable{Select: selectStar()},
-				As:      "sub",
+				As:      pgast.TableIdent{Name: "sub"},
 				Lateral: true,
 			},
 			"LATERAL (SELECT * FROM t) sub",
 		},
 		{
 			"only",
-			&pgast.AliasedTableExpr{Expr: pgast.TableName{Name: "users"}, As: "u", Only: true},
+			&pgast.AliasedTableExpr{Expr: pgast.TableName{Name: pgast.TableIdent{Name: "users"}}, As: pgast.TableIdent{Name: "u"}, Only: true},
 			"ONLY users u",
 		},
 		{
 			"include descendants",
-			&pgast.AliasedTableExpr{Expr: pgast.TableName{Name: "users"}, As: "u", IncludeDescendants: true},
+			&pgast.AliasedTableExpr{Expr: pgast.TableName{Name: pgast.TableIdent{Name: "users"}}, As: pgast.TableIdent{Name: "u"}, IncludeDescendants: true},
 			"users * u",
 		},
 	}
@@ -71,8 +71,8 @@ func TestJoinType_String(t *testing.T) {
 }
 
 func TestJoinTableExpr_String(t *testing.T) {
-	left := pgast.TableName{Name: "a"}
-	right := pgast.TableName{Name: "b"}
+	left := pgast.TableName{Name: pgast.TableIdent{Name: "a"}}
+	right := pgast.TableName{Name: pgast.TableIdent{Name: "b"}}
 
 	tests := []struct {
 		name string
@@ -95,7 +95,7 @@ func TestJoinTableExpr_String(t *testing.T) {
 			&pgast.JoinTableExpr{
 				Left: &pgast.AliasedTableExpr{Expr: left}, Join: pgast.JoinLeft,
 				Right:     &pgast.AliasedTableExpr{Expr: right},
-				Condition: &pgast.JoinCondition{Using: pgast.Columns{"id"}},
+				Condition: &pgast.JoinCondition{Using: pgast.Columns{pgast.ColIdent{Name: "id"}}},
 			},
 			"a LEFT JOIN b USING (id)",
 		},
@@ -118,12 +118,12 @@ func TestJoinTableExpr_String(t *testing.T) {
 
 func TestParenTableExpr_String(t *testing.T) {
 	p := &pgast.ParenTableExpr{Exprs: []pgast.TableExpr{
-		&pgast.AliasedTableExpr{Expr: pgast.TableName{Name: "a"}},
-		&pgast.AliasedTableExpr{Expr: pgast.TableName{Name: "b"}},
+		&pgast.AliasedTableExpr{Expr: pgast.TableName{Name: pgast.TableIdent{Name: "a"}}},
+		&pgast.AliasedTableExpr{Expr: pgast.TableName{Name: pgast.TableIdent{Name: "b"}}},
 	}}
 	assertEqual(t, "(a, b)", p.String())
 
-	p.As = "j"
+	p.As = pgast.TableIdent{Name: "j"}
 	assertEqual(t, "(a, b) j", p.String())
 }
 
@@ -150,7 +150,7 @@ func TestAliasedExpr_String(t *testing.T) {
 	})
 
 	t.Run("with alias", func(t *testing.T) {
-		a := &pgast.AliasedExpr{Expr: col("id"), As: "user_id"}
+		a := &pgast.AliasedExpr{Expr: col("id"), As: pgast.ColIdent{Name: "user_id"}}
 		assertEqual(t, "id AS user_id", a.String())
 	})
 }
@@ -161,12 +161,12 @@ func TestStarExpr_String(t *testing.T) {
 	})
 
 	t.Run("qualified", func(t *testing.T) {
-		s := &pgast.StarExpr{TableName: pgast.TableName{Name: "users"}}
+		s := &pgast.StarExpr{TableName: pgast.TableName{Name: pgast.TableIdent{Name: "users"}}}
 		assertEqual(t, "users.*", s.String())
 	})
 
 	t.Run("schema qualified", func(t *testing.T) {
-		s := &pgast.StarExpr{TableName: pgast.TableName{Qualifier: "public", Name: "users"}}
+		s := &pgast.StarExpr{TableName: pgast.TableName{Qualifier: pgast.TableIdent{Name: "public"}, Name: pgast.TableIdent{Name: "users"}}}
 		assertEqual(t, "public.users.*", s.String())
 	})
 }

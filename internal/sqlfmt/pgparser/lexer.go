@@ -40,6 +40,8 @@ type Lexer struct {
 	// split off the last operator end. Each of them is a one-character
 	// operator, so the run is not scanned again for each of them.
 	signRunEnd int
+
+	sawComment bool
 }
 
 // New creates a Lexer over input.
@@ -50,9 +52,36 @@ func New(input string) *Lexer {
 	return l
 }
 
+// ContainsComment reports whether sql contains a "--" or "/* */" comment.
+// It lexes sql rather than searching its text, so comment-like text inside a
+// string constant, dollar-quoted string, or quoted identifier does not
+// count. If sql fails to lex, only the comments before the error are
+// reported; such input does not parse anyway.
+func ContainsComment(sql string) bool {
+	l := New(sql)
+
+	for {
+		tok, err := l.Next()
+		if err != nil || tok.Type == EOF {
+			return l.sawComment
+		}
+	}
+}
+
 // Next returns the next token in the input, or an error if the input is malformed.
 // The final token before an error-free end of input has Type EOF.
 func (l *Lexer) Next() (Token, error) {
+	tok, err := l.next()
+	if err != nil {
+		return Token{}, err
+	}
+
+	tok.End = l.currentPos()
+
+	return tok, nil
+}
+
+func (l *Lexer) next() (Token, error) {
 	if err := l.skipWhitespaceAndComments(); err != nil {
 		return Token{}, err
 	}
@@ -242,6 +271,8 @@ func (l *Lexer) skipWhitespaceAndComments() error {
 }
 
 func (l *Lexer) skipLineComment() {
+	l.sawComment = true
+
 	for l.ch != '\n' && l.ch != eof {
 		l.readChar()
 	}
@@ -251,6 +282,7 @@ func (l *Lexer) skipLineComment() {
 // pairs, since PostgreSQL ends the comment only at the "*/" matching the
 // outermost "/*". An unterminated comment is reported at its opening "/*".
 func (l *Lexer) skipBlockComment() error {
+	l.sawComment = true
 	startPos := l.currentPos()
 	l.readChar() // consume '/'
 	l.readChar() // consume '*'
