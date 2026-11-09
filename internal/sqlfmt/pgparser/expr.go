@@ -489,10 +489,7 @@ func (p *Parser) parseAdditiveExpr() pgast.Expr {
 	left := p.parseMultiplicativeExpr()
 
 	for p.at(PLUS) || p.at(MINUS) {
-		op := arithmeticOps[p.tok.Type]
-		p.advance()
-
-		left = &pgast.ArithmeticExpr{Left: left, Operator: op, Right: p.parseMultiplicativeExpr()}
+		left = p.parseArithmeticRight(left, (*Parser).parseMultiplicativeExpr)
 	}
 
 	return left
@@ -502,13 +499,25 @@ func (p *Parser) parseMultiplicativeExpr() pgast.Expr {
 	left := p.parseExponentExpr()
 
 	for p.at(STAR) || p.at(SLASH) || p.at(PERCENT) {
-		op := arithmeticOps[p.tok.Type]
-		p.advance()
-
-		left = &pgast.ArithmeticExpr{Left: left, Operator: op, Right: p.parseExponentExpr()}
+		left = p.parseArithmeticRight(left, (*Parser).parseExponentExpr)
 	}
 
 	return left
+}
+
+// parseArithmeticRight consumes the current arithmetic operator and parses
+// its right operand with parseOperand, or a quantified
+// "ANY | SOME | ALL (...)", as in "a + ANY (arr)", which PostgreSQL accepts
+// after any operator.
+func (p *Parser) parseArithmeticRight(left pgast.Expr, parseOperand func(*Parser) pgast.Expr) pgast.Expr {
+	op := arithmeticOps[p.tok.Type]
+	p.advance()
+
+	if p.atQuantifier() {
+		return p.parseQuantifiedExpr(left, pgast.Operator{Symbol: op.String()})
+	}
+
+	return &pgast.ArithmeticExpr{Left: left, Operator: op, Right: parseOperand(p)}
 }
 
 // parseExponentExpr parses '^', which PostgreSQL makes left-associative
@@ -517,8 +526,8 @@ func (p *Parser) parseMultiplicativeExpr() pgast.Expr {
 func (p *Parser) parseExponentExpr() pgast.Expr {
 	left := p.parseAtTimeZoneExpr()
 
-	for p.consume(CARET) {
-		left = &pgast.ArithmeticExpr{Left: left, Operator: pgast.ExpOp, Right: p.parseAtTimeZoneExpr()}
+	for p.at(CARET) {
+		left = p.parseArithmeticRight(left, (*Parser).parseAtTimeZoneExpr)
 	}
 
 	return left
@@ -547,10 +556,22 @@ func (p *Parser) parseCollateExpr() pgast.Expr {
 	left := p.parseUnaryExpr()
 
 	for p.consume(COLLATE) {
-		left = &pgast.CollateExpr{Expr: left, Collation: p.parseTableName()}
+		left = &pgast.CollateExpr{Expr: left, Collation: p.parseAnyName()}
 	}
 
 	return left
+}
+
+// parseAnyName parses PostgreSQL's any_name: a ColId followed by any number
+// of ".ColLabel" parts, as in mydb.pg_catalog."C".
+func (p *Parser) parseAnyName() pgast.AnyName {
+	name := pgast.AnyName{pgast.ColIdent(p.readColID())}
+
+	for p.consume(DOT) {
+		name = append(name, pgast.ColIdent(p.readColLabel()))
+	}
+
+	return name
 }
 
 func (p *Parser) parseUnaryExpr() pgast.Expr {
@@ -592,6 +613,8 @@ func (p *Parser) parseSubscriptExpr() pgast.Expr {
 
 	for {
 		switch {
+		case p.atIndirectionAfterStar(left):
+			p.failImproperStar()
 		case p.at(LBRACKET):
 			left = p.parseSubscript(left)
 		case p.at(DOT) && acceptsFieldSelection(left):
@@ -604,15 +627,28 @@ func (p *Parser) parseSubscriptExpr() pgast.Expr {
 
 // acceptsFieldSelection reports whether a ".field" may follow expr. As in
 // PostgreSQL, a field is selected from a column reference, a parenthesized
-// expression, or a subscript or field of one; a function call's result must
-// be parenthesized first, as in "(f(x)).field".
+// expression, a scalar subquery, or a subscript or field of one; a function
+// call's result must be parenthesized first, as in "(f(x)).field".
 func acceptsFieldSelection(expr pgast.Expr) bool {
 	switch expr.(type) {
-	case *pgast.ColName, *pgast.ParenExpr, *pgast.ArraySubscriptExpr, *pgast.FieldSelectExpr:
+	case *pgast.ColName, *pgast.ParenExpr, *pgast.Subquery, *pgast.ArraySubscriptExpr, *pgast.FieldSelectExpr:
 		return true
 	default:
 		return false
 	}
+}
+
+// atIndirectionAfterStar reports whether a field selection or subscript
+// follows a ".*" field selection, which PostgreSQL allows only as the last
+// indirection.
+func (p *Parser) atIndirectionAfterStar(expr pgast.Expr) bool {
+	field, ok := expr.(*pgast.FieldSelectExpr)
+
+	return ok && field.Star && (p.at(DOT) || p.at(LBRACKET))
+}
+
+func (p *Parser) failImproperStar() {
+	p.failf(`improper use of "*"`)
 }
 
 // parseSubscript parses a single "[expr]" or "[expr:expr]" (slice, with
@@ -1022,17 +1058,7 @@ func (p *Parser) parseFuncCall(qualifier, name string) pgast.Expr {
 	p.expect(RPAREN)
 
 	if p.atWord("within") && p.peekAt(GROUP) {
-		p.advance() // consume WITHIN
-		p.advance() // consume GROUP
-		p.expect(LPAREN)
-
-		if !p.at(ORDER) {
-			p.failf("expected ORDER BY in WITHIN GROUP, got %s", p.tok.Type)
-		}
-
-		f.WithinGroup = p.parseOrderByClause()
-
-		p.expect(RPAREN)
+		p.parseWithinGroup(f)
 	}
 
 	if p.consume(FILTER) {
@@ -1049,6 +1075,33 @@ func (p *Parser) parseFuncCall(qualifier, name string) pgast.Expr {
 	}
 
 	return f
+}
+
+// parseWithinGroup parses an ordered-set aggregate's
+// "WITHIN GROUP (ORDER BY ...)" into f, rejecting it, as PostgreSQL does,
+// when the call already has DISTINCT, VARIADIC, or an ORDER BY. The current
+// token must be WITHIN.
+func (p *Parser) parseWithinGroup(f *pgast.FuncExpr) {
+	switch {
+	case f.Distinct:
+		p.failf("cannot use DISTINCT with WITHIN GROUP")
+	case f.Variadic:
+		p.failf("cannot use VARIADIC with WITHIN GROUP")
+	case len(f.OrderBy) > 0:
+		p.failf("cannot use multiple ORDER BY clauses with WITHIN GROUP")
+	}
+
+	p.advance() // consume WITHIN
+	p.advance() // consume GROUP
+	p.expect(LPAREN)
+
+	if !p.at(ORDER) {
+		p.failf("expected ORDER BY in WITHIN GROUP, got %s", p.tok.Type)
+	}
+
+	f.WithinGroup = p.parseOrderByClause()
+
+	p.expect(RPAREN)
 }
 
 // parseOverClause parses the window after OVER into f: either a bare window
@@ -1069,13 +1122,19 @@ func (p *Parser) parseOverClause(f *pgast.FuncExpr) {
 // parseFuncArgs parses a function call's non-empty argument list into f:
 // an optional ALL (a no-op, like SELECT ALL) or DISTINCT, comma-separated
 // arguments of which only the last may be VARIADIC, and an aggregate's
-// optional ORDER BY.
+// optional ORDER BY. As in PostgreSQL, VARIADIC cannot follow ALL or
+// DISTINCT.
 func (p *Parser) parseFuncArgs(f *pgast.FuncExpr) {
-	if !p.consume(ALL) {
+	all := p.consume(ALL)
+	if !all {
 		f.Distinct = p.consume(DISTINCT)
 	}
 
 	for {
+		if p.at(VARIADIC) && (all || f.Distinct) {
+			p.failf("VARIADIC cannot be combined with ALL or DISTINCT")
+		}
+
 		if p.consume(VARIADIC) {
 			f.Variadic = true
 			f.Args = append(f.Args, p.parseFuncArg())

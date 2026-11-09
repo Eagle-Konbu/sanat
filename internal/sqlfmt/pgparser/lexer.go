@@ -98,7 +98,10 @@ func (l *Lexer) readIdentifierOrEscapeString(pos Position) (Token, error) {
 		return Token{}, &LexError{Pos: pos, Msg: "Unicode escape strings (U&'...') are not supported"}
 	}
 
-	lit := l.readIdentifier()
+	lit, err := l.readIdentifier()
+	if err != nil {
+		return Token{}, err
+	}
 
 	tt := lookupIdent(lit)
 	if tt == IDENT {
@@ -284,14 +287,26 @@ func (l *Lexer) readQuotedIdentToken(pos Position) (Token, error) {
 	return Token{Type: QuotedIdent, Literal: lit, Pos: pos}, nil
 }
 
-func (l *Lexer) readIdentifier() string {
+// readIdentifier reads an unquoted identifier, rejecting bytes that are not
+// valid UTF-8, which isIdentStart would otherwise accept as non-ASCII.
+func (l *Lexer) readIdentifier() (string, error) {
 	start := l.pos
 
 	for isIdentPart(l.ch) {
+		if l.atInvalidUTF8() {
+			return "", &LexError{Pos: l.currentPos(), Msg: "invalid UTF-8 in identifier"}
+		}
+
 		l.readChar()
 	}
 
-	return l.input[start:l.pos]
+	return l.input[start:l.pos], nil
+}
+
+// atInvalidUTF8 reports whether ch was decoded from an invalid UTF-8 byte,
+// as opposed to a literal U+FFFD in the input.
+func (l *Lexer) atInvalidUTF8() bool {
+	return l.ch == utf8.RuneError && l.readPos-l.pos == 1
 }
 
 // readQuotedIdent reads a double-quoted identifier. A doubled double-quote

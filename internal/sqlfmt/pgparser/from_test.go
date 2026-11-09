@@ -35,6 +35,8 @@ func TestParseSelect_fromItems(t *testing.T) {
 		{"nested join after cross join", "SELECT * FROM a JOIN b CROSS JOIN c ON TRUE", "SELECT * FROM a JOIN b CROSS JOIN c ON TRUE"},
 		{"left-deep joins", "SELECT * FROM a JOIN b ON x JOIN c ON y", "SELECT * FROM a JOIN b ON x JOIN c ON y"},
 		{"join using alias", "SELECT * FROM a JOIN b USING (id) AS j", "SELECT * FROM a JOIN b USING (id) AS j"},
+		{"function named rows", "SELECT * FROM rows(1)", "SELECT * FROM rows(1)"},
+		{"special function form", "SELECT * FROM substring('abc' FROM 1 FOR 2) s", "SELECT * FROM SUBSTRING('abc' FROM 1 FOR 2) s"},
 	}
 
 	for _, tt := range tests {
@@ -51,6 +53,10 @@ func TestParseSelect_fromItems(t *testing.T) {
 		"SELECT * FROM a JOIN b JOIN c ON x",
 		"SELECT * FROM a JOIN b USING (id) AS",
 		"SELECT * FROM t x(",
+		"SELECT * FROM f(x) OVER w",
+		"SELECT * FROM f(x) FILTER (WHERE x)",
+		"SELECT * FROM percentile_cont(0.5) WITHIN GROUP (ORDER BY x)",
+		"SELECT * FROM ROWS FROM (f(x) OVER w)",
 	} {
 		t.Run("error "+in, func(t *testing.T) {
 			assertSelectError(t, in)

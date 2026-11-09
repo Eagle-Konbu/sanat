@@ -47,7 +47,7 @@ func TestParseExpr_specialFunctionForms(t *testing.T) {
 	}
 
 	for _, in := range []string{
-		"EXTRACT(year d)", "POSITION(a, b)", "SUBSTRING(s SIMILAR 'x')", "OVERLAY(s PLACING 'x')",
+		"EXTRACT(year d)", "EXTRACT(select FROM d)", "POSITION(a, b)", "SUBSTRING(s SIMILAR 'x')", "OVERLAY(s PLACING 'x')",
 		"TRIM(BOTH)", "(a, b, c) OVERLAPS (d, e)", "a OVERLAPS (b, c)", "(a, b) OVERLAPS c",
 	} {
 		t.Run("error "+in, func(t *testing.T) {

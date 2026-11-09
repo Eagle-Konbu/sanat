@@ -673,6 +673,18 @@ func TestLexer_unexpectedCharacter(t *testing.T) {
 	}
 }
 
+func TestLexer_invalidUTF8Identifier(t *testing.T) {
+	for _, in := range []string{"\xffname", "name\xff", "a\xc3"} {
+		t.Run(in, func(t *testing.T) {
+			assertLexError(t, in)
+		})
+	}
+
+	t.Run("U+FFFD is an identifier character", func(t *testing.T) {
+		assertTokens(t, "a\uFFFDb", []wantToken{{pgparser.IDENT, "a\uFFFDb"}, {pgparser.EOF, ""}})
+	})
+}
+
 func TestLexer_Comments(t *testing.T) {
 	t.Run("line comment", func(t *testing.T) {
 		assertTokens(t, "a --comment\nb", []wantToken{

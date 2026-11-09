@@ -32,6 +32,11 @@ func TestParseInsert_onConflictTargets(t *testing.T) {
 			"INSERT INTO t VALUES (1) ON CONFLICT (name COLLATE \"C\" text_pattern_ops) DO NOTHING",
 		},
 		{
+			"special function form target",
+			"INSERT INTO t VALUES (1) ON CONFLICT (substring(a FROM 1 FOR 2)) DO NOTHING",
+			"INSERT INTO t VALUES (1) ON CONFLICT (SUBSTRING(a FROM 1 FOR 2)) DO NOTHING",
+		},
+		{
 			"index predicate",
 			"INSERT INTO t VALUES (1) ON CONFLICT (a) WHERE deleted_at IS NULL DO UPDATE SET b = 1 WHERE t.b < 1",
 			"INSERT INTO t VALUES (1) ON CONFLICT (a) WHERE deleted_at IS NULL DO UPDATE SET b = 1 WHERE t.b < 1",
@@ -49,6 +54,8 @@ func TestParseInsert_onConflictTargets(t *testing.T) {
 		"INSERT INTO t VALUES (1) ON CONFLICT () DO NOTHING",
 		"INSERT INTO t VALUES (1) ON CONFLICT (a COLLATE) DO NOTHING",
 		"INSERT INTO t VALUES (1) ON CONFLICT (a) WHERE DO NOTHING",
+		"INSERT INTO t VALUES (1) ON CONFLICT (f(a) OVER w) DO NOTHING",
+		"INSERT INTO t VALUES (1) ON CONFLICT (f(a) FILTER (WHERE a)) DO NOTHING",
 	} {
 		t.Run("error "+in, func(t *testing.T) {
 			assertInsertError(t, in)

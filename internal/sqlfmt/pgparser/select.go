@@ -494,7 +494,7 @@ func (p *Parser) atFuncTableStart() bool {
 func (p *Parser) parseFuncTable() *pgast.AliasedTableExpr {
 	fn := &pgast.FuncTable{}
 
-	if p.at(ROWS) {
+	if p.at(ROWS) && p.peekAt(FROM) {
 		p.advance() // consume ROWS
 		p.advance() // consume FROM
 		p.expect(LPAREN)
@@ -527,12 +527,31 @@ func (p *Parser) parseFuncTable() *pgast.AliasedTableExpr {
 	return table
 }
 
+// parseTableFuncCall parses a function call inside a FROM-item.
 func (p *Parser) parseTableFuncCall() pgast.Expr {
 	if !p.atFuncTableStart() {
 		return failReturn[pgast.Expr](p, "expected function call, got %s", p.tok.Type)
 	}
 
-	return p.parseIdentExpr()
+	return p.parseWindowlessFuncCall()
+}
+
+// parseWindowlessFuncCall parses PostgreSQL's func_expr_windowless, the
+// function call of a FROM-item or an ON CONFLICT index element: a
+// keyword-argument form such as SUBSTRING(s FROM 1), or an ordinary call
+// without WITHIN GROUP, FILTER, or OVER.
+func (p *Parser) parseWindowlessFuncCall() pgast.Expr {
+	if expr, ok := p.tryParseSpecialFuncForm(); ok {
+		return expr
+	}
+
+	expr := p.parseIdentExpr()
+
+	if f, ok := expr.(*pgast.FuncExpr); ok && (f.WithinGroup != nil || f.Filter != nil || f.Over != nil) {
+		p.failf("WITHIN GROUP, FILTER, and OVER are not allowed in this function call")
+	}
+
+	return expr
 }
 
 // parseOptionalAliasClause parses an optional "[AS] alias [(column, ...)]".

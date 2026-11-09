@@ -82,6 +82,8 @@ func (p *Parser) parseSetTarget() pgast.Expr {
 
 	for {
 		switch {
+		case p.atIndirectionAfterStar(target):
+			p.failImproperStar()
 		case p.at(DOT):
 			target = p.parseFieldSelection(target)
 		case p.at(LBRACKET):

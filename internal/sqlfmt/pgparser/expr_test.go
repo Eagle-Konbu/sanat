@@ -583,6 +583,8 @@ func TestParseExpr_castTypeNames(t *testing.T) {
 		{"interval year to month", "a::interval year to month", "a::interval year to month"},
 		{"string modifier", "a::t('x')", "a::t('x')"},
 		{"float modifier", "a::t(1.5)", "a::t(1.5)"},
+		{"negative numeric scale", "a::numeric(10, -2)", "a::numeric(10, -2)"},
+		{"quoted identifier modifier", `a::t("Mod")`, `a::t("Mod")`},
 		{"array of a multi-word type", "a::double precision[]", "a::double precision[]"},
 		{"array of a timestamp with time zone", "a::timestamptz[]", "a::timestamptz[]"},
 		{"three-part type name", "a::db.s.t", "a::db.s.t"},
@@ -600,6 +602,8 @@ func TestParseExpr_castTypeNames(t *testing.T) {
 
 	for _, in := range []string{
 		"a::int(a + 1)", "a::interval day to", "a::interval second(x)", "a::numeric(", "a::(int)", "a::select",
+		"a::interval year to day", "a::interval day to day", "a::interval second to minute", "a::t(select)",
+		"a::character(1, 2)", "a::bit varying('x')", "a::timestamp(6, 1)", "a::interval(1.5)",
 	} {
 		t.Run("error "+in, func(t *testing.T) {
 			assertExprError(t, in)
@@ -629,6 +633,7 @@ func TestParseExpr_typedLiteral(t *testing.T) {
 		{"escape string value", `date E'2020-01-01'`, "date '2020-01-01'"},
 		{"in an expression", "d > date '2020-01-01' + 1", "d > date '2020-01-01' + 1"},
 		{"cast of a typed literal", "date '2020-01-01'::text", "date '2020-01-01'::text"},
+		{"type in a schema named like a built-in type", "interval.mytype 'value'", "interval.mytype 'value'"},
 	}
 
 	for _, tt := range tests {

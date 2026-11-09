@@ -37,6 +37,9 @@ func TestParseExpr_quantified(t *testing.T) {
 		{"like", "name LIKE ANY (patterns)", "name LIKE ANY (patterns)"},
 		{"not ilike", "name NOT ILIKE ALL (patterns)", "name NOT ILIKE ALL (patterns)"},
 		{"in a boolean expression", "a = ANY (b) AND c", "a = ANY (b) AND c"},
+		{"additive operator", "a + ANY (arr)", "a + ANY (arr)"},
+		{"after multiplication", "a * b - ALL (arr)", "a * b - ALL (arr)"},
+		{"exponent operator", "a ^ SOME (arr)", "a ^ SOME (arr)"},
 	}
 
 	for _, tt := range tests {
@@ -57,7 +60,7 @@ func TestParseExpr_collateAndTimeZone(t *testing.T) {
 	t.Run("collate binds looser than unary minus", func(t *testing.T) {
 		assertExpr(t, `-a COLLATE "C"`, &pgast.CollateExpr{
 			Expr:      &pgast.UnaryExpr{Operator: pgast.UMinusOp, Expr: col("a")},
-			Collation: pgast.TableName{Name: `"C"`},
+			Collation: pgast.AnyName{`"C"`},
 		})
 	})
 
@@ -74,6 +77,7 @@ func TestParseExpr_collateAndTimeZone(t *testing.T) {
 	}{
 		{"collate", `name COLLATE "de_DE"`, `name COLLATE "de_DE"`},
 		{"qualified collation", `a COLLATE pg_catalog."default"`, `a COLLATE pg_catalog."default"`},
+		{"database-qualified collation", `a COLLATE mydb.pg_catalog."C"`, `a COLLATE mydb.pg_catalog."C"`},
 		{"collate in comparison", `a < b COLLATE "C"`, `a < b COLLATE "C"`},
 		{"at time zone", "ts at time zone 'UTC'", "ts AT TIME ZONE 'UTC'"},
 		{"chained at time zone", "ts AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tokyo'", "ts AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tokyo'"},

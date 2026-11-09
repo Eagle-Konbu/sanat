@@ -261,8 +261,10 @@ the comment `--a`.
   (`FOR ... FROM` renders as `FROM ... FOR`) and
   `SUBSTRING(s SIMILAR p ESCAPE e)`, `POSITION(a IN b)`,
   `TRIM([BOTH | LEADING | TRAILING] [chars] FROM s)`, and
-  `OVERLAY(s PLACING r FROM a [FOR b])`. Their plain comma-separated
-  spellings stay ordinary `FuncExpr`s.
+  `OVERLAY(s PLACING r FROM a [FOR b])`. The comma-separated spellings of
+  `SUBSTRING`, `TRIM`, and `OVERLAY` are ordinary `FuncExpr`s, while
+  `EXTRACT` requires `FROM` and `POSITION` requires `IN`. These forms are
+  also accepted as `FROM` items and in `ON CONFLICT` targets.
 - `(a, b) OVERLAPS (c, d)` (`OverlapsExpr`); both sides must be two-element
   rows.
 - Column references of up to three parts (`schema.table.col`), whole-row
@@ -589,8 +591,8 @@ func ParseSetOp(input string) (*pgast.SetOp, error)
 plus any trailing clauses on the combined result, and an optional trailing
 `;`. It fails with a `*ParseError` when the input is a single (possibly
 parenthesized) SELECT with no set operator. Use `ParseSelect` only for an
-unparenthesized single SELECT: it requires the input to start with `SELECT` (or `WITH`),
-so it rejects a leading `(`, and it also rejects a top-level set operation.
+unparenthesized single `SELECT`, `VALUES`, or `TABLE` query, optionally
+preceded by `WITH`: it rejects a leading `(` and a top-level set operation.
 
 ### Grammar
 

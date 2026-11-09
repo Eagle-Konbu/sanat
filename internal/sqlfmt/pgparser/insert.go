@@ -106,7 +106,7 @@ func (p *Parser) parseIndexElem() *pgast.IndexElem {
 	case p.at(LPAREN):
 		elem.Expr = p.parsePrimaryExpr()
 	case p.atFuncTableStart():
-		elem.Expr = p.parseIdentExpr()
+		elem.Expr = p.parseWindowlessFuncCall()
 	default:
 		elem.Expr = &pgast.ColName{Name: pgast.ColIdent(p.readColID())}
 	}

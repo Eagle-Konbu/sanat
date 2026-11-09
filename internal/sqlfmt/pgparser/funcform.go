@@ -50,15 +50,20 @@ func (p *Parser) tryParseSpecialFuncForm() (pgast.Expr, bool) {
 	return expr, true
 }
 
-// parseExtract parses "field FROM source". The field is an identifier or a
-// string constant.
+// parseExtract parses "field FROM source". As in PostgreSQL's extract_arg,
+// the field is an identifier (YEAR through SECOND are identifiers to this
+// lexer) or a string constant, never a keyword.
 func (p *Parser) parseExtract() pgast.Expr {
 	var field string
 
-	if p.at(STRING) {
+	switch {
+	case p.at(STRING):
 		field = p.readStringLiteralText()
-	} else {
-		field = p.readColLabel()
+	case p.at(IDENT), p.at(QuotedIdent):
+		field = identText(p.tok)
+		p.advance()
+	default:
+		p.failf("expected EXTRACT field, got %s", p.tok.Type)
 	}
 
 	p.expect(FROM)

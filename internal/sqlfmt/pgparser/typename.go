@@ -15,6 +15,16 @@ var intervalFieldWords = map[string]bool{
 	"year": true, "month": true, "day": true, "hour": true, "minute": true, "second": true,
 }
 
+// intervalRangeEnds maps each interval field that may start a
+// "field TO field" range to the fields that may end it, per PostgreSQL's
+// opt_interval.
+var intervalRangeEnds = map[string]map[string]bool{
+	"year":   {"month": true},
+	"day":    {"hour": true, "minute": true, "second": true},
+	"hour":   {"minute": true, "second": true},
+	"minute": {"second": true},
+}
+
 // parseTypeName parses a cast's target type: a type name followed by any
 // number of array bounds (int[], int[3]). The ARRAY keyword spelling
 // (int ARRAY[3]) and SETOF are not supported.
@@ -31,9 +41,10 @@ func (p *Parser) parseTypeName() *pgast.TypeName {
 // parseSimpleTypeName parses a type name without array bounds: a built-in
 // multi-word name (double precision, character varying, timestamp with time
 // zone, interval day to second, ...) or a possibly qualified generic name,
-// with optional modifiers.
+// with optional modifiers. A dotted name is always generic, so
+// interval.mytype names a type in the interval schema.
 func (p *Parser) parseSimpleTypeName() *pgast.TypeName {
-	if p.at(IDENT) {
+	if p.at(IDENT) && !p.peekAt(DOT) {
 		if t := p.tryParseBuiltinTypeName(); t != nil {
 			return t
 		}
@@ -100,7 +111,7 @@ func (p *Parser) finishCharacterType(name string) *pgast.TypeName {
 	}
 
 	t := builtinType(name)
-	t.Modifiers = p.parseOptionalTypeModifiers()
+	t.Modifiers = p.parseOptionalBuiltinTypeModifier()
 
 	return t
 }
@@ -109,7 +120,7 @@ func (p *Parser) finishCharacterType(name string) *pgast.TypeName {
 // ZONE suffix after time or timestamp.
 func (p *Parser) finishDateTimeType(name string) *pgast.TypeName {
 	t := builtinType(name)
-	t.Modifiers = p.parseOptionalTypeModifiers()
+	t.Modifiers = p.parseOptionalBuiltinTypeModifier()
 
 	switch {
 	case p.at(WITH) && p.peekIsWord("time") && p.peek2IsWord("zone"):
@@ -133,7 +144,7 @@ func (p *Parser) finishIntervalType() *pgast.TypeName {
 	t := builtinType("interval")
 
 	if p.at(LPAREN) {
-		t.Modifiers = p.parseOptionalTypeModifiers()
+		t.Modifiers = p.parseOptionalBuiltinTypeModifier()
 
 		return t
 	}
@@ -151,11 +162,16 @@ func (p *Parser) parseOptionalIntervalFields() string {
 		return ""
 	}
 
+	start := p.tok.Literal
 	fields := p.readIntervalField()
 
 	if p.consume(TO) {
 		if !p.atIntervalField() {
 			p.failf("expected interval field after TO, got %s", p.tok.Type)
+		}
+
+		if !intervalRangeEnds[start][p.tok.Literal] {
+			p.failf("invalid interval range %s TO %s", fields, p.tok.Literal)
 		}
 
 		fields += " to " + p.readIntervalField()
@@ -198,6 +214,25 @@ func (p *Parser) readTypeIdent() string {
 	return text
 }
 
+// parseOptionalBuiltinTypeModifier parses a built-in character, bit,
+// datetime, or interval type's optional length or precision, which is a
+// single integer.
+func (p *Parser) parseOptionalBuiltinTypeModifier() []pgast.Expr {
+	if !p.consume(LPAREN) {
+		return nil
+	}
+
+	if !p.at(INT) {
+		p.failf("expected integer type modifier, got %s", p.tok.Type)
+	}
+
+	mod := p.parseLiteralToken()
+
+	p.expect(RPAREN)
+
+	return []pgast.Expr{mod}
+}
+
 // parseOptionalTypeModifiers parses an optional parenthesized type modifier
 // list. PostgreSQL rejects anything but constants and plain identifiers as
 // a modifier, so the general expression grammar is not needed here; that
@@ -222,14 +257,20 @@ func (p *Parser) parseOptionalTypeModifiers() []pgast.Expr {
 	return mods
 }
 
+// parseTypeModifier parses one generic type modifier: a possibly negative
+// number, as in numeric(10, -2), a string, or a column-name identifier.
 func (p *Parser) parseTypeModifier() pgast.Expr {
 	switch {
 	case p.at(INT), p.at(FLOAT):
 		return p.parseLiteralToken()
+	case p.at(MINUS) && (p.peekAt(INT) || p.peekAt(FLOAT)):
+		p.advance()
+
+		return &pgast.UnaryExpr{Operator: pgast.UMinusOp, Expr: p.parseLiteralToken()}
 	case p.at(STRING):
 		return p.parseStringLiteral()
-	case isColLabel(p.tok):
-		return &pgast.ColName{Name: pgast.ColIdent(p.readColLabel())}
+	case isColID(p.tok):
+		return &pgast.ColName{Name: pgast.ColIdent(p.readColID())}
 	default:
 		return failReturn[pgast.Expr](p, "expected constant or identifier in type modifier, got %s", p.tok.Type)
 	}

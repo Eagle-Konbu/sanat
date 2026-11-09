@@ -736,7 +736,7 @@ func (q *QuantifiedExpr) String() string {
 // CollateExpr represents "expr COLLATE collation".
 type CollateExpr struct {
 	Expr      Expr
-	Collation TableName
+	Collation AnyName
 }
 
 // String returns CollateExpr's SQL text.

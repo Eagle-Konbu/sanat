@@ -40,7 +40,7 @@ func TestPredicateForms_String(t *testing.T) {
 		},
 		{"is normalized", &pgast.IsNormalizedExpr{Expr: col("s")}, "s IS NORMALIZED"},
 		{"is not nfc normalized", &pgast.IsNormalizedExpr{Not: true, Expr: col("s"), Form: "NFC"}, "s IS NOT NFC NORMALIZED"},
-		{"collate", &pgast.CollateExpr{Expr: col("a"), Collation: pgast.TableName{Name: `"C"`}}, `a COLLATE "C"`},
+		{"collate", &pgast.CollateExpr{Expr: col("a"), Collation: pgast.AnyName{`"C"`}}, `a COLLATE "C"`},
 		{"at time zone", &pgast.AtTimeZoneExpr{Expr: col("t"), Zone: lit("'UTC'")}, "t AT TIME ZONE 'UTC'"},
 		{"array subquery", &pgast.ArraySubquery{Select: selectID()}, "ARRAY(SELECT id)"},
 		{"nested array", &pgast.ArrayExpr{Elems: []pgast.Expr{&pgast.ArrayExpr{Nested: true, Elems: []pgast.Expr{lit("1")}}}}, "ARRAY[[1]]"},

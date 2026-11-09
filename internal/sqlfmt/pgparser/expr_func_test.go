@@ -43,6 +43,9 @@ func TestParseExpr_aggregateArguments(t *testing.T) {
 
 	for _, in := range []string{
 		"f(VARIADIC a, b)", "f(x ORDER BY)", "f(x) WITHIN GROUP (x)", "f(x) WITHIN GROUP", "variadic",
+		"f(ALL VARIADIC a)", "f(DISTINCT a, VARIADIC b)",
+		"f(DISTINCT x) WITHIN GROUP (ORDER BY x)", "f(VARIADIC a) WITHIN GROUP (ORDER BY x)",
+		"f(x ORDER BY x) WITHIN GROUP (ORDER BY x)",
 	} {
 		t.Run("error "+in, func(t *testing.T) {
 			assertExprError(t, in)
@@ -71,6 +74,7 @@ func TestParseExpr_indirection(t *testing.T) {
 		{"field of a subscript", "arr[1].f", "arr[1].f"},
 		{"field of a function result", "(f(x)).y", "(f(x)).y"},
 		{"keyword field", "(x).from", "(x).from"},
+		{"field of a scalar subquery", "(SELECT addr FROM t).city", "(SELECT addr FROM t).city"},
 	}
 
 	for _, tt := range tests {
@@ -79,7 +83,7 @@ func TestParseExpr_indirection(t *testing.T) {
 		})
 	}
 
-	for _, in := range []string{"f(x).y", "(x).", "1 .a"} {
+	for _, in := range []string{"f(x).y", "(x).", "1 .a", "t.*.a", "(x).*[1]", "t.*.*"} {
 		t.Run("error "+in, func(t *testing.T) {
 			assertExprError(t, in)
 		})

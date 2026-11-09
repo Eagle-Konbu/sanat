@@ -30,7 +30,10 @@ func TestParseStatement_assignmentTargetIndirection(t *testing.T) {
 		})
 	}
 
-	for _, in := range []string{"UPDATE t SET arr[1 = 2", "UPDATE t SET c. = 1", "INSERT INTO t (a[) VALUES (1)"} {
+	for _, in := range []string{
+		"UPDATE t SET arr[1 = 2", "UPDATE t SET c. = 1", "INSERT INTO t (a[) VALUES (1)",
+		"UPDATE t SET c.*.a = 1", "INSERT INTO t (c.*[1]) VALUES (1)",
+	} {
 		t.Run("error "+in, func(t *testing.T) {
 			if _, err := pgparser.ParseStatement(in); err == nil {
 				t.Errorf("ParseStatement(%q) error = nil, want error", in)
