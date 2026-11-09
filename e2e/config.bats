@@ -183,7 +183,10 @@ EOF
   [[ "$stderr" == *"version"* ]]
 }
 
-@test "sql_mode: no_backslash_escapes in the config file preserves a doubled quote" {
+# String literals are emitted as written, so sql_mode is only observable
+# through where a literal ends: 'a\' is complete under no_backslash_escapes
+# but unterminated (left unchanged) under default.
+@test "sql_mode: no_backslash_escapes in the config file ends a literal at a backslash-quote" {
   cat > "${BATS_TEST_TMPDIR}/.sanat.yml" <<'EOF'
 version: 1
 sql_mode: no_backslash_escapes
@@ -195,13 +198,13 @@ package sample
 import "database/sql"
 
 func query(db *sql.DB) {
-	db.Query(`select 'it''s' from t`)
+	db.Query(`select 'a\' from t`)
 }
 EOF
 
   (cd "${BATS_TEST_TMPDIR}" && "${SANAT_BIN}" quote.go > got.go)
 
-  grep -qF "  'it''s'" "${BATS_TEST_TMPDIR}/got.go"
+  grep -qF "  'a\'" "${BATS_TEST_TMPDIR}/got.go"
 }
 
 @test "--sql-mode flag overrides the config file value" {
@@ -216,13 +219,13 @@ package sample
 import "database/sql"
 
 func query(db *sql.DB) {
-	db.Query(`select 'it''s' from t`)
+	db.Query(`select 'a\' from t`)
 }
 EOF
 
   (cd "${BATS_TEST_TMPDIR}" && "${SANAT_BIN}" --sql-mode default quote.go > got.go)
 
-  grep -qF "  'it\'s'" "${BATS_TEST_TMPDIR}/got.go"
+  grep -qF "select 'a\' from t" "${BATS_TEST_TMPDIR}/got.go"
 }
 
 @test "an invalid --sql-mode flag value fails with a clear error" {

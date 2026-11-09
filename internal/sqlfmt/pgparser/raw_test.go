@@ -111,7 +111,7 @@ func TestParseExpr_literalRawInOtherNodes(t *testing.T) {
 
 func TestParse_identifierRaw(t *testing.T) {
 	sel, err := pgparser.ParseSelect(
-		`SELECT UserId, "UserId", T.Col AS MyAlias, Pg_Catalog.Now(), x::Public."MyType", SUBSTRING(s, 1) ` +
+		`SELECT UserId, "UserId", T.Col AS Total, Pg_Catalog.Now(), x::Public."MyType", SUBSTRING(s, 1) ` +
 			`FROM Schema.Tbl AS T JOIN "Other" O USING (Id)`)
 	if err != nil {
 		t.Fatal(err)
@@ -140,7 +140,7 @@ func TestParse_identifierRaw(t *testing.T) {
 		{"quoted column", quoted.Name, `"UserId"`, `"UserId"`},
 		{"column qualifier", pgast.ColIdent(qualifiedCol.Qualifier.Name), "t", "T"},
 		{"qualified column", qualifiedCol.Name, "col", "Col"},
-		{"column alias", aliased.As, "myalias", "MyAlias"},
+		{"column alias", aliased.As, "total", "Total"},
 		{"function schema", pgast.ColIdent(call.Qualifier), "pg_catalog", "Pg_Catalog"},
 		{"function name", call.Name, "now", "Now"},
 		{"type schema", castType.Names[0], "public", "Public"},
@@ -162,7 +162,7 @@ func TestParse_identifierRaw(t *testing.T) {
 		})
 	}
 
-	want := `SELECT userid, "UserId", t.col AS myalias, pg_catalog.now(), x::public."MyType", substring(s, 1) ` +
+	want := `SELECT userid, "UserId", t.col AS total, pg_catalog.now(), x::public."MyType", substring(s, 1) ` +
 		`FROM schema.tbl t JOIN "Other" o USING (id)`
 	if got := sel.String(); got != want {
 		t.Errorf("String() = %q, want %q", got, want)
