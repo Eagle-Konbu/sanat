@@ -362,7 +362,7 @@ func (f *pgFormatter) groupingExpr(expr pgast.Expr, depth int) (string, bool) {
 	case *pgast.GroupingSets:
 		sets := make([]string, len(e.Sets))
 		for i, set := range e.Sets {
-			sets[i] = "(" + f.exprList(set, depth) + ")"
+			sets[i] = f.groupingSet(set, depth)
 		}
 
 		return "GROUPING SETS (" + strings.Join(sets, ", ") + ")", true
@@ -373,6 +373,18 @@ func (f *pgFormatter) groupingExpr(expr pgast.Expr, depth int) (string, bool) {
 	default:
 		return "", false
 	}
+}
+
+// groupingSet renders one GROUPING SETS member. A one-element set renders
+// bare, as the parser accepts it: the parser reads a nested ROLLUP(...) or
+// CUBE(...) member as a function call, and wrapping that in parentheses
+// would turn it into a call to a function named rollup or cube.
+func (f *pgFormatter) groupingSet(set []pgast.Expr, depth int) string {
+	if len(set) == 1 {
+		return f.expr(set[0], depth)
+	}
+
+	return "(" + f.exprList(set, depth) + ")"
 }
 
 // funcFormExpr renders function calls, including the SQL-standard forms

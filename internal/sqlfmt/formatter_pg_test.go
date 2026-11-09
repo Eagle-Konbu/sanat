@@ -170,9 +170,21 @@ func TestFormatPostgreSQL_Select(t *testing.T) {
 				"FROM",
 				"  t",
 				"GROUP BY",
-				"  GROUPING SETS ((a), ()),",
+				"  GROUPING SETS (a, ()),",
 				"  CUBE (a, b),",
 				"  ROLLUP (a)",
+			),
+		},
+		{
+			name: "nested grouping elements stay unparenthesized",
+			in:   "select a from t group by grouping sets (rollup (a, b), (c, d))",
+			want: join(
+				"SELECT",
+				"  a",
+				"FROM",
+				"  t",
+				"GROUP BY",
+				"  GROUPING SETS (rollup(a, b), (c, d))",
 			),
 		},
 		{
