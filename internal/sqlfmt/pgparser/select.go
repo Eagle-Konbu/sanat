@@ -212,6 +212,9 @@ func (p *Parser) readColLabel() string {
 	return p.readName(isColLabel)
 }
 
+// readName consumes a name token that accepts allows, as SQL text (see
+// identText). The accepts predicate carries the grammar position's keyword
+// rules, such as isColID or isColLabel.
 func (p *Parser) readName(accepts func(Token) bool) string {
 	if !accepts(p.tok) {
 		p.failf("expected identifier, got %s", p.tok.Type)
@@ -346,6 +349,9 @@ func (p *Parser) advanceOuterJoin() {
 	p.expect(JOIN)
 }
 
+// parseNaturalJoinType parses the join type after NATURAL: INNER,
+// LEFT/RIGHT/FULL [OUTER], or none. NATURAL CROSS JOIN is not valid
+// PostgreSQL, so CROSS falls through to the JOIN expectation and fails.
 func (p *Parser) parseNaturalJoinType() pgast.JoinType {
 	p.advance() // consume NATURAL
 
@@ -587,6 +593,9 @@ func (p *Parser) parseOptionalTableSample() *pgast.TableSample {
 	return sample
 }
 
+// parseTableName parses a table name with at most one qualifier
+// ("schema.table"). A catalog-qualified "catalog.schema.table" is not
+// supported. The part after the dot is a ColLabel, so it may be any keyword.
 func (p *Parser) parseTableName() pgast.TableName {
 	name := p.readColID()
 
@@ -674,6 +683,8 @@ func (p *Parser) finishDerivedTable(query pgast.Statement) pgast.TableExpr {
 	return table
 }
 
+// parseOptionalWhereClause parses an optional "kw expr" clause. It serves
+// both WHERE and HAVING, whose syntax differs only in the keyword.
 func (p *Parser) parseOptionalWhereClause(kw TokenType) *pgast.Where {
 	if !p.consume(kw) {
 		return nil
@@ -841,6 +852,10 @@ func (p *Parser) parseWindowSpecBody() *pgast.WindowSpec {
 	return spec
 }
 
+// parseFrameClause parses a window frame: "ROWS|RANGE|GROUPS start" or
+// "ROWS|RANGE|GROUPS BETWEEN start AND end". The short form leaves End nil
+// rather than filling in the CURRENT ROW that PostgreSQL implies, so the
+// frame is formatted as written.
 func (p *Parser) parseFrameClause() *pgast.FrameClause {
 	unit := pgast.FrameRows
 
@@ -985,6 +1000,8 @@ func (p *Parser) parseSortOperator() *pgast.Operator {
 	return op
 }
 
+// parseOptionalOrderDirection parses an optional ASC or DESC. ASC is the
+// default, so an explicit ASC and no direction both yield AscOrder.
 func (p *Parser) parseOptionalOrderDirection() pgast.OrderDirection {
 	if p.consume(DESC) {
 		return pgast.DescOrder
@@ -1061,6 +1078,8 @@ func (p *Parser) parseOptionalFetch() *pgast.Fetch {
 	return &pgast.Fetch{Count: count, Next: next, WithTies: withTies}
 }
 
+// parseFetchFirstOrNext parses FETCH's FIRST or NEXT keyword and reports
+// whether it was NEXT. The two are synonyms; only the spelling is kept.
 func (p *Parser) parseFetchFirstOrNext() bool {
 	switch {
 	case p.consume(FIRST):
@@ -1072,6 +1091,8 @@ func (p *Parser) parseFetchFirstOrNext() bool {
 	}
 }
 
+// parseFetchOnlyOrWithTies parses FETCH's trailing ONLY or WITH TIES and
+// reports whether it was WITH TIES.
 func (p *Parser) parseFetchOnlyOrWithTies() bool {
 	switch {
 	case p.consume(ONLY):

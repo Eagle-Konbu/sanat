@@ -39,6 +39,8 @@ func (p *Parser) parseAndExpr() pgast.Expr {
 	return left
 }
 
+// parseNotExpr parses prefix logical NOT, which binds looser than every
+// predicate, so "NOT a IS NULL" is "NOT (a IS NULL)".
 func (p *Parser) parseNotExpr() pgast.Expr {
 	if !p.consume(NOT) {
 		return p.parseIsPredicateExpr()
@@ -309,8 +311,10 @@ func (p *Parser) parseInExpr(left pgast.Expr, not bool) pgast.Expr {
 	return &pgast.ComparisonExpr{Left: left, Operator: op, Right: pgast.ValTuple(values)}
 }
 
-// parseBetweenExpr parses "BETWEEN [SYMMETRIC | ASYMMETRIC] a AND b";
-// ASYMMETRIC is the default, so it is not modeled.
+// parseBetweenExpr parses "BETWEEN [SYMMETRIC | ASYMMETRIC] x AND y" applied
+// to left; ASYMMETRIC is the default, so it is not modeled. The bounds are
+// parsed below the predicate levels, so the first AND is always BETWEEN's
+// separator and "a BETWEEN 1 AND 2 AND b" is "(a BETWEEN 1 AND 2) AND b".
 func (p *Parser) parseBetweenExpr(left pgast.Expr, not bool) pgast.Expr {
 	p.advance() // consume BETWEEN
 
@@ -352,6 +356,9 @@ func (p *Parser) parseLikeExpr(left pgast.Expr, not bool) pgast.Expr {
 	return &pgast.ComparisonExpr{Left: left, Operator: op, Right: right, Escape: escape}
 }
 
+// likeOperator returns the [NOT] LIKE or ILIKE spelling as an operator, the
+// form a quantified "LIKE ANY (...)" carries, since QuantifiedExpr has no
+// LIKE-specific fields.
 func likeOperator(ilike, not bool) pgast.Operator {
 	symbol := "LIKE"
 	if ilike {
@@ -467,6 +474,10 @@ func (p *Parser) parseExplicitOperator() pgast.Operator {
 	return op
 }
 
+// isOperatorToken reports whether tt can be the operator inside
+// OPERATOR(...). The fixed operators lex to their own token types (see
+// fixedOperators), so they are listed alongside Op; "=>" is not among them,
+// since it only introduces a named argument.
 func isOperatorToken(tt TokenType) bool {
 	switch tt {
 	case Op, EQ, NE, LT, GT, LE, GE, PLUS, MINUS, STAR, SLASH, PERCENT, CARET:
@@ -574,6 +585,8 @@ func (p *Parser) parseAnyName() pgast.AnyName {
 	return name
 }
 
+// parseUnaryExpr parses prefix + and -. They bind looser than a "::" cast,
+// so "-1::int" is "-(1::int)", as in PostgreSQL.
 func (p *Parser) parseUnaryExpr() pgast.Expr {
 	var op pgast.UnaryOperator
 
@@ -783,6 +796,8 @@ func (p *Parser) parseLiteralToken() pgast.Expr {
 	return &pgast.Literal{Val: tok.Literal}
 }
 
+// parsePlaceholder parses a positional parameter. The lexer keeps only the
+// digits of "$n", so the '$' is restored here.
 func (p *Parser) parsePlaceholder() pgast.Expr {
 	tok := p.tok
 	p.advance()
@@ -845,6 +860,8 @@ func (p *Parser) parseParenExprOrSubquery() pgast.Expr {
 	return &pgast.ParenExpr{Expr: expr}
 }
 
+// parseRowConstructor parses an explicit ROW(...) constructor, which, unlike
+// the implicit (a, b) form, may be empty or have a single field.
 func (p *Parser) parseRowConstructor() pgast.Expr {
 	p.advance() // consume ROW
 	p.expect(LPAREN)
@@ -1154,6 +1171,9 @@ func (p *Parser) parseFuncArgs(f *pgast.FuncExpr) {
 	}
 }
 
+// parseFuncArg parses one function argument. A name is a named argument
+// only when "=>" or ":=" follows it, which takes one token of lookahead to
+// tell apart from an expression that starts with the same name.
 func (p *Parser) parseFuncArg() pgast.Expr {
 	if !isTypeFuncName(p.tok) || !p.peekAt(EqualsGreater) && !p.peekAt(ColonEquals) {
 		return p.parseExpr()

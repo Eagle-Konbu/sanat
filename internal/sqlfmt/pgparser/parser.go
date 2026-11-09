@@ -83,6 +83,8 @@ type parserState struct {
 	tok, peekTok, peek2Tok Token
 }
 
+// save snapshots the parser's position. Copying the lexer by value is a
+// complete snapshot, since it holds only the input and offsets into it.
 func (p *Parser) save() parserState {
 	return parserState{lex: *p.lex, tok: p.tok, peekTok: p.peekTok, peek2Tok: p.peek2Tok}
 }

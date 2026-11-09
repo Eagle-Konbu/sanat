@@ -247,6 +247,9 @@ func (l *Lexer) skipLineComment() {
 	}
 }
 
+// skipBlockComment skips a block comment, counting nested "/*" ... "*/"
+// pairs, since PostgreSQL ends the comment only at the "*/" matching the
+// outermost "/*". An unterminated comment is reported at its opening "/*".
 func (l *Lexer) skipBlockComment() error {
 	startPos := l.currentPos()
 	l.readChar() // consume '/'
@@ -446,6 +449,9 @@ func (l *Lexer) readEscapeSequence(stringStart Position) (string, error) {
 	}
 }
 
+// readSimpleEscape decodes a single-character escape. A backslash before
+// any character without a special meaning yields that character, so
+// E'it\'s' is "it's" and E'\q' is "q", as in PostgreSQL.
 func (l *Lexer) readSimpleEscape() string {
 	ch := l.ch
 	l.readChar()
@@ -466,6 +472,8 @@ func (l *Lexer) readSimpleEscape() string {
 	}
 }
 
+// readOctalEscape decodes a \o, \oo, or \ooo escape: one to three octal
+// digits.
 func (l *Lexer) readOctalEscape(stringStart Position) (string, error) {
 	start := l.pos
 
@@ -495,6 +503,8 @@ func escapedByte(stringStart Position, b byte) (string, error) {
 	return string([]byte{b}), nil
 }
 
+// readHexEscape decodes a \xh or \xhh escape: one or two hex digits, which
+// denote a raw byte like an octal escape does.
 func (l *Lexer) readHexEscape(stringStart Position) (string, error) {
 	l.readChar() // consume 'x'
 
@@ -541,6 +551,9 @@ func (l *Lexer) readUnicodeEscape(stringStart Position, digits int) (string, err
 	return string(cp), nil
 }
 
+// readLowSurrogateEscape reads the escape that must immediately follow a
+// high surrogate. As in PostgreSQL, either the \u or the \U form may supply
+// the low surrogate, regardless of which form supplied the high one.
 func (l *Lexer) readLowSurrogateEscape(stringStart Position) (rune, error) {
 	errMissing := &LexError{Pos: stringStart, Msg: "invalid unicode surrogate pair: expected low surrogate escape"}
 
@@ -693,6 +706,9 @@ func (l *Lexer) readNumberToken(pos Position) (Token, error) {
 	return Token{Type: tt, Literal: lit, Pos: pos}, nil
 }
 
+// readNumber reads an unsigned numeric literal, typed FLOAT if it has a
+// fractional part or an exponent and INT otherwise. A leading sign is never
+// part of the literal: it lexes as a separate operator.
 func (l *Lexer) readNumber() (TokenType, string) {
 	start := l.pos
 
@@ -730,6 +746,9 @@ func (l *Lexer) tryReadFraction() bool {
 	return true
 }
 
+// tryReadExponent reads an exponent ("e5", "E-3") only when a digit follows
+// the 'e' and optional sign, so in "1e" or "1ea" the 'e' is left to lex as
+// the start of an identifier.
 func (l *Lexer) tryReadExponent() bool {
 	if l.ch != 'e' && l.ch != 'E' {
 		return false
@@ -854,6 +873,9 @@ func operatorTokenType(text string) TokenType {
 	return Op
 }
 
+// readColon reads ':' and the operators beginning with it, which are not
+// op_chars in PostgreSQL: "::" (cast), ":=" (named argument), or a lone ':'
+// (array slice bound separator).
 func (l *Lexer) readColon(pos Position) Token {
 	l.readChar() // consume ':'
 
