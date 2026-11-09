@@ -335,8 +335,8 @@ func TestCastExpr_String(t *testing.T) {
 		c    *pgast.CastExpr
 		want string
 	}{
-		{"shorthand", &pgast.CastExpr{Expr: col("a"), Type: "int"}, "a::int"},
-		{"explicit", &pgast.CastExpr{Expr: col("a"), Type: "int", Explicit: true}, "CAST(a AS int)"},
+		{"shorthand", &pgast.CastExpr{Expr: col("a"), Type: typeName("int")}, "a::int"},
+		{"explicit", &pgast.CastExpr{Expr: col("a"), Type: typeName("int"), Explicit: true}, "CAST(a AS int)"},
 	}
 
 	for _, tt := range tests {

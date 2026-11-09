@@ -131,17 +131,23 @@ const (
 	DescOrder
 )
 
-// Order represents a single ORDER BY item.
+// Order represents a single ORDER BY item. Using, when set, is the
+// "USING operator" sort operator, which replaces ASC/DESC.
 type Order struct {
 	Expr      Expr
 	Direction OrderDirection
+	Using     *Operator
 	Nulls     NullsOrder
 }
 
 // String returns Order's SQL text.
 func (o *Order) String() string {
 	s := o.Expr.String()
-	if o.Direction == DescOrder {
+
+	switch {
+	case o.Using != nil:
+		s += " USING " + o.Using.String()
+	case o.Direction == DescOrder:
 		s += " DESC"
 	}
 
@@ -423,11 +429,39 @@ func (f *FramePoint) String() string {
 	}
 }
 
+// FrameExclusion represents a window frame's EXCLUDE option.
+type FrameExclusion int8
+
+const (
+	ExcludeDefault FrameExclusion = iota
+	ExcludeCurrentRow
+	ExcludeGroup
+	ExcludeTies
+	ExcludeNoOthers
+)
+
+// String returns FrameExclusion's SQL text, or "" when there is no option.
+func (e FrameExclusion) String() string {
+	switch e {
+	case ExcludeCurrentRow:
+		return "EXCLUDE CURRENT ROW"
+	case ExcludeGroup:
+		return "EXCLUDE GROUP"
+	case ExcludeTies:
+		return "EXCLUDE TIES"
+	case ExcludeNoOthers:
+		return "EXCLUDE NO OTHERS"
+	default:
+		return ""
+	}
+}
+
 // FrameClause represents a window frame specification.
 type FrameClause struct {
-	Unit  FrameUnit
-	Start *FramePoint
-	End   *FramePoint
+	Unit    FrameUnit
+	Start   *FramePoint
+	End     *FramePoint
+	Exclude FrameExclusion
 }
 
 // String returns FrameClause's SQL text.
@@ -436,13 +470,16 @@ func (f *FrameClause) String() string {
 		return ""
 	}
 
-	unit := f.Unit.String()
-
+	s := f.Unit.String() + " " + f.Start.String()
 	if f.End != nil {
-		return unit + " BETWEEN " + f.Start.String() + " AND " + f.End.String()
+		s = f.Unit.String() + " BETWEEN " + f.Start.String() + " AND " + f.End.String()
 	}
 
-	return unit + " " + f.Start.String()
+	if exclude := f.Exclude.String(); exclude != "" {
+		s += " " + exclude
+	}
+
+	return s
 }
 
 // Returning represents a RETURNING clause, shared by INSERT/UPDATE/DELETE/
@@ -508,9 +545,13 @@ func (a *ReturningAlias) String() string {
 // UpdateExpr represents a "col = expr" SET assignment, shared by UPDATE and
 // the DO UPDATE SET clause of ON CONFLICT. The multi-column
 // "(col, ...) = source" form sets Names instead of Name.
+//
+// Each target is a column (*ColName), optionally wrapped in field
+// selections and subscripts naming part of it (*FieldSelectExpr,
+// *ArraySubscriptExpr), as in "col.field = ..." or "col[1] = ...".
 type UpdateExpr struct {
-	Name  *ColName
-	Names []*ColName
+	Name  Expr
+	Names []Expr
 	Expr  Expr
 }
 
@@ -528,13 +569,41 @@ func (u *UpdateExpr) String() string {
 	return "(" + strings.Join(names, ", ") + ") = " + u.Expr.String()
 }
 
-// OnConflict represents an INSERT ... ON CONFLICT clause.
+// IndexElem is one element of an ON CONFLICT target, naming an index column
+// or expression the way CREATE INDEX does: a column (*ColName), a function
+// call, or a parenthesized expression, with an optional collation and
+// operator class.
+type IndexElem struct {
+	Expr      Expr
+	Collation TableName
+	Opclass   TableName
+}
+
+// String returns IndexElem's SQL text.
+func (e *IndexElem) String() string {
+	s := e.Expr.String()
+
+	if !e.Collation.IsEmpty() {
+		s += " COLLATE " + e.Collation.String()
+	}
+
+	if !e.Opclass.IsEmpty() {
+		s += " " + e.Opclass.String()
+	}
+
+	return s
+}
+
+// OnConflict represents an INSERT ... ON CONFLICT clause. The conflict
+// target is either Target, with an optional TargetWhere index predicate, or
+// Constraint.
 type OnConflict struct {
-	Columns    Columns  // ON CONFLICT (col, ...)
-	Constraint ColIdent // ON CONFLICT ON CONSTRAINT name
-	DoNothing  bool
-	Set        []*UpdateExpr // DO UPDATE SET ...
-	Where      *Where        // WHERE condition on the DO UPDATE
+	Target      []*IndexElem // ON CONFLICT (elem, ...)
+	TargetWhere *Where       // ON CONFLICT (...) WHERE index_predicate
+	Constraint  ColIdent     // ON CONFLICT ON CONSTRAINT name
+	DoNothing   bool
+	Set         []*UpdateExpr // DO UPDATE SET ...
+	Where       *Where        // WHERE condition on the DO UPDATE
 }
 
 // String returns OnConflict's SQL text.
@@ -548,10 +617,16 @@ func (o *OnConflict) String() string {
 	b.WriteString("ON CONFLICT")
 
 	switch {
-	case len(o.Columns) > 0:
+	case len(o.Target) > 0:
+		elems := make([]string, len(o.Target))
+		for i, e := range o.Target {
+			elems[i] = e.String()
+		}
+
 		b.WriteString(" (")
-		b.WriteString(o.Columns.String())
+		b.WriteString(strings.Join(elems, ", "))
 		b.WriteString(")")
+		writeWhereClause(&b, "WHERE", o.TargetWhere)
 	case !o.Constraint.IsEmpty():
 		b.WriteString(" ON CONSTRAINT ")
 		b.WriteString(o.Constraint.String())
@@ -580,8 +655,10 @@ func (o *OnConflict) String() string {
 }
 
 // JoinCondition represents the ON or USING condition of a JOIN. Exactly one
-// of On/Using is set.
+// of On/Using is set. UsingAlias is the "USING (...) AS alias" name for the
+// join columns (PostgreSQL 14+).
 type JoinCondition struct {
-	On    Expr
-	Using Columns
+	On         Expr
+	Using      Columns
+	UsingAlias TableIdent
 }

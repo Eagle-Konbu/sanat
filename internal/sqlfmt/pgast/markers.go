@@ -53,10 +53,23 @@ func (*Literal) iExpr()            {}
 func (*FuncExpr) iExpr()           {}
 func (*ParenExpr) iExpr()          {}
 func (*CastExpr) iExpr()           {}
+func (*TypedLiteral) iExpr()       {}
 func (*ArrayExpr) iExpr()          {}
 func (*ArraySubscriptExpr) iExpr() {}
 func (*OperatorExpr) iExpr()       {}
 func (*NamedArgExpr) iExpr()       {}
+func (*IsNormalizedExpr) iExpr()   {}
+func (*FieldSelectExpr) iExpr()    {}
+func (*ExtractExpr) iExpr()        {}
+func (*SubstringExpr) iExpr()      {}
+func (*PositionExpr) iExpr()       {}
+func (*TrimExpr) iExpr()           {}
+func (*OverlayExpr) iExpr()        {}
+func (*OverlapsExpr) iExpr()       {}
+func (*ArraySubquery) iExpr()      {}
+func (*QuantifiedExpr) iExpr()     {}
+func (*CollateExpr) iExpr()        {}
+func (*AtTimeZoneExpr) iExpr()     {}
 func (*GroupingSets) iExpr()       {}
 func (*Cube) iExpr()               {}
 func (*Rollup) iExpr()             {}
@@ -71,6 +84,7 @@ func (*ParenTableExpr) iTableExpr()   {}
 
 func (*DerivedTable) iSimpleTableExpr() {}
 func (TableName) iSimpleTableExpr()     {}
+func (*FuncTable) iSimpleTableExpr()    {}
 
 // --- SelectExpr ---
 

@@ -101,6 +101,8 @@ func TestParseStatement_keywordAsFunctionName(t *testing.T) {
 		{"qualified with reserved name", "SELECT s.select(a) FROM t", "SELECT s.select(a) FROM t"},
 		{"left function next to left join", "SELECT left(a.s, 1) FROM a LEFT JOIN b ON TRUE", "SELECT left(a.s, 1) FROM a LEFT JOIN b ON TRUE"},
 		{"type name", "SELECT a::key FROM t", "SELECT a::key FROM t"},
+		{"multi-word type name", "SELECT a::double precision FROM t", "SELECT a::double precision FROM t"},
+		{"typed literal", "SELECT interval '1' day, date '2020-01-01' d", "SELECT interval '1' day, date '2020-01-01' AS d"},
 	}
 
 	for _, tt := range tests {
@@ -146,6 +148,8 @@ func TestParseStatement_keywordErrors(t *testing.T) {
 		{"col_name keyword as function", "SELECT values(1)"},
 		{"reserved as cte name", "WITH select AS (SELECT 1) SELECT 1"},
 		{"reserved as set target", "UPDATE t SET from = 1"},
+		{"to as column", "SELECT to FROM t"},
+		{"to as bare alias", "SELECT 1 to"},
 	}
 
 	for _, tt := range tests {

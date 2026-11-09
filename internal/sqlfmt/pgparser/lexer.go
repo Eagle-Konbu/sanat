@@ -76,35 +76,32 @@ func (l *Lexer) Next() (Token, error) {
 	case l.ch == '$':
 		return l.readDollarSigil(pos)
 	case l.startsNumber():
-		tt, lit := l.readNumber()
-
-		return Token{Type: tt, Literal: lit, Pos: pos}, nil
+		return l.readNumberToken(pos)
 	default:
 		return l.readOperator(pos)
 	}
 }
 
-// readIdentifierOrEscapeString reads an unquoted identifier/keyword, or an
-// E'...' escape string if l.ch starts one. l.ch must satisfy isIdentStart.
-// Unquoted identifiers are folded to lower case, matching PostgreSQL's
-// default identifier-folding behavior (QuotedIdent preserves case instead).
+// readIdentifierOrEscapeString reads an unquoted identifier/keyword, or a
+// prefixed string constant (E'...', B'...', X'...', or N'...') if l.ch starts
+// one. l.ch must satisfy isIdentStart. Unquoted identifiers are folded to
+// lower case, matching PostgreSQL's default identifier-folding behavior
+// (QuotedIdent preserves case instead).
 func (l *Lexer) readIdentifierOrEscapeString(pos Position) (Token, error) {
-	if (l.ch == 'e' || l.ch == 'E') && l.peek() == '\'' {
-		l.readChar() // consume 'e'/'E'
-
-		lit, err := l.readString(pos, true)
-		if err != nil {
-			return Token{}, err
+	if l.peek() == '\'' {
+		if tok, ok, err := l.tryReadPrefixedString(pos); ok || err != nil {
+			return tok, err
 		}
-
-		return Token{Type: STRING, Literal: lit, Pos: pos}, nil
 	}
 
 	if l.startsUnicodeEscapeConstant() {
 		return Token{}, &LexError{Pos: pos, Msg: "Unicode escape strings (U&'...') are not supported"}
 	}
 
-	lit := l.readIdentifier()
+	lit, err := l.readIdentifier()
+	if err != nil {
+		return Token{}, err
+	}
 
 	tt := lookupIdent(lit)
 	if tt == IDENT {
@@ -112,6 +109,58 @@ func (l *Lexer) readIdentifierOrEscapeString(pos Position) (Token, error) {
 	}
 
 	return Token{Type: tt, Literal: lit, Pos: pos}, nil
+}
+
+// tryReadPrefixedString reads a string constant whose one-letter prefix is
+// l.ch and whose opening quote follows it, reporting ok=false without
+// consuming anything if l.ch is not such a prefix.
+func (l *Lexer) tryReadPrefixedString(pos Position) (Token, bool, error) {
+	prefix := unicode.ToUpper(l.ch)
+
+	var (
+		tt      TokenType
+		escapes bool
+	)
+
+	switch prefix {
+	case 'E':
+		tt, escapes = STRING, true
+	case 'N':
+		tt = NationalString
+	case 'B', 'X':
+		tt = BitString
+	default:
+		return Token{}, false, nil
+	}
+
+	l.readChar() // consume the prefix
+
+	lit, err := l.readString(pos, escapes)
+	if err != nil {
+		return Token{}, true, err
+	}
+
+	if tt == BitString {
+		if !isBitStringContent(prefix, lit) {
+			return Token{}, true, &LexError{Pos: pos, Msg: fmt.Sprintf("invalid %c'...' bit-string constant", prefix)}
+		}
+
+		lit = string(prefix) + "'" + lit + "'"
+	}
+
+	return Token{Type: tt, Literal: lit, Pos: pos}, true, nil
+}
+
+// isBitStringContent reports whether content holds only binary digits for a
+// B'...' constant, or only hexadecimal digits for an X'...' one.
+func isBitStringContent(prefix rune, content string) bool {
+	for _, ch := range content {
+		if prefix == 'B' && ch != '0' && ch != '1' || prefix == 'X' && !isHexDigit(ch) {
+			return false
+		}
+	}
+
+	return true
 }
 
 // startsUnicodeEscapeConstant reports whether l.ch starts an unsupported
@@ -238,14 +287,26 @@ func (l *Lexer) readQuotedIdentToken(pos Position) (Token, error) {
 	return Token{Type: QuotedIdent, Literal: lit, Pos: pos}, nil
 }
 
-func (l *Lexer) readIdentifier() string {
+// readIdentifier reads an unquoted identifier, rejecting bytes that are not
+// valid UTF-8, which isIdentStart would otherwise accept as non-ASCII.
+func (l *Lexer) readIdentifier() (string, error) {
 	start := l.pos
 
 	for isIdentPart(l.ch) {
+		if l.atInvalidUTF8() {
+			return "", &LexError{Pos: l.currentPos(), Msg: "invalid UTF-8 in identifier"}
+		}
+
 		l.readChar()
 	}
 
-	return l.input[start:l.pos]
+	return l.input[start:l.pos], nil
+}
+
+// atInvalidUTF8 reports whether ch was decoded from an invalid UTF-8 byte,
+// as opposed to a literal U+FFFD in the input.
+func (l *Lexer) atInvalidUTF8() bool {
+	return l.ch == utf8.RuneError && l.readPos-l.pos == 1
 }
 
 // readQuotedIdent reads a double-quoted identifier. A doubled double-quote
@@ -379,7 +440,7 @@ func (l *Lexer) readEscapeSequence(stringStart Position) (string, error) {
 	case l.ch == 'U':
 		return l.readUnicodeEscape(stringStart, 8)
 	case isOctalDigit(l.ch):
-		return l.readOctalEscape(), nil
+		return l.readOctalEscape(stringStart)
 	default:
 		return l.readSimpleEscape(), nil
 	}
@@ -405,7 +466,7 @@ func (l *Lexer) readSimpleEscape() string {
 	}
 }
 
-func (l *Lexer) readOctalEscape() string {
+func (l *Lexer) readOctalEscape(stringStart Position) (string, error) {
 	start := l.pos
 
 	for range 3 {
@@ -421,7 +482,17 @@ func (l *Lexer) readOctalEscape() string {
 	// Octal and hex escapes denote raw bytes, not code points: E'\303\251'
 	// is the two-byte UTF-8 encoding of 'é'. Like PostgreSQL, values above
 	// \377 are truncated to their low byte.
-	return string([]byte{byte(n & 0xFF)})
+	return escapedByte(stringStart, byte(n&0xFF))
+}
+
+// escapedByte returns the byte an octal or hex escape denotes, rejecting a
+// zero byte, which PostgreSQL cannot store in a text value.
+func escapedByte(stringStart Position, b byte) (string, error) {
+	if b == 0 {
+		return "", &LexError{Pos: stringStart, Msg: "invalid escape: string constants cannot contain a zero byte"}
+	}
+
+	return string([]byte{b}), nil
 }
 
 func (l *Lexer) readHexEscape(stringStart Position) (string, error) {
@@ -443,7 +514,7 @@ func (l *Lexer) readHexEscape(stringStart Position) (string, error) {
 
 	n, _ := strconv.ParseUint(l.input[start:l.pos], 16, 8)
 
-	return string([]byte{byte(n)}), nil
+	return escapedByte(stringStart, byte(n))
 }
 
 // readUnicodeEscape decodes a \uXXXX or \UXXXXXXXX escape. A UTF-16 high
@@ -503,8 +574,8 @@ func (l *Lexer) readLowSurrogateEscape(stringStart Position) (rune, error) {
 }
 
 // readUnicodeCodePoint reads the 'u'/'U' and exactly digits hex digits of a
-// unicode escape, rejecting values beyond U+10FFFF. Surrogates are left for
-// the caller to validate.
+// unicode escape, rejecting zero and values beyond U+10FFFF. Surrogates are
+// left for the caller to validate.
 func (l *Lexer) readUnicodeCodePoint(stringStart Position, digits int) (rune, error) {
 	l.readChar() // consume 'u'/'U'
 
@@ -523,7 +594,7 @@ func (l *Lexer) readUnicodeCodePoint(stringStart Position, digits int) (rune, er
 	}
 
 	n, err := strconv.ParseUint(l.input[start:l.pos], 16, 32)
-	if err != nil || n > unicode.MaxRune {
+	if err != nil || n == 0 || n > unicode.MaxRune {
 		return 0, &LexError{Pos: stringStart, Msg: "invalid unicode escape value"}
 	}
 
@@ -543,6 +614,10 @@ func (l *Lexer) readDollarSigil(startPos Position) (Token, error) {
 
 		start := l.pos
 		l.readDigits()
+
+		if isIdentStart(l.ch) {
+			return Token{}, &LexError{Pos: startPos, Msg: "trailing junk after parameter"}
+		}
 
 		return Token{Type: Placeholder, Literal: l.input[start:l.pos], Pos: startPos}, nil
 	}
@@ -605,6 +680,19 @@ func (l *Lexer) startsNumber() bool {
 	return isDigit(l.ch) || (l.ch == '.' && isDigit(l.peek()))
 }
 
+// readNumberToken reads a numeric literal. Like PostgreSQL 15+, it rejects
+// an identifier character directly after the number ("123abc", "0x1F"),
+// instead of reading it as the number followed by an alias.
+func (l *Lexer) readNumberToken(pos Position) (Token, error) {
+	tt, lit := l.readNumber()
+
+	if isIdentStart(l.ch) {
+		return Token{}, &LexError{Pos: pos, Msg: "trailing junk after numeric literal"}
+	}
+
+	return Token{Type: tt, Literal: lit, Pos: pos}, nil
+}
+
 func (l *Lexer) readNumber() (TokenType, string) {
 	start := l.pos
 
@@ -630,8 +718,7 @@ func (l *Lexer) readDigits() {
 
 // tryReadFraction reads a fractional part starting at a '.', if present.
 // As in PostgreSQL, the digits after the '.' are optional ("1." is a valid
-// numeric, so "1.col" lexes as "1." followed by "col"), except that "1..2"
-// leaves ".." intact for the parser.
+// numeric), except that "1..2" leaves ".." intact for the parser.
 func (l *Lexer) tryReadFraction() bool {
 	if l.ch != '.' || l.peek() == '.' {
 		return false
@@ -810,7 +897,7 @@ var singleCharTokens = map[rune]TokenType{
 }
 
 func isSpace(ch rune) bool {
-	return ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r' || ch == '\f'
+	return ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r' || ch == '\f' || ch == '\v'
 }
 
 func isDigit(ch rune) bool {
@@ -825,12 +912,14 @@ func isHexDigit(ch rune) bool {
 	return isDigit(ch) || (ch >= 'a' && ch <= 'f') || (ch >= 'A' && ch <= 'F')
 }
 
-// isIdentStart reports whether ch can start an unquoted identifier: a letter
-// or underscore. Unlike sqlfmt/parser's MySQL lexer, '$' is deliberately
-// excluded — PostgreSQL reserves a leading '$' for placeholders and
-// dollar-quote delimiters.
+// isIdentStart reports whether ch can start an unquoted identifier: an ASCII
+// letter, an underscore, or any non-ASCII character. PostgreSQL's scanner
+// accepts every byte from 0x80 up, so combining marks and symbols are
+// identifier characters too. Unlike sqlfmt/parser's MySQL lexer, '$' is
+// deliberately excluded — PostgreSQL reserves a leading '$' for placeholders
+// and dollar-quote delimiters.
 func isIdentStart(ch rune) bool {
-	return ch == '_' || unicode.IsLetter(ch)
+	return ch == '_' || ch >= 'a' && ch <= 'z' || ch >= 'A' && ch <= 'Z' || ch >= utf8.RuneSelf
 }
 
 // isIdentPart reports whether ch can appear after the first character of an

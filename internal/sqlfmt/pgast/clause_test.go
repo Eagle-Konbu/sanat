@@ -404,7 +404,7 @@ func TestUpdateExpr_String(t *testing.T) {
 	assertEqual(t, "name = 'bob'", u.String())
 
 	multi := &pgast.UpdateExpr{
-		Names: []*pgast.ColName{col("a"), col("b")},
+		Names: []pgast.Expr{col("a"), col("b")},
 		Expr:  pgast.ValTuple{lit("1"), lit("DEFAULT")},
 	}
 	assertEqual(t, "(a, b) = (1, DEFAULT)", multi.String())
@@ -422,7 +422,7 @@ func TestOnConflict_String(t *testing.T) {
 		{"do nothing", &pgast.OnConflict{DoNothing: true}, "ON CONFLICT DO NOTHING"},
 		{
 			"columns do nothing",
-			&pgast.OnConflict{Columns: pgast.Columns{"id"}, DoNothing: true},
+			&pgast.OnConflict{Target: []*pgast.IndexElem{{Expr: col("id")}}, DoNothing: true},
 			"ON CONFLICT (id) DO NOTHING",
 		},
 		{
@@ -436,9 +436,9 @@ func TestOnConflict_String(t *testing.T) {
 		{
 			"do update with where",
 			&pgast.OnConflict{
-				Columns: pgast.Columns{"id"},
-				Set:     []*pgast.UpdateExpr{{Name: col("name"), Expr: lit("'bob'")}},
-				Where:   &pgast.Where{Expr: col("active")},
+				Target: []*pgast.IndexElem{{Expr: col("id")}},
+				Set:    []*pgast.UpdateExpr{{Name: col("name"), Expr: lit("'bob'")}},
+				Where:  &pgast.Where{Expr: col("active")},
 			},
 			"ON CONFLICT (id) DO UPDATE SET name = 'bob' WHERE active",
 		},

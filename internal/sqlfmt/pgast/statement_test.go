@@ -66,7 +66,7 @@ func TestInsert_String(t *testing.T) {
 			"values",
 			&pgast.Insert{
 				Table:   pgast.TableName{Name: "users"},
-				Columns: pgast.Columns{"id", "name"},
+				Columns: []pgast.Expr{col("id"), col("name")},
 				Rows:    pgast.Values{{lit("1"), lit("'a'")}},
 			},
 			"INSERT INTO users (id, name) VALUES (1, 'a')",
