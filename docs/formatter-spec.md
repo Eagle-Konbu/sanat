@@ -58,7 +58,7 @@ The rewrite is MySQL-only. In PostgreSQL, `?`, `?|`, and `?&` are jsonb operator
 - Clause keywords and aggregate/window function names are converted to **UPPERCASE**; operator/predicate keywords follow the [`keyword_case`](#keyword-casing) option instead
 - Each clause is placed on a **separate line**
 - Clause contents are **indented** (default: 2 spaces)
-- Backtick-quoted identifiers (MySQL style) are parsed and re-rendered unquoted
+- Backtick-quoted identifiers (MySQL style) are parsed and re-rendered unquoted. This never changes meaning in practice: a Go raw string literal cannot contain a backtick, so no formatted literal can contain a backtick-quoted identifier
 - String literals are emitted **exactly as written**: escapes are not re-encoded, so `'it\'s'` stays `'it\'s'` and `'a''b'` stays `'a''b'`
 - SQL containing a **comment** (`--`, `#`, `/* ... */`, including optimizer hints and `/*! ... */`) is **returned as-is**, since the formatter cannot keep comments in its output. Comment-like text inside a string literal or quoted identifier (e.g. `'-- not a comment'`) is not a comment
 - If parsing fails, the **original string is returned as-is**
