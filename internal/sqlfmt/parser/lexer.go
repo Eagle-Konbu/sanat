@@ -55,6 +55,18 @@ func (l *Lexer) Next() (Token, error) {
 
 	pos := l.currentPos()
 
+	tok, err := l.readToken(pos)
+	if err != nil {
+		return Token{}, err
+	}
+
+	tok.Raw = l.input[pos.Offset:l.pos]
+
+	return tok, nil
+}
+
+// readToken reads the token starting at pos; Next fills in its Raw text.
+func (l *Lexer) readToken(pos Position) (Token, error) {
 	switch {
 	case l.ch == eof:
 		return Token{Type: EOF, Pos: pos}, nil

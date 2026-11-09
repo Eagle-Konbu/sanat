@@ -297,7 +297,7 @@ func (p *Parser) parseTypeParams() []string {
 			params = append(params, p.tok.Literal)
 			p.advance()
 		case STRING:
-			params = append(params, "'"+escapeStringLiteral(p.tok.Literal, p.mode)+"'")
+			params = append(params, p.tok.Raw)
 			p.advance()
 		default:
 			return failReturn[[]string](p, "expected type parameter, got %s", p.tok.Type)

@@ -2,6 +2,7 @@ package parser_test
 
 import (
 	"errors"
+	"slices"
 	"testing"
 
 	"github.com/Eagle-Konbu/sanat/internal/sqlfmt/parser"
@@ -634,6 +635,52 @@ func TestLexer_Comments(t *testing.T) {
 			t.Fatal("expected error for /*! ... */ executable comment")
 		}
 	})
+}
+
+// TestLexer_Raw covers Token.Raw, the exact source text of each token,
+// which the parser uses to keep string literals as written.
+func TestLexer_Raw(t *testing.T) {
+	tests := []struct {
+		name string
+		mode parser.SQLMode
+		in   string
+		want []string
+	}{
+		{"plain string", parser.ModeDefault, "'abc'", []string{"'abc'"}},
+		{"doubled quote", parser.ModeDefault, "'a''b'", []string{"'a''b'"}},
+		{"backslash escapes", parser.ModeDefault, `'it\'s \n \\'`, []string{`'it\'s \n \\'`}},
+		{"literal newline", parser.ModeDefault, "'a\nb'", []string{"'a\nb'"}},
+		{"no backslash escapes", parser.ModeNoBackslashEscapes, `'a\'`, []string{`'a\'`}},
+		{"hex and bit strings", parser.ModeDefault, "X'1a' b'01'", []string{"X'1a'", "b'01'"}},
+		{"multibyte", parser.ModeDefault, "'日本' = x", []string{"'日本'", "=", "x"}},
+		{"quoted identifier", parser.ModeDefault, "`a``b`", []string{"`a``b`"}},
+		{"surrounding whitespace excluded", parser.ModeDefault, "  'a'  ,  1 ", []string{"'a'", ",", "1"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			l := parser.NewWithMode(tt.in, tt.mode)
+
+			var got []string
+
+			for {
+				tok, err := l.Next()
+				if err != nil {
+					t.Fatalf("Next() error = %v", err)
+				}
+
+				if tok.Type == parser.EOF {
+					break
+				}
+
+				got = append(got, tok.Raw)
+			}
+
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("Raw = %q, want %q", got, tt.want)
+			}
+		})
+	}
 }
 
 func TestLexer_IllegalCharacter(t *testing.T) {

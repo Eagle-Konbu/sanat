@@ -1,8 +1,6 @@
 package parser
 
 import (
-	"strings"
-
 	"github.com/Eagle-Konbu/sanat/internal/sqlfmt/sqlast"
 )
 
@@ -307,79 +305,13 @@ func (p *Parser) parseKeywordLiteral(text string) sqlast.Expr {
 	return &sqlast.Literal{Val: text}
 }
 
+// parseStringLiteral keeps the literal's exact source text so formatting
+// never changes how the user spelled its escapes.
 func (p *Parser) parseStringLiteral() sqlast.Expr {
 	tok := p.tok
 	p.advance()
 
-	return &sqlast.Literal{Val: "'" + escapeStringLiteral(tok.Literal, p.mode) + "'"}
-}
-
-var stringEscapes = map[rune]string{
-	'\'':   `\'`,
-	'\\':   `\\`,
-	'\x00': `\0`,
-	'\b':   `\b`,
-	'\n':   `\n`,
-	'\r':   `\r`,
-	'\t':   `\t`,
-	'\x1a': `\Z`,
-}
-
-// escapeStringLiteral re-encodes a lexer-decoded string literal so it can be
-// embedded between single quotes again, per mode.
-//
-// Under ModeDefault, \% and \_ are round-tripped as-is since the lexer
-// deliberately leaves them un-decoded (they are only meaningful within LIKE
-// pattern matching).
-//
-// Under ModeNoBackslashEscapes, the lexer never treats backslash as an
-// escape character (see Lexer.readString), so the decoded value already
-// contains every backslash, control character, and literal newline verbatim.
-// Backslash therefore isn't special on the way back out either — doubling
-// the quote character is the only escaping NO_BACKSLASH_ESCAPES supports.
-func escapeStringLiteral(s string, mode SQLMode) string {
-	if mode == ModeNoBackslashEscapes {
-		return strings.ReplaceAll(s, "'", "''")
-	}
-
-	runes := []rune(s)
-
-	var b strings.Builder
-
-	for i := 0; i < len(runes); i++ {
-		if consumed := writeLikeEscape(&b, runes, i); consumed > 0 {
-			i += consumed - 1
-
-			continue
-		}
-
-		writeEscapedRune(&b, runes[i])
-	}
-
-	return b.String()
-}
-
-// writeLikeEscape writes runes[i:] to b if it starts a \% or \_ sequence,
-// returning how many runes it consumed (0 if it did not match).
-func writeLikeEscape(b *strings.Builder, runes []rune, i int) int {
-	if runes[i] != '\\' || i+1 >= len(runes) || (runes[i+1] != '%' && runes[i+1] != '_') {
-		return 0
-	}
-
-	b.WriteByte('\\')
-	b.WriteRune(runes[i+1])
-
-	return 2
-}
-
-func writeEscapedRune(b *strings.Builder, r rune) {
-	if esc, ok := stringEscapes[r]; ok {
-		b.WriteString(esc)
-
-		return
-	}
-
-	b.WriteRune(r)
+	return &sqlast.Literal{Val: tok.Raw}
 }
 
 func (p *Parser) parseColonPlaceholder() sqlast.Expr {

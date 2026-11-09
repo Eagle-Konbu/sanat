@@ -1561,12 +1561,9 @@ func TestFormatSQLWithOptions_CommaStyle_With(t *testing.T) {
 	assertSQL(t, got, want)
 }
 
-// TestFormatSQLWithOptions_SQLMode covers the two string-literal cases where
-// NO_BACKSLASH_ESCAPES changes meaning: a doubled quote (which the default
-// mode re-encodes with a backslash, mangling it once NO_BACKSLASH_ESCAPES is
-// set) and a literal newline (which the default mode re-encodes as
-// backslash-n, changing a multi-line value into a single-line one under
-// NO_BACKSLASH_ESCAPES).
+// TestFormatSQLWithOptions_SQLMode covers string literals under both modes:
+// literals are emitted as written either way, and the mode only decides
+// whether a backslash escapes the closing quote.
 func TestFormatSQLWithOptions_SQLMode(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -1576,17 +1573,17 @@ func TestFormatSQLWithOptions_SQLMode(t *testing.T) {
 		wantOK  bool
 	}{
 		{
-			name:    "default (unset) re-encodes doubled quote with backslash",
+			name:    "default (unset) keeps doubled quote doubled",
 			sqlMode: "",
 			in:      "select 'it''s' from t",
-			want:    join("SELECT", `  'it\'s'`, "FROM", "  t"),
+			want:    join("SELECT", `  'it''s'`, "FROM", "  t"),
 			wantOK:  true,
 		},
 		{
-			name:    "SQLModeDefault re-encodes doubled quote with backslash",
+			name:    "SQLModeDefault keeps doubled quote doubled",
 			sqlMode: sqlfmt.SQLModeDefault,
 			in:      "select 'it''s' from t",
-			want:    join("SELECT", `  'it\'s'`, "FROM", "  t"),
+			want:    join("SELECT", `  'it''s'`, "FROM", "  t"),
 			wantOK:  true,
 		},
 		{
@@ -1597,10 +1594,10 @@ func TestFormatSQLWithOptions_SQLMode(t *testing.T) {
 			wantOK:  true,
 		},
 		{
-			name:    "default re-encodes a literal newline as backslash-n",
+			name:    "default preserves a literal newline",
 			sqlMode: sqlfmt.SQLModeDefault,
 			in:      "select 'a\nb' from t",
-			want:    join("SELECT", `  'a\nb'`, "FROM", "  t"),
+			want:    join("SELECT", "  'a\nb'", "FROM", "  t"),
 			wantOK:  true,
 		},
 		{
@@ -1634,6 +1631,35 @@ func TestFormatSQLWithOptions_SQLMode(t *testing.T) {
 			}
 
 			assertSQL(t, got, tt.want)
+		})
+	}
+}
+
+// TestFormatSQL_StringLiteralsPreserved covers that string literals are
+// emitted exactly as written, so formatting never changes their escapes.
+func TestFormatSQL_StringLiteralsPreserved(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		lit  string
+	}{
+		{"backslash-escaped quote", `select 'it\'s' from t`, `'it\'s'`},
+		{"doubled quote", `select 'a''b' from t`, `'a''b'`},
+		{"backslash escapes", `select 'a\n\t\\b' from t`, `'a\n\t\\b'`},
+		{"unrecognized escape", `select 'a\xb' from t`, `'a\xb'`},
+		{"like escapes", `select '50\%' from t`, `'50\%'`},
+		{"hex string", `select X'1A' from t`, `X'1A'`},
+		{"comment marker inside a string", `select '-- not a comment' from t`, `'-- not a comment'`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := sqlfmt.FormatSQL(tt.in, 2)
+			if !ok {
+				t.Fatalf("FormatSQL(%q) ok = false, want true", tt.in)
+			}
+
+			assertSQL(t, got, join("SELECT", "  "+tt.lit, "FROM", "  t"))
 		})
 	}
 }
