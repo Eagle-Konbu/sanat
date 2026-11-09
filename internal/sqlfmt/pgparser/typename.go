@@ -15,14 +15,16 @@ var intervalFieldWords = map[string]bool{
 	"year": true, "month": true, "day": true, "hour": true, "minute": true, "second": true,
 }
 
-// intervalRangeEnds maps each interval field that may start a
-// "field TO field" range to the fields that may end it, per PostgreSQL's
-// opt_interval.
-var intervalRangeEnds = map[string]map[string]bool{
-	"year":   {"month": true},
-	"day":    {"hour": true, "minute": true, "second": true},
-	"hour":   {"minute": true, "second": true},
-	"minute": {"second": true},
+// intervalRanges are the "field to field" ranges PostgreSQL's opt_interval
+// allows.
+var intervalRanges = map[string]bool{
+	"year to month":    true,
+	"day to hour":      true,
+	"day to minute":    true,
+	"day to second":    true,
+	"hour to minute":   true,
+	"hour to second":   true,
+	"minute to second": true,
 }
 
 // parseTypeName parses a cast's target type: a type name followed by any
@@ -170,7 +172,7 @@ func (p *Parser) parseOptionalIntervalFields() string {
 			p.failf("expected interval field after TO, got %s", p.tok.Type)
 		}
 
-		if !intervalRangeEnds[start][p.tok.Literal] {
+		if !intervalRanges[start+" to "+p.tok.Literal] {
 			p.failf("invalid interval range %s TO %s", fields, p.tok.Literal)
 		}
 

@@ -674,7 +674,7 @@ func TestLexer_unexpectedCharacter(t *testing.T) {
 }
 
 func TestLexer_invalidUTF8Identifier(t *testing.T) {
-	for _, in := range []string{"\xffname", "name\xff", "a\xc3"} {
+	for _, in := range []string{"\xff", "\xff_a", "name\xff", "a\xc3"} {
 		t.Run(in, func(t *testing.T) {
 			assertLexError(t, in)
 		})
