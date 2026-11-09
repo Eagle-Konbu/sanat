@@ -6,7 +6,7 @@ import (
 )
 
 var (
-	sqlPrefixRe = regexp.MustCompile(`(?i)^\s*(SELECT|INSERT|UPDATE|DELETE|` +
+	sqlPrefixRe = regexp.MustCompile(`(?i)^\s*(WITH|SELECT|INSERT|UPDATE|DELETE|MERGE|` +
 		`CREATE|ALTER|DROP|TRUNCATE|` +
 		`START|BEGIN|COMMIT|ROLLBACK|SAVEPOINT|RELEASE|SET|` +
 		`SHOW|DESCRIBE|EXPLAIN|USE)\b`)
