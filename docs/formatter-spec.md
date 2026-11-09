@@ -58,6 +58,7 @@ Since the SQL parser cannot handle `?` correctly, substitution and restoration a
 - Clause contents are **indented** (default: 2 spaces)
 - Backtick-quoted identifiers (MySQL style) are parsed and re-rendered unquoted
 - String literals are emitted **exactly as written**: escapes are not re-encoded, so `'it\'s'` stays `'it\'s'` and `'a''b'` stays `'a''b'`
+- SQL containing a **comment** (`--`, `#`, `/* ... */`, including optimizer hints and `/*! ... */`) is **returned as-is**, since the formatter cannot keep comments in its output. Comment-like text inside a string literal or quoted identifier (e.g. `'-- not a comment'`) is not a comment
 - If parsing fails, the **original string is returned as-is**
 
 ### Keyword Casing

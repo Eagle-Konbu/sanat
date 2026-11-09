@@ -97,14 +97,16 @@ at a time. `Literal` is the token's value (e.g. a `STRING`'s decoded
 contents); `Raw` is the token's exact source text, quotes and escapes
 included. `Position` carries byte offset, 1-based line, and 1-based (rune)
 column for error reporting. A `*LexError` is returned — never a synthetic
-token — for unterminated strings/identifiers/comments and illegal
+token — for unterminated strings/identifiers, comments, and illegal
 characters.
 
 ```mermaid
 flowchart TD
-    A[Next byte] --> B{Whitespace or comment?}
+    A[Next byte] --> B{Whitespace?}
     B -- Yes --> C[Skip and repeat]
-    B -- No --> D{Char class?}
+    B -- No --> K{Comment?}
+    K -- Yes --> L["LexError: comments are not supported"]
+    K -- No --> D{Char class?}
     D -- letter/underscore --> E[Identifier or keyword]
     D -- backtick --> F["Quoted identifier (backtick-delimited)"]
     D -- digit --> G[Integer or float literal]
@@ -190,16 +192,17 @@ treatment of every other keyword (there's no non-reserved carve-out for
   hex digits with an even number of digits (`x''` is valid); bit string
   content must consist of only `0`/`1` digits.
 - **Comments**: `--` and `#` line comments and `/* ... */` block comments
-  are skipped like whitespace. Per MySQL, a `--` only starts a comment when
-  followed by whitespace or a control character — `balance--1` is `balance -
-  (-1)`, not `balance` followed by a comment. A bare trailing `--` with
-  nothing after it (end of input) doesn't count as that whitespace either,
-  so it lexes as two `MINUS` tokens rather than an empty comment. `/*+ ... */`
-  optimizer hints and `/*! ... */`
-  (including version-gated `/*!50700 ... */`) executable comments carry
-  semantic content rather than being purely decorative, so the lexer reports
-  a `LexError` on them instead of silently discarding that content; parse
-  entry points that hit this fall back to returning the input unchanged.
+  (including `/*+ ... */` optimizer hints and `/*! ... */` / `/*!50700 ...
+  */` executable comments) are reported as a `LexError` rather than skipped.
+  The AST has nowhere to keep a comment, so skipping it would silently drop
+  it from the formatted output; parse entry points that hit this fail, and
+  the formatter returns the input unchanged. Comment markers inside a string
+  literal or a quoted identifier are part of that token and don't count. Per
+  MySQL, a `--` only starts a comment when followed by whitespace or a
+  control character — `balance--1` is `balance - (-1)`, not `balance`
+  followed by a comment. A bare trailing `--` with nothing after it (end of
+  input) doesn't count as that whitespace either, so it lexes as two `MINUS`
+  tokens rather than an empty comment.
 - **User variables**: `@` followed by an identifier (`@rank`, `@my_var`) is
   lexed as a single `AtVariable` token, whose `Literal` carries the name
   without the leading `@`. Only the single-`@` user-variable form is

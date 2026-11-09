@@ -1664,6 +1664,42 @@ func TestFormatSQL_StringLiteralsPreserved(t *testing.T) {
 	}
 }
 
+// TestFormatSQL_CommentsLeftUnchanged covers that SQL containing a comment
+// is returned unchanged with ok == false, since the formatter has no way to
+// keep the comment in its output.
+func TestFormatSQL_CommentsLeftUnchanged(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+	}{
+		{"double dash", "select id -- the id\nfrom t"},
+		{"hash", "select id # the id\nfrom t"},
+		{"block", "select /* the id */ id from t"},
+		{"trailing block", "select id from t /* done */"},
+		{"optimizer hint", "select /*+ MAX_EXECUTION_TIME(1000) */ id from t"},
+		{"executable comment", "select /*!50700 id */ from t"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := sqlfmt.FormatSQL(tt.in, 2)
+			if ok {
+				t.Fatalf("FormatSQL(%q) ok = true, want false", tt.in)
+			}
+
+			if got != tt.in {
+				t.Errorf("FormatSQL(%q) = %q, want input unchanged", tt.in, got)
+			}
+		})
+	}
+
+	t.Run("comment-like text in quoted identifier", func(t *testing.T) {
+		if _, ok := sqlfmt.FormatSQL("select `a -- b` from t", 2); !ok {
+			t.Fatal("ok = false, want true")
+		}
+	})
+}
+
 // TestFormatSQLWithOptions_Dialect covers dialect selection: the empty
 // string and DialectMySQL both format normally (today's only implemented
 // dialect), DialectPostgreSQL fails explicitly rather than silently
