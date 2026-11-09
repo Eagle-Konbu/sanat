@@ -40,15 +40,19 @@ func clearRawValue(v reflect.Value) {
 			clearRawValue(v.Index(i))
 		}
 	case reflect.Struct:
-		for i := range v.NumField() {
-			field := v.Field(i)
-			if rawFields[v.Type().Field(i).Name] && field.Kind() == reflect.String {
-				field.SetString("")
-			} else {
-				clearRawValue(field)
-			}
-		}
+		clearRawInStruct(v)
 	default:
+	}
+}
+
+func clearRawInStruct(v reflect.Value) {
+	for i := range v.NumField() {
+		field := v.Field(i)
+		if rawFields[v.Type().Field(i).Name] && field.Kind() == reflect.String {
+			field.SetString("")
+		} else {
+			clearRawValue(field)
+		}
 	}
 }
 

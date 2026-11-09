@@ -555,8 +555,7 @@ func TestLexer_Comments(t *testing.T) {
 
 			_, err := l.Next()
 
-			var lexErr *parser.LexError
-			if !errors.As(err, &lexErr) {
+			if _, ok := errors.AsType[*parser.LexError](err); !ok {
 				t.Fatalf("Next() error = %v, want *parser.LexError for comment", err)
 			}
 		})
@@ -628,7 +627,7 @@ func TestLexer_Raw(t *testing.T) {
 		{"literal newline", parser.ModeDefault, "'a\nb'", []string{"'a\nb'"}},
 		{"no backslash escapes", parser.ModeNoBackslashEscapes, `'a\'`, []string{`'a\'`}},
 		{"hex and bit strings", parser.ModeDefault, "X'1a' b'01'", []string{"X'1a'", "b'01'"}},
-		{"multibyte", parser.ModeDefault, "'日本' = x", []string{"'日本'", "=", "x"}},
+		{"multibyte", parser.ModeDefault, "'café' = x", []string{"'café'", "=", "x"}},
 		{"quoted identifier", parser.ModeDefault, "`a``b`", []string{"`a``b`"}},
 		{"surrounding whitespace excluded", parser.ModeDefault, "  'a'  ,  1 ", []string{"'a'", ",", "1"}},
 	}

@@ -82,22 +82,22 @@ func TestParseExpr_literalRaw(t *testing.T) {
 
 func TestParseExpr_literalRawInOtherNodes(t *testing.T) {
 	t.Run("typed literal", func(t *testing.T) {
-		lit, ok := parseExpr(t, "DATE $d$2020-01-01$d$").(*pgast.TypedLiteral)
-		if !ok || lit.Value != "'2020-01-01'" || lit.ValueRaw != "$d$2020-01-01$d$" {
+		lit := mustBe[*pgast.TypedLiteral](t, parseExpr(t, "DATE $d$2020-01-01$d$"))
+		if lit.Value != "'2020-01-01'" || lit.ValueRaw != "$d$2020-01-01$d$" {
 			t.Errorf("got %#v, want Value '2020-01-01' and ValueRaw $d$2020-01-01$d$", lit)
 		}
 	})
 
 	t.Run("extract field identifier", func(t *testing.T) {
-		e, ok := parseExpr(t, "EXTRACT(YEAR FROM d)").(*pgast.ExtractExpr)
-		if !ok || e.Field != "year" || e.FieldRaw != "YEAR" {
+		e := mustBe[*pgast.ExtractExpr](t, parseExpr(t, "EXTRACT(YEAR FROM d)"))
+		if e.Field != "year" || e.FieldRaw != "YEAR" {
 			t.Errorf("got %#v, want Field year and FieldRaw YEAR", e)
 		}
 	})
 
 	t.Run("extract field string", func(t *testing.T) {
-		e, ok := parseExpr(t, "EXTRACT(E'epoch' FROM d)").(*pgast.ExtractExpr)
-		if !ok || e.Field != "'epoch'" || e.FieldRaw != "E'epoch'" {
+		e := mustBe[*pgast.ExtractExpr](t, parseExpr(t, "EXTRACT(E'epoch' FROM d)"))
+		if e.Field != "'epoch'" || e.FieldRaw != "E'epoch'" {
 			t.Errorf("got %#v, want Field 'epoch' and FieldRaw E'epoch'", e)
 		}
 	})

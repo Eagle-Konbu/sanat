@@ -72,7 +72,7 @@ func TestParseExpr_stringLiteral(t *testing.T) {
 		{"unrecognized escape kept", `'a\xb'`, `'a\xb'`},
 		{"preserves like escapes", `'50\%'`, `'50\%'`},
 		{"literal newline kept", "'a\nb'", "'a\nb'"},
-		{"multibyte", `'日本語'`, `'日本語'`},
+		{"multibyte", `'café'`, `'café'`},
 	}
 
 	for _, tt := range tests {
