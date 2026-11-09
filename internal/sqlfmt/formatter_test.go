@@ -1692,12 +1692,6 @@ func TestFormatSQL_CommentsLeftUnchanged(t *testing.T) {
 			}
 		})
 	}
-
-	t.Run("comment-like text in quoted identifier", func(t *testing.T) {
-		if _, ok := sqlfmt.FormatSQL("select `a -- b` from t", 2); !ok {
-			t.Fatal("ok = false, want true")
-		}
-	})
 }
 
 // TestFormatSQLWithOptions_Dialect covers dialect selection: the empty

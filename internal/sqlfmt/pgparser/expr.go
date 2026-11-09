@@ -800,9 +800,11 @@ func (p *Parser) tryParseLiteral() (pgast.Expr, bool) {
 // atQuestionMarkPlaceholder reports whether p.tok is a lone "?" in operand
 // position. PostgreSQL itself only knows "?" as the jsonb key-exists infix
 // operator, but Go drivers and query builders write "?" bind parameters into
-// PostgreSQL SQL too. PostgreSQL has no prefix "?" operator, so a "?" where
-// an operand is expected can only be such a placeholder; in infix position
-// parseOtherOpExpr consumes it as an operator before reaching here.
+// PostgreSQL SQL too. PostgreSQL has no built-in prefix "?" operator, so a
+// "?" where an operand is expected is read as such a placeholder; in infix
+// position parseOtherOpExpr consumes it as an operator before reaching here.
+// A user-defined prefix "?" is not supported: "? x" can't be told apart from
+// a placeholder with a bare alias, as in "SELECT ? x".
 func (p *Parser) atQuestionMarkPlaceholder() bool {
 	return p.at(Op) && p.tok.Literal == "?"
 }

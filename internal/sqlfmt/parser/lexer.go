@@ -580,15 +580,15 @@ var singleCharTokens = map[rune]TokenType{
 }
 
 func isSpace(ch rune) bool {
-	return ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r'
+	return ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r' || ch == '\f' || ch == '\v'
 }
 
 // isCommentBoundary reports whether ch is what MySQL requires immediately
-// after "--" for it to start a comment: whitespace or a control character.
-// EOF doesn't count — a bare trailing "--" with nothing after it is not a
-// comment start, matching MySQL's stricter enforcement of this rule.
+// after "--" for it to start a comment: whitespace. EOF doesn't count — a
+// bare trailing "--" with nothing after it is not a comment start, matching
+// MySQL's stricter enforcement of this rule.
 func isCommentBoundary(ch rune) bool {
-	return isSpace(ch) || ch == '\f' || ch == '\v'
+	return isSpace(ch)
 }
 
 func isDigit(ch rune) bool {

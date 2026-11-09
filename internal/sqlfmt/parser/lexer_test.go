@@ -522,7 +522,7 @@ func TestLexer_Punctuation(t *testing.T) {
 }
 
 func TestLexer_WhitespaceSkipped(t *testing.T) {
-	assertTokens(t, "  id\t\n  ,  name  ", []wantToken{
+	assertTokens(t, "  id\t\n\f\v  ,\r name  ", []wantToken{
 		{parser.IDENT, "id"},
 		{parser.COMMA, ","},
 		{parser.IDENT, "name"},
@@ -533,11 +533,33 @@ func TestLexer_WhitespaceSkipped(t *testing.T) {
 // TestLexer_Comments covers comment rejection: the AST cannot keep
 // comments, so the lexer reports them as errors instead of dropping them.
 func TestLexer_Comments(t *testing.T) {
+	leading := []struct {
+		name string
+		in   string
+	}{
+		{"leading double dash", "-- comment\nid"},
+		{"leading hash", "# comment\nid"},
+		{"leading block comment", "/* comment */ id"},
+	}
+
+	for _, tt := range leading {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := parser.New(tt.in).Next()
+
+			if _, ok := errors.AsType[*parser.LexError](err); !ok {
+				t.Fatalf("Next() error = %v, want *parser.LexError for comment", err)
+			}
+		})
+	}
+
 	rejected := []struct {
 		name string
 		in   string
 	}{
 		{"double dash to end of line", "id -- this is a comment\n, name"},
+		{"double dash then tab", "id --\tcomment"},
+		{"double dash then form feed", "id --\fcomment"},
+		{"double dash then vertical tab", "id --\vcomment"},
 		{"double dash to EOF", "id -- trailing comment"},
 		{"hash to end of line", "id # comment\n, name"},
 		{"block comment", "id /* comment\nspanning lines */, name"},

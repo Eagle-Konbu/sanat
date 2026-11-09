@@ -261,9 +261,11 @@ the comment `--a`.
   key-exists operator), so the parser decides by position: a lone `?` `Op`
   where an operand is expected is a placeholder (`pgast.Literal{Val: "?"}`,
   rendered back as `?`), while a `?` after an operand stays the infix
-  operator. PostgreSQL has no prefix `?` operator, so the two never collide:
-  `data ? ?` is the jsonb operator applied to a placeholder, and `?|`/`?&`
-  are always operators.
+  operator. PostgreSQL has no built-in prefix `?` operator, so the two never
+  collide: `data ? ?` is the jsonb operator applied to a placeholder, and
+  `?|`/`?&` are always operators. A user-defined prefix `?` operator is not
+  supported, since `SELECT ? x` would be ambiguous with a placeholder
+  aliased `x`.
 - Column references `name` and `qualifier.name`, and function calls
   `[qualifier.]name(args)` with `*`, `DISTINCT`, named arguments
   (`name => value`, or the older `name := value`), `FILTER (WHERE ...)`, and

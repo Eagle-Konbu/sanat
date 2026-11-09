@@ -49,7 +49,7 @@ For the MySQL dialect, since the SQL parser cannot handle `?` correctly, substit
 2. **Parsing**: Syntax analysis with the in-house SQL parser (see [parser-spec.md](parser-spec.md))
 3. **Restoration**: `:_sqla_ph_N` → `?`
 
-The rewrite is MySQL-only. In PostgreSQL, `?`, `?|`, and `?&` are jsonb operators, so rewriting every `?` would corrupt them; the PostgreSQL parser instead receives the SQL untouched and tells a `?` placeholder from the `?` operator by position (see [postgres-parser-spec.md](postgres-parser-spec.md#primary-expressions)).
+The rewrite is MySQL-only. `FormatSQLWithOptions` does not parse or format PostgreSQL SQL yet: with the PostgreSQL dialect it returns the input unchanged with `ok == false`. When it does, the rewrite must not be applied there, since in PostgreSQL `?`, `?|`, and `?&` are jsonb operators and rewriting every `?` would corrupt them. The standalone PostgreSQL parser (`internal/sqlfmt/pgparser`) instead takes the SQL untouched and tells a `?` placeholder from the `?` operator by position (see [postgres-parser-spec.md](postgres-parser-spec.md#primary-expressions)).
 
 ## Format Rules
 
@@ -58,7 +58,7 @@ The rewrite is MySQL-only. In PostgreSQL, `?`, `?|`, and `?&` are jsonb operator
 - Clause keywords and aggregate/window function names are converted to **UPPERCASE**; operator/predicate keywords follow the [`keyword_case`](#keyword-casing) option instead
 - Each clause is placed on a **separate line**
 - Clause contents are **indented** (default: 2 spaces)
-- Backtick-quoted identifiers (MySQL style) are parsed and re-rendered unquoted. This never changes meaning in practice: a Go raw string literal cannot contain a backtick, so no formatted literal can contain a backtick-quoted identifier
+- Backtick-quoted identifiers (MySQL style) are parsed and re-rendered unquoted. Unquoting can change meaning (`` `select` `` becomes the keyword `select`, and `` `a -- b` `` becomes a comment), but this cannot happen to SQL taken from Go source: a Go raw string literal cannot contain a backtick. Code that calls `FormatSQL` directly with other input must not rely on backtick-quoted identifiers surviving
 - String literals are emitted **exactly as written**: escapes are not re-encoded, so `'it\'s'` stays `'it\'s'` and `'a''b'` stays `'a''b'`
 - SQL containing a **comment** (`--`, `#`, `/* ... */`, including optimizer hints and `/*! ... */`) is **returned as-is**, since the formatter cannot keep comments in its output. Comment-like text inside a string literal or quoted identifier (e.g. `'-- not a comment'`) is not a comment
 - If parsing fails, the **original string is returned as-is**
