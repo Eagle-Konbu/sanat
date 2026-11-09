@@ -356,6 +356,9 @@ func (p *Parser) parseLikeExpr(left pgast.Expr, not bool) pgast.Expr {
 	return &pgast.ComparisonExpr{Left: left, Operator: op, Right: right, Escape: escape}
 }
 
+// likeOperator returns the [NOT] LIKE or ILIKE spelling as an operator, the
+// form a quantified "LIKE ANY (...)" carries, since QuantifiedExpr has no
+// LIKE-specific fields.
 func likeOperator(ilike, not bool) pgast.Operator {
 	symbol := "LIKE"
 	if ilike {

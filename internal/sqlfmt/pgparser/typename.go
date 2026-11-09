@@ -186,6 +186,8 @@ func (p *Parser) atIntervalField() bool {
 	return p.at(IDENT) && intervalFieldWords[p.tok.Literal]
 }
 
+// readIntervalField reads one interval field name. Only SECOND may carry a
+// fractional-seconds precision, as in "interval minute to second(3)".
 func (p *Parser) readIntervalField() string {
 	field := p.tok.Literal
 	p.advance()
@@ -205,6 +207,8 @@ func (p *Parser) readIntervalField() string {
 	return field
 }
 
+// readTypeIdent reads the first word of a generic type name, which may be
+// any type_function_name; a quoted name keeps its quoting (see identText).
 func (p *Parser) readTypeIdent() string {
 	if !isTypeFuncName(p.tok) {
 		return failReturn[string](p, "expected type name, got %s", p.tok.Type)
@@ -345,12 +349,17 @@ func isPlainInterval(t *pgast.TypeName) bool {
 	return len(t.Names) == 1 && t.Names[0] == "interval" && len(t.Modifiers) == 0 && t.IntervalFields == ""
 }
 
+// atWord reports whether the current token is the unquoted identifier
+// word. Quoted identifiers never match, so "zone" in double quotes is not
+// mistaken for the word ZONE.
 func (p *Parser) atWord(word string) bool { return p.tok.Type == IDENT && p.tok.Literal == word }
 
+// peekIsWord is atWord for the next token.
 func (p *Parser) peekIsWord(word string) bool {
 	return p.peekTok.Type == IDENT && p.peekTok.Literal == word
 }
 
+// peek2IsWord is atWord for the token after next.
 func (p *Parser) peek2IsWord(word string) bool {
 	return p.peek2Tok.Type == IDENT && p.peek2Tok.Literal == word
 }

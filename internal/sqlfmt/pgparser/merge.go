@@ -236,6 +236,8 @@ func (p *Parser) parseReturningAliases() []*pgast.ReturningAlias {
 	return aliases
 }
 
+// parseReturningAlias parses one "{OLD | NEW} AS name" item of RETURNING
+// WITH (...). Unlike most aliases, AS is required, as in PostgreSQL 18.
 func (p *Parser) parseReturningAlias() *pgast.ReturningAlias {
 	var kind pgast.ReturningAliasKind
 
