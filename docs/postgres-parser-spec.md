@@ -136,8 +136,8 @@ Identifiers are stored as SQL text: an unquoted name in its folded lower
 case, a quoted one with its double quotes. Every statement's `With` field
 holds its leading `WITH` clause.
 
-**MERGE** (PostgreSQL 15+; parsed by
-[#87](https://github.com/Eagle-Konbu/sanat/issues/87)): `Merge.Target` is an
+**MERGE** (PostgreSQL 15+; see
+[MERGE Statement Grammar](#merge-statement-grammar)): `Merge.Target` is an
 `*AliasedTableExpr` (so it carries `ONLY` and `*`), and each `MergeWhen` pairs
 a `MergeMatchKind` — `MATCHED`, `NOT MATCHED`, `NOT MATCHED BY TARGET`, or
 `NOT MATCHED BY SOURCE` (the last two PostgreSQL 17+) — with a `MergeAction`:
@@ -157,12 +157,13 @@ func ParseStatement(input string) (pgast.Statement, error)
 ```
 
 `ParseStatement` parses one statement of any supported kind: a query (a
-`SELECT` or set operation, optionally parenthesized), `INSERT`, `UPDATE`, or
-`DELETE`. It reads an optional leading `WITH` clause first, then dispatches on
-the next keyword; any other token is parsed as a query, so it fails as one.
+`SELECT` or set operation, optionally parenthesized), `INSERT`, `UPDATE`,
+`DELETE`, or `MERGE`. It reads an optional leading `WITH` clause first, then
+dispatches on the next keyword; any other token is parsed as a query, so it
+fails as one.
 
-The per-kind entry points `ParseSelect`, `ParseInsert`, `ParseUpdate`, and
-`ParseDelete` share the same plumbing and accept a leading `WITH` the same
+The per-kind entry points `ParseSelect`, `ParseInsert`, `ParseUpdate`,
+`ParseDelete`, and `ParseMerge` share the same plumbing and accept a leading `WITH` the same
 way; `ParseSetOp` additionally requires a set operator. All of them fully
 consume `input`, accepting one optional trailing `;` and failing with a
 `*ParseError` (or `*LexError`) otherwise. `ParseExpr` parses a bare
@@ -386,22 +387,26 @@ Not supported: column definition lists for functions returning `record`
 that `INSERT`, `UPDATE`, and `DELETE` share, and that `MERGE`'s actions reuse:
 
 - **Target relation** (`parseRelationExpr`): `[ ONLY ] table_name [ * ] [ [ AS ] alias ]`,
-  parsed into an `*pgast.AliasedTableExpr` by `UPDATE` and `DELETE`. `ONLY`
-  sets `Only`; an explicit `*` (include inheritance descendants, already the
-  default) sets `IncludeDescendants` so it round-trips as written. The two are
+  parsed into an `*pgast.AliasedTableExpr` by `UPDATE`, `DELETE`, and
+  `MERGE`. `ONLY` sets `Only`; an explicit `*` (include inheritance
+  descendants, already the default) sets `IncludeDescendants` so it
+  round-trips as written. The two are
   mutually exclusive, as in PostgreSQL. `ONLY (table_name)` is accepted and
   normalized to `ONLY table_name`. The alias renders without `AS`, like table
   aliases in `SELECT`. A bare `SET` is never taken as the alias, as in
   PostgreSQL, so `AS set` is accepted and keeps its `AS` when rendered.
-- **SET assignment list** (`parseSetClauseList`), used by `UPDATE` and
-  `ON CONFLICT DO UPDATE`; see [UPDATE](#update-statement-grammar) for its
-  forms.
+- **SET assignment list** (`parseSetClauseList`), used by `UPDATE`,
+  `ON CONFLICT DO UPDATE`, and `MERGE`'s `UPDATE SET` action; see
+  [UPDATE](#update-statement-grammar) for its forms.
 - **A single `VALUES` row** (`parseParenExprOrDefaultList`):
-  `( { expr | DEFAULT } [, ...] )`, used per row by `INSERT ... VALUES` and by
-  `ROW(...)` sources in `SET`.
+  `( { expr | DEFAULT } [, ...] )`, used per row by `INSERT ... VALUES`, by
+  `MERGE`'s `INSERT ... VALUES` action, and by `ROW(...)` sources in `SET`.
 - **Optional column list** (`parseOptionalParenColumnList`), used after an
-  `INSERT` target, by `ON CONFLICT`, and by CTE names.
-- **`RETURNING`** (`parseOptionalReturning`).
+  `INSERT` target, by `MERGE`'s `INSERT` action, by `ON CONFLICT`, and by CTE
+  names.
+- **`RETURNING`** (`parseOptionalReturning`). `MERGE` uses its own
+  `parseOptionalMergeReturning`, which also accepts PostgreSQL 18's
+  `WITH (OLD AS ..., NEW AS ...)`.
 
 ## INSERT Statement Grammar
 
@@ -576,6 +581,105 @@ Deferred:
   formatter never has; it currently fails to parse.
 - `RETURNING WITH (OLD/NEW AS ...)` — PostgreSQL 18 only.
 
+## MERGE Statement Grammar
+
+Implemented in `internal/sqlfmt/pgparser/merge.go`
+([#87](https://github.com/Eagle-Konbu/sanat/issues/87)).
+
+```go
+func ParseMerge(input string) (*pgast.Merge, error)
+```
+
+Like the other entry points, it fully consumes `input`, accepting one
+optional trailing `;` and failing with a `*ParseError` (or `*LexError`)
+otherwise. `ParseStatement` dispatches to it on a leading `MERGE`.
+
+```text
+[ WITH [ RECURSIVE ] with_query [, ...] ]
+MERGE INTO [ ONLY ] target_table [ * ] [ [ AS ] alias ]
+USING data_source ON join_condition
+    when_clause [ ... ]
+    [ RETURNING [ WITH ( { OLD | NEW } AS output_alias [, ...] ) ]
+                { * | output_expr [ [ AS ] output_name ] } [, ...] ]
+
+when_clause :=
+    WHEN MATCHED [ AND condition ] THEN { merge_update | merge_delete | DO NOTHING }
+  | WHEN NOT MATCHED [ BY TARGET ] [ AND condition ] THEN { merge_insert | DO NOTHING }
+  | WHEN NOT MATCHED BY SOURCE [ AND condition ] THEN { merge_update | merge_delete | DO NOTHING }
+
+merge_update := UPDATE SET set_clause [, ...]
+merge_delete := DELETE
+merge_insert := INSERT [ ( column [, ...] ) ]
+                    [ OVERRIDING { SYSTEM | USER } VALUE ]
+                    { VALUES ( { expr | DEFAULT } [, ...] ) | DEFAULT VALUES }
+```
+
+**Version gating.** `MERGE` is PostgreSQL 15+, unlike the rest of the 13+
+grammar this package accepts. The parser accepts every form up to
+PostgreSQL 18 without a version switch; the PostgreSQL version each form
+needs is:
+
+| Feature | Since |
+|---|---|
+| `MERGE` with `WHEN MATCHED` / `WHEN NOT MATCHED` | PostgreSQL 15 |
+| `WHEN NOT MATCHED BY SOURCE`, explicit `BY TARGET` | PostgreSQL 17 |
+| `RETURNING`, `merge_action()` | PostgreSQL 17 |
+| `MERGE` as a CTE body | PostgreSQL 17 |
+| `RETURNING WITH (OLD AS ..., NEW AS ...)` | PostgreSQL 18 |
+
+- **Target**: the shared [target relation](#shared-dml-grammar) grammar,
+  stored in `Merge.Target`, so `ONLY`, `*`, and the alias behave exactly as
+  for `UPDATE` and `DELETE`.
+- **Data source**: a single `FROM` item (`parseTableReference`) — a table, a
+  derived table, a `LATERAL` derived table, or a join of them — stored in
+  `Merge.Source`. A comma-separated list is rejected, as in PostgreSQL. A
+  joined source carries its own `ON`, so
+  `USING a JOIN b ON a.id = b.a_id ON t.id = a.id` reads the first `ON` as
+  the join's and the second as `MERGE`'s.
+- **`WHEN` clauses**: at least one is required, kept in written order in
+  `Merge.Whens`. The match kind is stored as a `pgast.MergeMatchKind`; an
+  explicit `BY TARGET` is kept apart from plain `NOT MATCHED` so it
+  round-trips as written. The optional `AND condition` is any expression.
+- **Actions** follow PostgreSQL's grammar, not its later analysis: `MATCHED`
+  and `NOT MATCHED BY SOURCE` take `UPDATE SET`, `DELETE`, or `DO NOTHING`,
+  and `NOT MATCHED [BY TARGET]` takes `INSERT` or `DO NOTHING`; any other
+  pairing is a parse error. `UPDATE SET` shares
+  [`UPDATE`'s SET grammar](#update-statement-grammar) (including multi-column,
+  `ROW(...)`, sub-SELECT, and `DEFAULT` sources); neither `UPDATE` nor
+  `DELETE` takes a table name or `WHERE` here. `INSERT` takes a single
+  `VALUES` row, whose items may be `DEFAULT`, or `DEFAULT VALUES`, which
+  admits neither a column list nor `OVERRIDING` (a nil
+  `MergeInsert.Values`).
+- **`OVERRIDING { SYSTEM | USER } VALUE`** is stored as
+  `MergeInsert.Overriding`. `USER` is a reserved keyword in PostgreSQL, but it
+  has no token here (its use as the current user name in expressions is not
+  modeled), so after `OVERRIDING` it is matched as an unquoted identifier;
+  `"user"` quoted is rejected, as in PostgreSQL.
+- **`RETURNING`** reuses the `SELECT` list grammar. `merge_action()` needs no
+  special handling: it parses as an ordinary function call. The PostgreSQL 18
+  `WITH (OLD AS o, NEW AS n)` output aliases are stored in
+  `Returning.Aliases` in written order; PostgreSQL's analysis-time check that
+  each of `OLD` and `NEW` appears at most once is not repeated.
+- **Keywords**: `MERGE`, `MATCHED`, `SOURCE`, `TARGET`, `OVERRIDING`,
+  `SYSTEM`, `VALUE`, `OLD`, and `NEW` are unreserved keywords, so they remain
+  usable as names everywhere (see [Keywords](#keywords)), including inside a
+  `MERGE` (`MERGE INTO target source USING merge matched ...`).
+
+Not supported:
+
+- `RETURNING WITH (...)` on `INSERT`, `UPDATE`, and `DELETE` (PostgreSQL 18).
+- Array-subscript and field-indirection columns in the `INSERT` column list
+  and `SET` targets (as for `INSERT` and `UPDATE`).
+- Table functions as the data source (as for `FROM`).
+
+### Testing
+
+`internal/sqlfmt/pgparser/merge_test.go` holds table-driven round-trip tests
+for the target, the data source, every `WHEN` branch shape, multiple `WHEN`
+clauses on one statement, `RETURNING` (including `WITH (OLD/NEW AS ...)`),
+leading `WITH` and `MERGE` as a CTE body, keywords used as names, structural
+assertions on the AST, and error cases with their messages.
+
 ## Set Operation Grammar
 
 Implemented in `internal/sqlfmt/pgparser/setop.go`
@@ -687,16 +791,16 @@ subquery position.
 ```
 with_clause := WITH [ RECURSIVE ] with_query [, ...]
 with_query  := cte_name [ ( column [, ...] ) ] AS [ [ NOT ] MATERIALIZED ]
-               ( query | insert | update | delete )
+               ( query | insert | update | delete | merge )
 ```
 
 - The clause is stored in the `With` field of the statement it leads
-  (`pgast.Select`, `SetOp`, `Insert`, `Update`, or `Delete`). Each CTE is a
+  (`pgast.Select`, `SetOp`, `Insert`, `Update`, `Delete`, or `Merge`). Each CTE is a
   `pgast.CommonTableExpr`, whose `Subquery` holds whichever statement the
   body parses to.
 - **Bodies** may be a query (a `SELECT` or set operation, optionally
-  parenthesized), or a data-modifying `INSERT`/`UPDATE`/`DELETE`, typically
-  with `RETURNING`, as in
+  parenthesized), or a data-modifying `INSERT`/`UPDATE`/`DELETE`/`MERGE`
+  (`MERGE` since PostgreSQL 17), typically with `RETURNING`, as in
   `WITH deleted AS (DELETE FROM logs RETURNING *) INSERT INTO archive SELECT * FROM deleted`.
   Any body may lead with its own nested `WITH`.
 - **`[NOT] MATERIALIZED`** is stored as `CommonTableExpr.Materialization`
@@ -720,8 +824,6 @@ with_query  := cte_name [ ( column [, ...] ) ] AS [ [ NOT ] MATERIALIZED ]
 
 Deferred:
 
-- `MERGE` as a CTE body
-  ([#87](https://github.com/Eagle-Konbu/sanat/issues/87)).
 - The `SEARCH { BREADTH | DEPTH } FIRST BY ...` and `CYCLE ...` clauses on
   recursive CTEs (PostgreSQL 14+).
 

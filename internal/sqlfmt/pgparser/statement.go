@@ -7,8 +7,8 @@ import (
 )
 
 // ParseStatement parses a single SQL statement from input: a query (a SELECT
-// or a set operation) or an INSERT, UPDATE, or DELETE, any of which may be
-// led by a WITH clause.
+// or a set operation) or an INSERT, UPDATE, DELETE, or MERGE, any of which
+// may be led by a WITH clause.
 func ParseStatement(input string) (pgast.Statement, error) {
 	return parseStatementInput(input, (*Parser).parseStatementAfterWith)
 }
@@ -54,6 +54,8 @@ func (p *Parser) parseStatementAfterWith() pgast.Statement {
 		return p.parseUpdateAfterWith()
 	case DELETE:
 		return p.parseDeleteAfterWith()
+	case MERGE:
+		return p.parseMergeAfterWith()
 	default:
 		return p.parseQueryAfterWith()
 	}
@@ -93,6 +95,8 @@ func attachWith(stmt pgast.Statement, with *pgast.With, pos Position) {
 	case *pgast.Update:
 		target = &s.With
 	case *pgast.Delete:
+		target = &s.With
+	case *pgast.Merge:
 		target = &s.With
 	default:
 		panic(&ParseError{Pos: pos, Msg: fmt.Sprintf("WITH is not supported before %T", stmt)})
