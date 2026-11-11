@@ -69,12 +69,12 @@ type Options struct {
 	SQLMode string
 
 	// Dialect selects which SQL dialect's parser formats the input.
-	// Defaults to DialectMySQL. DialectPostgreSQL is not wired to the
-	// PostgreSQL parser yet, so FormatSQLWithOptions reports ok == false and
-	// leaves the SQL unchanged rather than silently falling back to MySQL
-	// parsing. An unknown value is handled the same way; callers reject
-	// unknown dialect names when validating config, CLI flags, and plugin
-	// settings.
+	// Defaults to DialectMySQL. DialectPostgreSQL formats the DML statements
+	// pgparser supports (SELECT and set operations, INSERT, UPDATE, DELETE,
+	// and MERGE) and leaves any other SQL unchanged. SQLMode is MySQL-only
+	// and ignored for PostgreSQL. An unknown value reports ok == false and
+	// leaves the SQL unchanged; callers reject unknown dialect names when
+	// validating config, CLI flags, and plugin settings.
 	Dialect string
 }
 
@@ -99,11 +99,14 @@ func FormatSQL(sql string, indent int) (string, bool) {
 // unchanged and false when the dialect is unsupported or sql cannot be
 // parsed or rendered.
 func FormatSQLWithOptions(sql string, opts Options) (string, bool) {
-	if !dialectSupported(opts.Dialect) {
+	switch opts.Dialect {
+	case "", DialectMySQL:
+		return formatMySQL(sql, opts)
+	case DialectPostgreSQL:
+		return formatPostgreSQL(sql, opts)
+	default:
 		return sql, false
 	}
-
-	return formatMySQL(sql, opts)
 }
 
 // formatMySQL formats sql with the MySQL parser. The '?' rewrite is
@@ -128,20 +131,6 @@ func formatMySQL(sql string, opts Options) (string, bool) {
 	}
 
 	return restorePlaceholders(result, count), true
-}
-
-// dialectSupported reports whether opts.Dialect names a dialect
-// FormatSQLWithOptions can currently format. The empty string means
-// DialectMySQL. DialectPostgreSQL is not wired to pgparser yet, so it's
-// rejected (leaving the SQL unchanged) the same as an unknown dialect
-// string rather than silently falling back to MySQL parsing.
-func dialectSupported(dialect string) bool {
-	switch dialect {
-	case "", DialectMySQL:
-		return true
-	default:
-		return false
-	}
 }
 
 // parserSQLMode translates an Options.SQLMode value into the parser

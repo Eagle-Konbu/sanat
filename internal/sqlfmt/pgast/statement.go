@@ -292,7 +292,7 @@ func (u *SetOp) String() string {
 
 	writeOptionalPrefix(&b, u.With)
 
-	writeSetOpOperand(&b, u.Left, needsSetOpParens(u.Left, u.Op, false))
+	writeSetOpOperand(&b, u.Left, NeedsSetOpParens(u.Left, u.Op, false))
 	b.WriteString(" ")
 	b.WriteString(u.Op.String())
 
@@ -301,7 +301,7 @@ func (u *SetOp) String() string {
 	}
 
 	b.WriteString(" ")
-	writeSetOpOperand(&b, u.Right, needsSetOpParens(u.Right, u.Op, true))
+	writeSetOpOperand(&b, u.Right, NeedsSetOpParens(u.Right, u.Op, true))
 	writeSuffix(&b, u.OrderBy)
 	writeSuffix(&b, u.Limit)
 	writeSuffix(&b, u.Offset)
@@ -322,11 +322,12 @@ func writeSetOpOperand(b *strings.Builder, stmt Statement, parens bool) {
 	b.WriteByte(')')
 }
 
-// needsSetOpParens reports whether stmt must be parenthesized as an operand
+// NeedsSetOpParens reports whether stmt must be parenthesized as an operand
 // of a parentOp set operation: when it has a WITH or trailing clause of its
 // own, which would otherwise render as if scoping the whole set operation,
 // or when it is a nested SetOp whose grouping precedence doesn't imply.
-func needsSetOpParens(stmt Statement, parentOp SetOpType, isRight bool) bool {
+// isRight reports whether stmt is the right operand.
+func NeedsSetOpParens(stmt Statement, parentOp SetOpType, isRight bool) bool {
 	switch s := stmt.(type) {
 	case *SetOp:
 		return s.hasOperandScopedClauses() || !s.Op.groupsWithoutParens(parentOp, isRight)

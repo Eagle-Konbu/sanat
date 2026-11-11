@@ -1695,10 +1695,8 @@ func TestFormatSQL_CommentsLeftUnchanged(t *testing.T) {
 }
 
 // TestFormatSQLWithOptions_Dialect covers dialect selection: the empty
-// string and DialectMySQL both format normally (today's only wired dialect),
-// DialectPostgreSQL leaves the SQL unchanged rather than silently formatting
-// as MySQL (pgparser isn't wired in yet), and an unrecognized dialect string
-// is left unchanged too.
+// string and DialectMySQL both format as MySQL, DialectPostgreSQL formats
+// with pgparser, and an unrecognized dialect string is left unchanged.
 func TestFormatSQLWithOptions_Dialect(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -1707,7 +1705,7 @@ func TestFormatSQLWithOptions_Dialect(t *testing.T) {
 	}{
 		{name: "default (unset) formats as MySQL", dialect: "", wantOK: true},
 		{name: "DialectMySQL formats normally", dialect: sqlfmt.DialectMySQL, wantOK: true},
-		{name: "DialectPostgreSQL is not yet supported", dialect: sqlfmt.DialectPostgreSQL, wantOK: false},
+		{name: "DialectPostgreSQL formats normally", dialect: sqlfmt.DialectPostgreSQL, wantOK: true},
 		{name: "unknown dialect is rejected", dialect: "sqlite", wantOK: false},
 	}
 

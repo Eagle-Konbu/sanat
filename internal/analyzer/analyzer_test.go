@@ -32,6 +32,14 @@ func TestAnalyzer_RespectsFormatterOptions(t *testing.T) {
 	analysistest.RunWithSuggestedFixes(t, analysistest.TestData(), analyzer.New(opts), "options")
 }
 
+func TestAnalyzer_FormatsPostgreSQLDialect(t *testing.T) {
+	opts := defaultOptions()
+	opts.Newline = false
+	opts.Dialect = sqlfmt.DialectPostgreSQL
+
+	analysistest.RunWithSuggestedFixes(t, analysistest.TestData(), analyzer.New(opts), "postgresql")
+}
+
 func TestAnalyzer_SkipsGeneratedFiles(t *testing.T) {
 	analysistest.Run(t, analysistest.TestData(), analyzer.New(defaultOptions()), "generated")
 }

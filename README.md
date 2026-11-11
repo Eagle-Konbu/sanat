@@ -88,6 +88,7 @@ cat file.go | sanat > formatted.go
 | `--keyword-case` | `upper` | Casing for operator/predicate keywords (`upper`, `lower`, `preserve`) |
 | `--comma-style` | `trailing` | Comma placement in lists (`trailing`, `leading`) |
 | `--sql-mode` | `default` | SQL mode controlling string-literal parsing (`default`, `no_backslash_escapes`) |
+| `--dialect` | `mysql` | SQL dialect to parse and format (`mysql`, `postgresql`) |
 | `-c, --config` | | Path to config file |
 
 ## Standalone Lint
@@ -156,6 +157,7 @@ newline: false
 keyword_case: upper
 comma_style: trailing
 sql_mode: default
+dialect: mysql
 ```
 
 ### TOML example (`.sanat.toml`)
@@ -168,6 +170,7 @@ newline = false
 keyword_case = "upper"
 comma_style = "trailing"
 sql_mode = "default"
+dialect = "mysql"
 ```
 
 See [docs/formatter-spec.md](docs/formatter-spec.md#configuration) for the full list of configuration options.
@@ -236,6 +239,7 @@ linters:
 | `keyword-case` | `upper` | Casing for operator/predicate keywords (`upper`, `lower`, `preserve`) |
 | `comma-style` | `trailing` | Comma placement in lists (`trailing`, `leading`) |
 | `sql-mode` | `default` | SQL mode controlling string-literal parsing (`default`, `no_backslash_escapes`) |
+| `dialect` | `mysql` | SQL dialect to parse and format (`mysql`, `postgresql`) |
 | `config` | | Path to a `.sanat.yml` / `.sanat.yaml` / `.sanat.toml` file |
 
 Each option is resolved independently with this precedence:
@@ -259,14 +263,16 @@ Notes:
 - `DELETE`
 - `UNION`
 
-Strings that don't parse as valid SQL are left unchanged.
+With `--dialect postgresql`, PostgreSQL's `SELECT`, `UNION` / `INTERSECT` / `EXCEPT`, `INSERT` (including `ON CONFLICT`), `UPDATE`, `DELETE`, and `MERGE` are formatted, with `RETURNING` and `WITH`. See [docs/formatter-spec.md](docs/formatter-spec.md#postgresql-dialect).
+
+Strings that don't parse as valid SQL, and SQL containing comments, are left unchanged.
 
 ## How It Works
 
 1. Parses Go source files using `go/parser`
 2. Finds raw string literals (backtick strings)
 3. Detects SQL by checking for keywords (SELECT, INSERT, UPDATE, DELETE)
-4. Parses SQL using an in-house SQL parser (`internal/sqlfmt/parser`)
+4. Parses SQL using an in-house SQL parser for the selected dialect (`internal/sqlfmt/parser` for MySQL, `internal/sqlfmt/pgparser` for PostgreSQL)
 5. Reformats SQL with consistent indentation
 6. Outputs modified Go source
 

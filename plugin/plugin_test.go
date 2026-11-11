@@ -69,3 +69,17 @@ func TestPlugin_AppliesSettingsToAnalyzer(t *testing.T) {
 
 	analysistest.RunWithSuggestedFixes(t, analysistest.TestData(), analyzers[0], "settings")
 }
+
+func TestPlugin_AppliesDialectSetting(t *testing.T) {
+	p := newPlugin(t, map[string]any{
+		"newline": false,
+		"dialect": "postgresql",
+	})
+
+	analyzers, err := p.BuildAnalyzers()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	analysistest.RunWithSuggestedFixes(t, analysistest.TestData(), analyzers[0], "postgresql")
+}

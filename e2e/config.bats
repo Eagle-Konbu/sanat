@@ -236,6 +236,50 @@ EOF
   [[ "$stderr" == *"sideways"* ]]
 }
 
+# The jsonb "?" operator only parses as PostgreSQL, so formatting it shows
+# which dialect was used: MySQL leaves the literal unchanged.
+@test "dialect: postgresql in the config file formats PostgreSQL SQL" {
+  cat > "${BATS_TEST_TMPDIR}/.sanat.yml" <<'EOF'
+version: 1
+dialect: postgresql
+EOF
+
+  cat > "${BATS_TEST_TMPDIR}/jsonb.go" <<'EOF'
+package sample
+
+import "database/sql"
+
+func query(db *sql.DB) {
+	db.Query(`select id from t where data ? 'k' and id = $1`)
+}
+EOF
+
+  (cd "${BATS_TEST_TMPDIR}" && "${SANAT_BIN}" jsonb.go > got.go)
+
+  grep -qF '  AND id = $1' "${BATS_TEST_TMPDIR}/got.go"
+}
+
+@test "--dialect flag overrides the config file value" {
+  cat > "${BATS_TEST_TMPDIR}/.sanat.yml" <<'EOF'
+version: 1
+dialect: postgresql
+EOF
+
+  cat > "${BATS_TEST_TMPDIR}/jsonb.go" <<'EOF'
+package sample
+
+import "database/sql"
+
+func query(db *sql.DB) {
+	db.Query(`select id from t where data ? 'k' and id = $1`)
+}
+EOF
+
+  (cd "${BATS_TEST_TMPDIR}" && "${SANAT_BIN}" --dialect mysql jsonb.go > got.go)
+
+  grep -qF "select id from t where data ? 'k' and id = \$1" "${BATS_TEST_TMPDIR}/got.go"
+}
+
 @test "an unsupported config version fails with a clear error" {
   cat > "${BATS_TEST_TMPDIR}/.sanat.yml" <<'EOF'
 version: 99

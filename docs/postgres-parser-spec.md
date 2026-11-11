@@ -210,6 +210,25 @@ a panic.
 dispatch to each statement kind, with and without a leading `WITH`, and for
 errors.
 
+## Formatter Integration
+
+`sqlfmt.FormatSQLWithOptions` with `Dialect: DialectPostgreSQL`
+([#88](https://github.com/Eagle-Konbu/sanat/issues/88)) first checks
+`ContainsComment` and leaves SQL with a comment unchanged, then parses with
+`ParseStatement` and renders the result with the PostgreSQL renderer in
+`internal/sqlfmt/formatter_pg*.go`. The renderer walks `pgast` directly
+rather than post-processing `String()`, so keyword casing applies only to
+keywords, and it reads the `Raw` fields to reproduce the source spelling of
+literals and identifiers. It shares the indentation, keyword-casing, and
+comma-style helpers in `internal/sqlfmt/render.go` with the MySQL formatter.
+`String()` stays the parser's canonical round-trip form; `SetOp.String()`
+and the renderer share `NeedsSetOpParens` to decide which set-operation
+operands need parentheses. Parse failures, a statement the renderer cannot
+handle, and SQL the parser does not accept are all left unchanged with
+`ok == false`. See
+[formatter-spec.md](formatter-spec.md#postgresql-dialect) for the output
+layout.
+
 ## Expression Grammar
 
 Implemented in `internal/sqlfmt/pgparser/expr.go`

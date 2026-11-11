@@ -14,12 +14,12 @@ flowchart TD
     B --> C[Extract raw string literals]
     C --> D{MightBeSQL?}
     D -- No --> E[Skip]
-    D -- Yes --> F[Placeholder substitution<br/>? → :_sqla_ph_N]
-    F --> G[Parse with in-house SQL parser]
+    D -- Yes --> F[MySQL only: placeholder substitution<br/>? → :_sqla_ph_N]
+    F --> G[Parse with the dialect's in-house parser]
     G --> H{Parse success?}
     H -- No --> I[Keep original string]
     H -- Yes --> J[Format according to SQL statement type]
-    J --> K[Restore placeholders<br/>:_sqla_ph_N → ?]
+    J --> K[MySQL only: restore placeholders<br/>:_sqla_ph_N → ?]
     K --> M[Replace AST node with<br/>formatted string]
     M --> N[Output with go/format]
 ```
@@ -49,7 +49,7 @@ For the MySQL dialect, since the SQL parser cannot handle `?` correctly, substit
 2. **Parsing**: Syntax analysis with the in-house SQL parser (see [parser-spec.md](parser-spec.md))
 3. **Restoration**: `:_sqla_ph_N` → `?`
 
-The rewrite is MySQL-only. `FormatSQLWithOptions` does not parse or format PostgreSQL SQL yet: with the PostgreSQL dialect it returns the input unchanged with `ok == false`. When it does, the rewrite must not be applied there, since in PostgreSQL `?`, `?|`, and `?&` are jsonb operators and rewriting every `?` would corrupt them. The standalone PostgreSQL parser (`internal/sqlfmt/pgparser`) instead takes the SQL untouched and tells a `?` placeholder from the `?` operator by position (see [postgres-parser-spec.md](postgres-parser-spec.md#primary-expressions)).
+The rewrite is MySQL-only. In PostgreSQL, `?`, `?|`, and `?&` are jsonb operators, so rewriting every `?` would corrupt them; with the PostgreSQL dialect the parser instead receives the SQL untouched and tells a `?` placeholder from the `?` operator by position (see [PostgreSQL Dialect](#postgresql-dialect)).
 
 ## Format Rules
 
@@ -759,6 +759,54 @@ FROM
   cte
 ```
 
+## PostgreSQL Dialect
+
+With `dialect: postgresql` (or `--dialect postgresql`), SQL is parsed by the PostgreSQL parser (`internal/sqlfmt/pgparser`; see [postgres-parser-spec.md](postgres-parser-spec.md)) and rendered with the same layout and the same `indent`, `keyword_case`, and `comma_style` options as MySQL. `sql_mode` is MySQL-only and has no effect.
+
+**Formatted statements:** `SELECT` (including `VALUES` and `TABLE name` queries), `UNION` / `INTERSECT` / `EXCEPT`, `INSERT`, `UPDATE`, `DELETE`, and `MERGE`, each optionally led by `WITH`. Any other statement (DDL, `SET`, ...), SQL that does not parse, and SQL containing a `--` or `/* */` comment is **returned as-is**. MySQL-only syntax (backtick identifiers, `LIMIT a, b`, ...) does not parse as PostgreSQL and is returned as-is too.
+
+**Source spelling:** string constants (`'...'`, `E'...'`, `$$...$$`, `B'...'`, ...), numbers, identifiers (quoted or not), and type names are emitted exactly as written, so `"UserId"`, `UserId`, and `E'a\tb'` are never re-spelled. Built-in multi-word type names (`double precision`, `timestamp with time zone`, ...) render in lower case. Keyword casing follows the same rules as MySQL: clause keywords are uppercase, operator/predicate keywords (including PostgreSQL's `ILIKE`, `SIMILAR TO`, `IS DISTINCT FROM`, `ANY`/`SOME`/`ALL`, `COLLATE`, `AT TIME ZONE`, `NULLS FIRST`/`LAST`, ...) follow `keyword_case`, and the aggregate/window function names listed under [Window Functions](#window-functions-over-clause) are uppercase when unqualified and unquoted; any other function name keeps its spelling. The parser normalizes a few synonyms: `ISNULL`/`NOTNULL` render as `IS NULL`/`IS NOT NULL`, and `FETCH`'s `ROW`/`ROWS` is written as `ROWS` after a count and `ROW` without one.
+
+**Placeholders:** `$1`-style parameters are literals. A `?` where an operand is expected is a bind parameter, as Go drivers and query builders write them; a `?` after an operand is the jsonb operator. `?|` and `?&` are always operators.
+
+**PostgreSQL clauses** follow the MySQL layout conventions:
+
+- `DISTINCT ON (...)` stays on the `SELECT` line; `WINDOW`, `RETURNING`, and `USING` (in `DELETE` and `MERGE`) are clause keywords with their items indented below them; `FETCH` and locking clauses (`FOR UPDATE OF t SKIP LOCKED`, ...) are single lines.
+- `ON CONFLICT` puts its target and action on one line; `DO UPDATE SET` assignments follow one per line, then its `WHERE`.
+- `MERGE` puts `MERGE INTO`, `USING`, and `ON` on their own lines, then each `WHEN ... THEN` with its action one level deeper.
+- A set-operation operand is wrapped in parentheses only when its own clauses or operator precedence require it.
+
+```sql
+INSERT INTO
+  users
+(
+  email,
+  name
+)
+VALUES
+  ($1, $2)
+ON CONFLICT (email) DO UPDATE SET
+  name = excluded.name
+RETURNING
+  id
+```
+
+```sql
+MERGE INTO
+  inventory i
+USING
+  incoming n
+ON
+  i.sku = n.sku
+WHEN MATCHED AND n.qty = 0 THEN
+  DELETE
+WHEN MATCHED THEN
+  UPDATE SET
+    qty = i.qty + n.qty
+WHEN NOT MATCHED THEN
+  INSERT (sku, qty) VALUES (n.sku, n.qty)
+```
+
 ## Configuration
 
 ### Configuration File
@@ -780,7 +828,7 @@ Configuration files are searched in the following order (first match is used):
 | `keyword_case` | `upper` \| `lower` \| `preserve` | no | `upper` | Casing for operator/predicate keywords. See [Keyword Casing](#keyword-casing). |
 | `comma_style` | `trailing` \| `leading` | no | `trailing` | Comma placement in rendered lists. See [Comma Style](#comma-style). |
 | `sql_mode` | `default` \| `no_backslash_escapes` | no | `default` | SQL mode controlling string-literal parsing. See [SQL Mode](#sql-mode). |
-| `dialect` | `mysql` \| `postgresql` | no | `mysql` | SQL dialect to parse. `postgresql` is not wired to the PostgreSQL parser yet, so SQL literals are currently left unchanged. |
+| `dialect` | `mysql` \| `postgresql` | no | `mysql` | SQL dialect to parse and format. See [PostgreSQL Dialect](#postgresql-dialect). |
 
 ### Configuration Examples
 
@@ -843,7 +891,7 @@ sanat [flags] [pattern ...]
 | `--keyword-case` | | `upper` | Casing for operator/predicate keywords (`upper`, `lower`, `preserve`) |
 | `--comma-style` | | `trailing` | Comma placement in lists (`trailing`, `leading`) |
 | `--sql-mode` | | `default` | SQL mode controlling string-literal parsing (`default`, `no_backslash_escapes`) |
-| `--dialect` | | `mysql` | SQL dialect to parse (`mysql`, `postgresql`). `postgresql` is not wired to the PostgreSQL parser yet, so SQL literals are currently left unchanged. |
+| `--dialect` | | `mysql` | SQL dialect to parse and format (`mysql`, `postgresql`). See [PostgreSQL Dialect](#postgresql-dialect). |
 | `--config` | `-c` | | Configuration file path |
 
 All flags except `--write` are shared with the [lint command](#lint-command).
@@ -881,7 +929,7 @@ sanat lint [flags] [pattern ...]
 `sanat lint` runs the SQL formatting analyzer (see [analyzer-spec.md](analyzer-spec.md)) over Go packages and reports literals that the formatter would change. It never modifies files and does not read standard input.
 
 - **Patterns** are Go package patterns (`./...`, `./internal/db`, import paths), resolved by `golang.org/x/tools/go/packages` like `go vet`. With no pattern, the package in the current directory (`.`) is analyzed. Unlike the formatter's file patterns, directories excluded by the go command (`vendor/`, `testdata/`, and directories starting with `.` or `_`) are skipped and files are filtered by build constraints.
-- **Formatting options** are the formatter's options: `--indent`, `--newline`, `--keyword-case`, `--comma-style`, `--sql-mode`, and `--config` are shared with the formatter and resolved with the same [configuration file](#configuration-file) lookup and [precedence](#precedence). `--write` and the `write` config option are not applicable.
+- **Formatting options** are the formatter's options: `--indent`, `--newline`, `--keyword-case`, `--comma-style`, `--sql-mode`, `--dialect`, and `--config` are shared with the formatter and resolved with the same [configuration file](#configuration-file) lookup and [precedence](#precedence). `--write` and the `write` config option are not applicable.
 - **Test files** are analyzed by default. A diagnostic in a file shared by a package and its test variant is reported once.
 
 | Flag | Default | Description |
@@ -934,7 +982,9 @@ FROM
 
 ## Parser
 
-SQL syntax analysis uses an in-house lexer/parser (`internal/sqlfmt/parser`, producing the `internal/sqlfmt/sqlast` AST) scoped to the MySQL DML and DDL this formatter supports. See [parser-spec.md](parser-spec.md) for the full grammar and node reference.
+SQL syntax analysis uses an in-house lexer/parser (`internal/sqlfmt/parser`, producing the `internal/sqlfmt/sqlast` AST) scoped to the MySQL DML and DDL this formatter supports. See [parser-spec.md](parser-spec.md) for the full grammar and node reference. The PostgreSQL dialect uses `internal/sqlfmt/pgparser` instead (see [PostgreSQL Dialect](#postgresql-dialect)).
+
+The table below lists the MySQL dialect's statements.
 
 ### Supported SQL Statements
 
